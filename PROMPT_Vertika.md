@@ -1,4 +1,4 @@
-# Prompt - BateriaOS
+# Prompt - Vertika
 
 Usa este prompt para generar una web app navegable en Lovable, Bolt o v0.
 
@@ -8,11 +8,11 @@ Usa este prompt para generar una web app navegable en Lovable, Bolt o v0.
 
 Desarrolla esta web app:
 
-# BateriaOS - Sistema de Gestion para Talleres de Baterias Industriales
+# Vertika - Sistema de Gestion para Talleres de Baterias Industriales
 
 Aplicacion web para gestionar el ciclo completo de una bateria en el taller: recepcion, diagnostico, cotizacion, reparacion/reacondicionamiento, prueba de carga y entrega al cliente.
 
-BateriaOS atiende baterias de multiples aplicaciones: **automotrices, autoelevadores (montacargas), ferroviarias (trenes/locomotoras), industriales estacionarias (UPS, plantas, telecom) y marinas.**
+Vertika atiende baterias de multiples aplicaciones: **automotrices, autoelevadores (montacargas), ferroviarias (trenes/locomotoras), industriales estacionarias (UPS, plantas, telecom) y marinas.**
 
 La aplicacion debe ser 100% navegable utilizando datos mock en memoria.
 
@@ -27,7 +27,7 @@ En fases posteriores se integrara:
 
 ## Contexto del negocio
 
-BateriaOS es el sistema operativo interno de un taller especializado en baterias industriales.
+Vertika es el sistema operativo interno de un taller especializado en baterias industriales.
 
 A diferencia de un taller mecanico generico, el "objeto" que fluye por el taller no es un vehiculo sino una **bateria** (o un banco de baterias), que puede pertenecer a un auto particular, a una flotilla de autoelevadores de un cliente corporativo, o a un vagon de tren.
 
@@ -47,7 +47,7 @@ Permite gestionar:
 
 Tagline:
 
-`BateriaOS - Energia bajo control`
+`Vertika - Energia bajo control`
 
 La plataforma representa el sistema interno de operacion del taller.
 
@@ -519,7 +519,7 @@ Listado de baterias marcadas como `dada_de_baja` (no reparables), con registro d
 
 Taller:
 
-`BateriaOS Demo - Taller de Baterias Industriales`
+`Vertika Demo - Taller de Baterias Industriales`
 
 ### Tecnicos
 

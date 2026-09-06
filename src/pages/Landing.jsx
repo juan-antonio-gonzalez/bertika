@@ -51,7 +51,7 @@ export default function Landing() {
               El ciclo completo de tu bateria, <span className="hl">bajo control</span>
             </h1>
             <p className="lead">
-              Recepcion, diagnostico, reparacion, prueba de carga y entrega con garantia. BateriaOS gestiona
+              Recepcion, diagnostico, reparacion, prueba de carga y entrega con garantia. Vertika gestiona
               cada bateria industrial con trazabilidad por numero de serie, para talleres que trabajan con
               autos, autoelevadores, trenes, UPS y embarcaciones.
             </p>
@@ -60,7 +60,7 @@ export default function Landing() {
               <Link to="/auth" className="btn lg"><Icon name="user" size={16} /> Entrar a la plataforma</Link>
             </div>
             <p className="muted" style={{ marginTop: 14, fontSize: 12.5 }}>
-              Demo 100% navegable · Datos simulados en memoria · BateriaOS — Energia bajo control
+              Demo 100% navegable · Datos simulados en memoria · Vertika — Energia bajo control
             </p>
           </div>
         </div>
@@ -141,7 +141,7 @@ export default function Landing() {
           <div className="brand">
             <span className="logo"><Icon name="bolt" size={18} /></span>
             <span>
-              BateriaOS Demo
+              Vertika Demo
               <small>Taller de Baterias Industriales · Energia bajo control</small>
             </span>
           </div>

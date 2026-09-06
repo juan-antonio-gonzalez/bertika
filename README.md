@@ -1,8 +1,8 @@
-# BateriaOS - Sistema de Gestion para Talleres de Baterias Industriales
+# Vertika - Sistema de Gestion para Talleres de Baterias Industriales
 
 Aplicacion web navegable 100% frontend para gestionar el ciclo completo de una bateria en el taller: recepcion, diagnostico, cotizacion, reparacion/reacondicionamiento, prueba de carga y entrega.
 
-**Tagline:** `BateriaOS - Energia bajo control`
+**Tagline:** `Vertika - Energia bajo control`
 
 ## Como ejecutar
 
@@ -42,7 +42,7 @@ Regla central de negocio: `testing -> in_repair` (si la prueba final falla, la b
 
 ## Datos demo
 
-Datos semilla precargados (5 tecnicos, 5 clientes, 9 baterias, 10+ insumos, 8 ordenes en distintos estados). Los cambios persisten en `localStorage` (`bateriaos-db`). Usa el boton **Restablecer demo** para volver al estado inicial.
+Datos semilla precargados (5 tecnicos, 5 clientes, 9 baterias, 10+ insumos, 8 ordenes en distintos estados). Los cambios persisten en `localStorage` (`vertika-db`). Usa el boton **Restablecer demo** para volver al estado inicial.
 
 ## Flujos de ejemplo
 

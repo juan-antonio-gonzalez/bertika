@@ -23,7 +23,7 @@ export default function Tracker() {
       <div className="center mb8">
         <div className="brand" style={{ justifyContent: 'center', marginBottom: 6 }}>
           <span className="logo"><Icon name="bolt" size={16} /></span>
-          BateriaOS
+          Vertika
         </div>
         <p className="muted" style={{ margin: 0 }}>Seguimiento publico · sin necesidad de cuenta</p>
       </div>
