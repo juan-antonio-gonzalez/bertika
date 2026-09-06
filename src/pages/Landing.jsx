@@ -146,8 +146,8 @@ export default function Landing() {
             </span>
           </div>
           <div className="row" style={{ gap: 14 }}>
-            <span>Tel: 55 1234 5678</span>
-            <span>contacto@bateriaos.mx</span>
+            <span>Tel: 1167974159</span>
+            <span>contacto@argentina.prueba.com.ar</span>
             <span>Reciclaje de plomo-acido certificado</span>
             <ResetDemoBtn compact />
           </div>
