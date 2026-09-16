@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useStore } from '../store/store';
 import { Modal, EstadoPill, Timeline, Icon, fmtDate, fmtMXN, appIconName, fmtFecha } from './ui';
+import { CONTACTO } from '../data/siteData';
 
 const INS_CAT = ['Celdas', 'Electrolito', 'Bornes y Conectores', 'Cargadores', 'Cables', 'EPP y Seguridad'];
 
@@ -80,7 +81,7 @@ function CotizacionForm({ orden }) {
       <div className="field"><label>Otros conceptos</label><input className="input" value={extra} onChange={(e) => setExtra(e.target.value)} placeholder="ej. traslado a planta" /></div>
       <div className="row between" style={{ background: 'var(--bg-3)', borderRadius: 10, padding: '10px 14px' }}>
         <span style={{ fontWeight: 700 }}>TOTAL</span>
-        <span style={{ fontWeight: 800, fontSize: 18, color: 'var(--amber)' }}>{fmtMXN(total)} MXN</span>
+        <span style={{ fontWeight: 800, fontSize: 18, color: 'var(--amber)' }}>{fmtMXN(total)}</span>
       </div>
       <button className="btn primary block" disabled={!total || servicios.every((s) => !s.nombre)} onClick={() => generarCotizacion(orden.id, { monto: total, servicios, insumos })}>
         <Icon name="clipboard" size={15} /> Guardar cotizacion
@@ -273,7 +274,7 @@ export default function OrdenDetalle({ orden, role, onClose, onEntregado, onBaja
             <div className="card" style={{ background: 'var(--bg-3)' }}>
               <div className="row between">
                 <div className="card-title"><Icon name="clipboard" size={14} /> Cotizacion</div>
-                <span className="badge amber">Total {fmtMXN(orden.cotizacion.monto)} MXN</span>
+                <span className="badge amber">Total {fmtMXN(orden.cotizacion.monto)}</span>
               </div>
               <ul className="ulist mt8">
                 {(orden.cotizacion.servicios_costos || []).map((s, i) => (
@@ -349,7 +350,7 @@ export default function OrdenDetalle({ orden, role, onClose, onEntregado, onBaja
                 </ul>
                 <div className="row between" style={{ borderTop: '1px solid var(--line)', paddingTop: 10 }}>
                   <b>Total</b>
-                  <b style={{ color: 'var(--amber)', fontSize: 18 }}>{fmtMXN(orden.cotizacion?.monto)} MXN</b>
+                  <b style={{ color: 'var(--amber)', fontSize: 18 }}>{fmtMXN(orden.cotizacion?.monto)}</b>
                 </div>
               </div>
               <div className="grid2">
@@ -442,7 +443,7 @@ export default function OrdenDetalle({ orden, role, onClose, onEntregado, onBaja
       {entregar && (
         <Modal title="Entregar y cobrar" sub={`Orden ${orden.id} · ${orden.bateria_serie}`} onClose={() => setEntregar(false)}>
           <div className="col">
-            <div className="field"><label>Monto cobrado (MXN)</label><input className="input" type="number" defaultValue={orden.cotizacion?.monto || ''} onChange={(e) => setConfirm({ ...confirm, monto: e.target.value })} /></div>
+            <div className="field"><label>Monto cobrado (ARS)</label><input className="input" type="number" defaultValue={orden.cotizacion?.monto || ''} onChange={(e) => setConfirm({ ...confirm, monto: e.target.value })} /></div>
             <div className="grid2">
               <div className="field"><label>Garantia (meses)</label><input className="input" type="number" defaultValue={6} onChange={(e) => setConfirm({ ...confirm, meses: e.target.value })} /></div>
               <div className="field"><label>Ciclos de carga</label><input className="input" type="number" defaultValue={100} onChange={(e) => setConfirm({ ...confirm, ciclos: e.target.value })} /></div>
@@ -451,6 +452,12 @@ export default function OrdenDetalle({ orden, role, onClose, onEntregado, onBaja
           </div>
         </Modal>
       )}
+
+      <div className="muted" style={{ marginTop: 18, paddingTop: 12, borderTop: '1px solid var(--line-soft)', fontSize: 11.5, lineHeight: 1.7, textAlign: 'center' }}>
+        Bertika® · Acumuladores Industriales · Buenos Aires, Argentina<br />
+        Ventas (tel/WhatsApp): {CONTACTO.telefono} · Soporte técnico: {CONTACTO.telefonoSoporte}<br />
+        Representante oficial de AMSA Forbat
+      </div>
     </Modal>
   );
 }

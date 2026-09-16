@@ -24,7 +24,7 @@ const seedData = () => ({
 });
 
 const nowIso = () => new Date().toISOString();
-const fmtMXN = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 });
+const fmtMXN = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 });
 
 export const useStore = create()(
   persist(
@@ -293,7 +293,7 @@ export const useStore = create()(
             ),
           },
         });
-        get().pushEvento(ordenId, 'cotizacion', `Cotizacion generada por $${fmtMXN.format(monto || 0)} MXN.`);
+        get().pushEvento(ordenId, 'cotizacion', `Cotizacion generada por ${fmtMXN.format(monto || 0)}.`);
         get().toastShow(`Cotizacion generada por $${fmtMXN.format(monto || 0)}`, 'ok');
       },
 
@@ -446,7 +446,7 @@ export const useStore = create()(
             ),
           },
         });
-        get().pushEvento(ordenId, 'entregada', `Bateria entregada al cliente. $${fmtMXN.format(monto)} MXN cobrados. Garantia ${gMeses} meses / ${gCiclos} ciclos.`);
+        get().pushEvento(ordenId, 'entregada', `Bateria entregada al cliente. ${fmtMXN.format(monto)} cobrados. Garantia ${gMeses} meses / ${gCiclos} ciclos.`);
         get().toastShow('Orden entregada y cobrada', 'ok');
       },
 

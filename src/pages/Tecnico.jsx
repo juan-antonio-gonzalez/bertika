@@ -85,7 +85,7 @@ export default function Tecnico() {
                   </div>
                 </div>
                 <div className="row" style={{ gap: 8 }}>
-                  {o.cotizacion?.monto && <span className="badge amber" style={{ fontSize: 13 }}>{fmtMXN(o.cotizacion.monto)} MXN</span>}
+                  {o.cotizacion?.monto && <span className="badge amber" style={{ fontSize: 13 }}>{fmtMXN(o.cotizacion.monto)}</span>}
                   <button className="btn primary" onClick={() => setSel(o)}><Icon name="volt" size={14} /> {o.estado === 'received' || o.estado === 'diagnosing' ? 'Diagnosticar' : 'Detalle'}</button>
                 </div>
               </div>

@@ -2,6 +2,12 @@ import { useParams, Link } from 'react-router-dom';
 import { useStore } from '../store/store';
 import { EstadoPill, ProgressTracker, Icon, fmtFecha, fmtDate, Timeline } from '../components/ui';
 
+function fmtCodigo(codigo) {
+  const d = String(codigo || '').replace(/\D/g, '');
+  if (!d) return '';
+  return d.match(/.{1,4}/g).join('-');
+}
+
 export default function Tracker() {
   const { orden_id } = useParams();
   const data = useStore((s) => s.data);
@@ -37,6 +43,11 @@ export default function Tracker() {
               {bateria ? `${bateria.tipo} · ${bateria.voltaje} · ${bateria.capacidad}Ah · ${bateria.equipo}` : 'Tipo de equipo no especificado'}
             </div>
             {cliente && <div className="muted" style={{ fontSize: 12.5 }}>Cliente: {cliente.nombre}</div>}
+            {orden.codigo && (
+              <div className="chip" style={{ marginTop: 6, background: 'var(--amber-bg)', color: 'var(--amber)', border: '1px solid rgba(255,176,32,0.4)' }}>
+                <Icon name="clipboard" size={12} /> Código de seguimiento: <span className="mono">{fmtCodigo(orden.codigo)}</span>
+              </div>
+            )}
           </div>
           <EstadoPill estado={orden.estado} />
         </div>

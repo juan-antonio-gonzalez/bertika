@@ -36,6 +36,10 @@ const S = {
   info: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>,
   refresh: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>,
   building: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="2" width="16" height="20" rx="2" /><path d="M9 22v-4h6v4" /><path d="M8 6h.01M12 6h.01M16 6h.01M8 10h.01M12 10h.01M16 10h.01M8 14h.01M12 14h.01M16 14h.01" /></svg>,
+  calculator: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="2" width="16" height="20" rx="2" /><line x1="8" y1="6" x2="16" y2="6" /><line x1="16" y1="14" x2="16" y2="18" /><path d="M8 14h.01M12 14h.01M8 18h.01M12 18h.01" /></svg>,
+  mail: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2" /><polyline points="22,6 12,13 2,6" /></svg>,
+  dollar: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="6" x2="12" y2="18" /><line x1="6" y1="12" x2="18" y2="12" /></svg>,
+  bell: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>,
 };
 
 export const Icon = ({ name, size = 16, style }) => (
@@ -256,7 +260,7 @@ export function OrdenCard({ orden, onOpen }) {
         <span>Ingreso: {fmtDate(orden.fecha_ingreso)}</span>
       </div>
       <div className="foot">
-        {orden.cotizacion?.monto ? <span className="monto">${orden.cotizacion.monto.toLocaleString('es-MX')} MXN</span> : <span />}
+        {orden.cotizacion?.monto ? <span className="monto">{fmtMXN(orden.cotizacion.monto)}</span> : <span />}
         <span className="muted" style={{ fontSize: 11 }}>{fmtTiempo(orden.fecha_ingreso)}</span>
       </div>
     </div>
@@ -273,12 +277,12 @@ export function fmtDate(isoStr) {
   const d = new Date(isoStr);
   const today = new Date();
   const same = d.toDateString() === today.toDateString();
-  return (same ? 'Hoy ' : '') + d.toLocaleString('es-MX', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+  return (same ? 'Hoy ' : '') + d.toLocaleString('es-AR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
 }
 
 export function fmtFecha(isoStr) {
   if (!isoStr) return '—';
-  return new Date(isoStr).toLocaleString('es-MX', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return new Date(isoStr).toLocaleString('es-AR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
 export function fmtTiempo(isoStr) {
@@ -292,8 +296,10 @@ export function fmtTiempo(isoStr) {
 }
 
 export function fmtMXN(n) {
-  return '$' + Number(n || 0).toLocaleString('es-MX');
+  return (Number(n) || 0).toLocaleString('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 });
 }
+
+export const fmtARS = fmtMXN;
 
 export function estLabel(key) {
   return ESTADO_LABEL[key] || key;

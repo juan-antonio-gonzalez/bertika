@@ -66,7 +66,7 @@ function Dashboard() {
       <div className="grid4">
         <div className="kpi"><div className="kpi-label">Baterias activas en taller</div><div className="kpi-value">{activas.length}</div><div className="kpi-sub">{bateriasActivas.length} registradas en total</div></div>
         <div className="kpi"><div className="kpi-label">Ordenes cerradas hoy</div><div className="kpi-value green">{cerradasHoy.length}</div><div className="kpi-sub">{pasadasHoy.length} entrega(s) pendiente(s) del dia</div></div>
-        <div className="kpi"><div className="kpi-label">Ingresos del dia</div><div className="kpi-value">{fmtMXN(ingresosHoy)}</div><div className="kpi-sub">MXN facturados hoy</div></div>
+        <div className="kpi"><div className="kpi-label">Ingresos del dia</div><div className="kpi-value">{fmtMXN(ingresosHoy)}</div><div className="kpi-sub">facturados hoy</div></div>
         <div className={`kpi ${stockCritico.length ? 'alert' : ''}`}><div className="kpi-label">Stock bajo (critico &lt; 3)</div><div className="kpi-value">{stockCritico.length}</div><div className="kpi-sub">cargadores y celdas con atencion</div></div>
         <div className={`kpi ${reproceso.length ? 'danger' : ''}`}><div className="kpi-label">Prueba fallida (reproceso)</div><div className="kpi-value">{reproceso.length}</div><div className="kpi-sub">regresadas a reparacion</div></div>
         <div className="kpi"><div className="kpi-label">Garantias por vencer (30 dias)</div><div className="kpi-value">{gPorVencer.length}</div><div className="kpi-sub">{garantiaTip} baterias bajo garantia activa</div></div>

@@ -47,7 +47,7 @@ function TrackerPanel({ orden, onVer }) {
               <b style={{ fontSize: 14 }}><Icon name="clipboard" size={14} /> Cotizacion por aprobar</b>
               <div className="muted" style={{ fontSize: 12.5 }}>El taller espera tu aprobacion para iniciar.</div>
             </div>
-            <b style={{ fontSize: 20, color: 'var(--amber)' }}>{fmtMXN(orden.cotizacion?.monto)} MXN</b>
+            <b style={{ fontSize: 20, color: 'var(--amber)' }}>{fmtMXN(orden.cotizacion?.monto)}</b>
           </div>
           <div className="grid2 mt16">
             <button className="btn primary lg" onClick={() => onVer(orden)}><Icon name="check" size={15} /> Revisar y aprobar</button>
@@ -154,7 +154,7 @@ export default function Cliente() {
                   <b style={{ fontSize: 15 }}>{o.bateria_serie}</b>
                   <div className="muted" style={{ fontSize: 12.5 }}>{data.baterias.find((b) => b.numero_serie === o.bateria_serie)?.equipo}</div>
                 </div>
-                <b style={{ fontSize: 22, color: 'var(--amber)' }}>{fmtMXN(o.cotizacion?.monto)} MXN</b>
+                <b style={{ fontSize: 22, color: 'var(--amber)' }}>{fmtMXN(o.cotizacion?.monto)}</b>
               </div>
               <ul className="ulist mt8">
                 {(o.cotizacion?.servicios_costos || []).map((s, i) => <li key={i}><span>{s.nombre}</span><span className="mono">{fmtMXN(s.monto)}</span></li>)}
