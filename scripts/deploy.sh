@@ -13,6 +13,21 @@ SSH_ARGS="-i $SSH_KEY -o StrictHostKeyChecking=yes"
 echo "== Build frontend =="
 npm run build
 
+# Guard anti-regresion: NO subir contenido stale (demo vieja "Vertika")
+# ni pushear un dist que no lleve la marca Bertika. Si algo de esto
+# apareciera, el deploy se aborta ANTES de tocar la VPS.
+echo "== Guard: contenido a desplegar =="
+if grep -rli 'vertika' dist/ >/dev/null 2>&1; then
+  echo "ERROR: dist/ contiene 'Vertika' (contenido viejo/demo). Abortando deploy."
+  echo "Corre 'bash scripts/checkpoint.sh' para snapshoteer y reconstrui el fuente."
+  exit 1
+fi
+if ! grep -qi 'bertika' dist/index.html 2>/dev/null; then
+  echo "ERROR: dist/index.html no contiene la marca Bertika. Abortando deploy."
+  exit 1
+fi
+echo "OK: dist sin 'Vertika' y con marca Bertika."
+
 # Excluye de TODO lo que sube: documentacion, readmes, archivos de sistema y basura.
 # La VPS solo recibe codigo: NUNCA readme/*.md/instructivos/PROMPT/docs.
 EXCLUDE_DOCS=(--exclude '*.md' --exclude '*.pdf' --exclude 'readme*' --exclude 'README*' --exclude docs --exclude 'PROMPT*' --exclude 'INSTRUCTIVO*' --exclude '.DS_Store')

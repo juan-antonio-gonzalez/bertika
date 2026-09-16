@@ -9,12 +9,14 @@
 - Los archivos bajo control de git y los que no lo están conviven: este repo tiene mucha lógica SIN commitear. Tratar cada archivo como irremplazable.
 
 ## Checkpoints (recomendado antes de cada tarea grande y antes de cada deploy)
-1. `git add -A && git commit -m "checkpoint: <descripcion>"` (solo local, nunca push salvo pedido).
+1. `bash scripts/checkpoint.sh "descripcion"` → commitea TODO (tracked + untracked) en 1 comando, local, sin push.
 2. Si el usuario no quiere commits: crear un zip de respaldo `backups/<fecha>.zip` de la carpeta fuente.
+3. Tras terminar un hito: SEGUIR commiteando (`checkpoint.sh` o `git commit`) para que el trabajo nunca quede solo en el working tree.
 
 ## Deploy
 - Usar `bash scripts/deploy.sh`. El deploy NUNCA debe incluir `*.md`, `docs`, `PROMPT*`, `INSTRUCTIVO*`, `readme*`, `.env`, claves ni secretos.
-- No revelar secretos en logs ni mensajes.
+- `deploy.sh` aborta solo si el dist contiene "Vertika" o no lleva la marca Bertika (guard anti-regresion). No deshabilitar ese guard.
+- No revelar secretos en logs ni mensajes. Los secretos viven en el Llavero de macOS (service `bertika`) y en `/etc/bertika/bertika-api.env` de la VPS, nunca en el repo.
 
 ## Contacto / datos reales
 - Datos de contacto centralizados en `src/data/siteData.js` (no hardcodear).
