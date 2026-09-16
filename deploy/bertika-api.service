@@ -1,0 +1,20 @@
+# Bertika API - unidad de systemd (produccion)
+# Instalar:  cp deploy/bertika-api.service /etc/systemd/system/bertika-api.service
+# Habilitar: systemctl daemon-reload && systemctl enable --now bertika-api
+[Unit]
+Description=Bertika API (Express + PostgreSQL)
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+WorkingDirectory=/var/www/bertika/api
+EnvironmentFile=/etc/bertika/bertika-api.env
+ExecStart=/usr/bin/node server.js
+Restart=always
+RestartSec=3
+User=root
+Group=root
+
+[Install]
+WantedBy=multi-user.target

@@ -180,7 +180,7 @@ export function Shell() {
         <Link to="/" className="brand">
           <span className="logo"><Icon name="bolt" size={20} /></span>
           <span>
-            Vertika
+            Bertika
             <small>Energia bajo control</small>
           </span>
         </Link>

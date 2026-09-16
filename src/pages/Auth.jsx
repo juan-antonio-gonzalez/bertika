@@ -17,7 +17,7 @@ export default function Auth() {
   return (
     <div className="wrap page">
       <div className="center mb24">
-        <h1 className="page-title" style={{ fontSize: 30 }}>Acceso a Vertika</h1>
+        <h1 className="page-title" style={{ fontSize: 30 }}>Acceso a Bertika</h1>
         <p className="page-sub">Demo con login simulado. Elige un rol para explorar la plataforma.</p>
         <div className="row" style={{ justifyContent: 'center', marginTop: 12 }}>
           <Link to="/" className="btn sm"><Icon name="home" size={13} /> Volver a la landing</Link>

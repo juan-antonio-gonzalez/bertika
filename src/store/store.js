@@ -523,7 +523,7 @@ export const useStore = create()(
       },
     }),
     {
-      name: 'vertika-db',
+      name: 'bertika-db',
       partialize: (s) => ({ version: s.version, data: s.data, user: s.user }),
       onRehydrateStorage: () => (state) => {
         if (state && state.version !== SEED_VERSION) {
