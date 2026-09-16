@@ -32,7 +32,14 @@ export const useStore = create()(
       version: SEED_VERSION,
       data: seedData(),
       user: null,
+      ready: false,
       toast: null,
+
+      boot() {
+        // En modo demo la plataforma se alimenta del seed local; el backend
+        // publico (seguimiento, codigos, cotizaciones) se consume via api.
+        set({ ready: true });
+      },
 
       login(rol, id) {
         const { tecnicos, clientes } = get().data;

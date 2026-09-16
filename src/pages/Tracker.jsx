@@ -1,5 +1,7 @@
+import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useStore } from '../store/store';
+import { api } from '../store/api';
 import { EstadoPill, ProgressTracker, Icon, fmtFecha, fmtDate, Timeline } from '../components/ui';
 
 function fmtCodigo(codigo) {
@@ -11,18 +13,31 @@ function fmtCodigo(codigo) {
 export default function Tracker() {
   const { orden_id } = useParams();
   const data = useStore((s) => s.data);
-  const orden = data.ordenes.find((o) => o.id === orden_id);
+  const [apiOrden, setApiOrden] = useState(null);
+  const [noEncontrada, setNoEncontrada] = useState(false);
+  const local = data.ordenes.find((o) => o.id === orden_id);
+  const orden = apiOrden ?? local;
+
+  useEffect(() => {
+    if (local) return;
+    setNoEncontrada(false);
+    setApiOrden(null);
+    api(`/public/ordenes/${encodeURIComponent(orden_id)}`)
+      .then(setApiOrden)
+      .catch(() => setNoEncontrada(true));
+  }, [orden_id, local]);
+
   if (!orden) {
     return (
       <div className="wrap page center">
-        <div className="empty"><div className="big"><Icon name="battery" size={40} /></div>Orden no encontrada.</div>
+        <div className="empty"><div className="big"><Icon name="battery" size={40} /></div>{noEncontrada ? 'Orden no encontrada.' : 'Cargando...'}</div>
         <Link to="/" className="btn">Volver al inicio</Link>
       </div>
     );
   }
-  const bateria = data.baterias.find((b) => b.numero_serie === orden.bateria_serie);
-  const cliente = data.clientes.find((c) => c.id === orden.cliente_id);
-  const ultimoEv = orden.eventos[orden.eventos.length - 1];
+  const bateria = orden.bateria || data.baterias.find((b) => b.numero_serie === orden.bateria_serie);
+  const cliente = orden.cliente ? { nombre: orden.cliente } : data.clientes.find((c) => c.id === orden.cliente_id);
+  const ultimoEv = Array.isArray(orden.eventos) ? orden.eventos[orden.eventos.length - 1] : null;
 
   return (
     <div className="wrap page">
