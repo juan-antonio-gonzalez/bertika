@@ -367,19 +367,19 @@ select.input option { background: var(--bg-3); }
 
 /* ---------- auth wrap (contacto / cotizador) ---------- */
 .auth-wrap { display: grid; grid-template-columns: 1.05fr 1fr; gap: 0; background: var(--bg-2); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; margin: 30px auto; max-width: 1080px; box-shadow: var(--shadow); }
-.auth-brand { background: linear-gradient(160deg, #eef2f8, #e3e9f3); color: var(--text); padding: 34px; }
+.auth-brand { background: linear-gradient(160deg, #0a1740, #12307a); color: #fff; padding: 34px; }
 .auth-logo { display: flex; gap: 10px; align-items: center; font-size: 26px; font-weight: 800; }
 .auth-logo-box { width: 50px; height: 50px; border-radius: 12px; background: linear-gradient(135deg, var(--amber), var(--orange)); color: #0a1740; display: grid; place-items: center; }
-.auth-tag { color: var(--muted); margin-top: 6px; font-size: 13px; letter-spacing: 0.5px; }
+.auth-tag { color: rgba(255, 255, 255, 0.7); margin-top: 6px; font-size: 13px; letter-spacing: 0.5px; }
 .auth-mid { margin-top: 26px; }
 .auth-mid h2 { margin: 0; font-size: 21px; }
-.auth-brand-lead { color: var(--muted); line-height: 1.7; font-size: 13.5px; margin: 10px 0 20px; }
+.auth-brand-lead { color: rgba(255, 255, 255, 0.76); line-height: 1.7; font-size: 13.5px; margin: 10px 0 20px; }
 .auth-contact { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
-.auth-contact li { display: flex; gap: 10px; font-size: 13px; color: var(--text); align-items: flex-start; }
-.auth-contact .fi { width: 30px; height: 30px; border-radius: 50%; background: var(--amber-bg); display: grid; place-items: center; color: var(--amber); flex-shrink: 0; margin-top: 1px; }
-.auth-contact .lbl { display: block; font-size: 10.5px; letter-spacing: 0.4px; text-transform: uppercase; color: var(--muted); margin-bottom: 2px; }
-.auth-contact a { color: var(--amber-d); font-weight: 700; }
-.auth-amsa { margin-top: 26px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 14px; }
+.auth-contact li { display: flex; gap: 10px; font-size: 13px; color: rgba(255, 255, 255, 0.92); align-items: flex-start; }
+.auth-contact .fi { width: 30px; height: 30px; border-radius: 50%; background: rgba(255, 255, 255, 0.1); display: grid; place-items: center; color: var(--amber); flex-shrink: 0; margin-top: 1px; }
+.auth-contact .lbl { display: block; font-size: 10.5px; letter-spacing: 0.4px; text-transform: uppercase; color: rgba(255, 255, 255, 0.55); margin-bottom: 2px; }
+.auth-contact a { color: var(--amber); font-weight: 700; }
+.auth-amsa { margin-top: 26px; font-size: 12px; color: rgba(255, 255, 255, 0.72); border-top: 1px solid rgba(255, 255, 255, 0.15); padding-top: 14px; }
 .auth-form-side { padding: 34px; }
 .auth-card { background: var(--bg-3); border: 1px solid var(--line); border-radius: 14px; padding: 22px; }
 .auth-card .input, .auth-card select.input { background: #fff; }
