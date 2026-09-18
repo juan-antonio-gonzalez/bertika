@@ -77,7 +77,7 @@ export default function Landing() {
       </section>
 
       {/* Productos */}
-      <section className="sec sec-alt">
+      <section className="sec sec-alt page-light">
         <div className="wrap">
           <h2 className="sec-title" style={{ textAlign: 'center' }}>Nuestras líneas de productos</h2>
           <p className="sec-sub" style={{ textAlign: 'center', maxWidth: 640, margin: '0 auto 26px' }}>
