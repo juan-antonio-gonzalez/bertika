@@ -188,7 +188,7 @@ export default function Contacto() {
                 </select>
               </div>
               {esReparacion && (
-                <div className="field" style={{ marginBottom: 16 }}>
+                <div className="field">
                   <label>Número de serie de la batería *</label>
                   <input className="input" name="serie" value={form.serie} onChange={onChange} placeholder="Ej: BAT-TRC-001" />
                   <small className="muted">Al enviar te daremos tu código de 16 dígitos para el seguimiento.</small>
