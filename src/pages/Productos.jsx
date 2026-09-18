@@ -11,7 +11,7 @@ export default function Productos() {
   }, [location.hash]);
 
   return (
-    <>
+    <div className="page-light">
       <section className="page-hero">
         <div className="page-hero-bg">
           <img src="/img/slide00-drop.jpg" alt="" />
@@ -47,6 +47,6 @@ export default function Productos() {
           </div>
         </div>
       </section>
-    </>
+    </div>
   );
 }

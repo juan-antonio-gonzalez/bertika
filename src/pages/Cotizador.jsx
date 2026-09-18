@@ -45,7 +45,7 @@ export default function Cotizador() {
   const toggleExtra = (id) => setExtrasSel((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
 
   return (
-    <>
+    <div className="page-light">
       <section className="page-hero">
         <div className="page-hero-bg"><img src="/img/slide00-drop.jpg" alt="" /></div>
         <div className="wrap">
@@ -256,7 +256,7 @@ export default function Cotizador() {
           </div>
         </div>
       </section>
-    </>
+    </div>
   );
 }
 

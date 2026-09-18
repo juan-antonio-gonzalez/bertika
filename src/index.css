@@ -435,6 +435,37 @@ select.input option { background: var(--bg-3); }
   .chat-panel { width: calc(100vw - 28px); height: 58vh; }
 }
 
+/* ---------- tema claro reutilizable (cotizador, productos) ---------- */
+.page-light {
+  --bg: #f4f6fa;
+  --bg-2: #ffffff;
+  --bg-3: #f5f7fb;
+  --line: #e2e6ee;
+  --line-soft: #edf0f5;
+  --text: #1f2733;
+  --muted: #5b6472;
+  --green: #128a4b;
+  --blue: #1d6fd0;
+  --orange: #c25a00;
+  --shadow: 0 10px 30px rgba(18, 42, 76, 0.1);
+  background: var(--bg);
+  color: var(--text);
+}
+.page-light .sec { background: var(--bg); }
+.page-light .card,
+.page-light .kpi,
+.page-light .service-card,
+.page-light .auth-card { background: #fff; }
+.page-light .input,
+.page-light select.input { background: #fff; }
+.page-light select.input option { background: #fff; color: var(--text); }
+.page-light .btn:not(.primary):hover { background: rgba(18, 42, 76, 0.06); border-color: #b8790a; color: #b8790a; }
+.page-light .banner-info { background: #eaf3ff; border-color: #bcd9ff; color: var(--blue); }
+.page-light .banner-cambio,
+.page-light .banner-warn { background: #fff7e0; border-color: #ffd980; color: #8c6a08; }
+.page-light .hr-red { background: #d7dce5; }
+.page-light .tbl tbody tr:hover { background: var(--bg-3); }
+
 /* ---------- etiqueta para impresion ---------- */
 .print-label { display: none; }
 @media print {
