@@ -24,7 +24,7 @@ export default function Contacto() {
   const [searchParams] = useSearchParams();
   const [enviando, setEnviando] = useState(false);
   const [entregado, setEntregado] = useState(null);
-  const [form, setForm] = useState({ nombre: '', empresa: '', email: '', telefono: '', asunto: '', serie: '', mensaje: '' });
+  const [form, setForm] = useState({ nombre: '', empresa: '', email: '', telefono: '', asunto: '', serie: '', mensaje: '', website: '' });
 
   useEffect(() => {
     const asunto = searchParams.get('asunto');
@@ -42,7 +42,7 @@ export default function Contacto() {
   const esReparacion = form.asunto === 'Servicio de reparación';
 
   const limpiar = () => {
-    setForm({ nombre: '', empresa: '', email: '', telefono: '', asunto: '', serie: '', mensaje: '' });
+    setForm({ nombre: '', empresa: '', email: '', telefono: '', asunto: '', serie: '', mensaje: '', website: '' });
     formRef.current?.reset();
   };
 
@@ -63,7 +63,7 @@ export default function Contacto() {
         body: {
           nombre: form.nombre, empresa: form.empresa, email: form.email,
           telefono: form.telefono, asunto: form.asunto,
-          serie: form.serie.trim(), mensaje: form.mensaje,
+          serie: form.serie.trim(), mensaje: form.mensaje, website: form.website,
         },
       });
       if (esReparacion && res?.codigo) setEntregado(res.codigo);
@@ -198,6 +198,16 @@ export default function Contacto() {
                 <label>Mensaje *</label>
                 <textarea className="input" name="mensaje" value={form.mensaje} onChange={onChange} placeholder="Contanos qué necesitás..." />
               </div>
+              <input
+                type="text"
+                name="website"
+                value={form.website}
+                onChange={onChange}
+                tabIndex={-1}
+                autoComplete="off"
+                aria-hidden="true"
+                style={{ position: 'absolute', left: '-9999px', width: 1, height: 1, opacity: 0 }}
+              />
               <button className="btn primary lg block auth-submit" disabled={enviando}>
                 <Icon name="check" size={16} /> {enviando ? 'Enviando...' : 'Enviar mensaje'}
               </button>

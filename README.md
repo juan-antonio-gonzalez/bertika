@@ -1,8 +1,8 @@
-# Vertika - Sistema de Gestion para Talleres de Baterias Industriales
+# Bertika - Sistema de Gestion para Talleres de Baterias Industriales
 
-Aplicacion web navegable 100% frontend para gestionar el ciclo completo de una bateria en el taller: recepcion, diagnostico, cotizacion, reparacion/reacondicionamiento, prueba de carga y entrega.
+Aplicacion web para gestionar el ciclo completo de una bateria en el taller: recepcion, diagnostico, cotizacion, reparacion/reacondicionamiento, prueba de carga y entrega.
 
-**Tagline:** `Vertika - Energia bajo control`
+**Tagline:** `Bertika - Energia bajo control`
 
 ## Como ejecutar
 
@@ -16,10 +16,22 @@ npm run lint     # oxlint
 
 ## Stack
 
-- Vite + React 19
-- Zustand (store global reactivo) con persistencia en `localStorage`
-- React Router (rutas SPA)
-- CSS propio (grafito + acero ambar), responsive mobile/desktop
+- Frontend: Vite + React 19, Zustand (store global reactivo) con persistencia en `localStorage`, React Router (rutas SPA), CSS propio.
+- Backend: Express + PostgreSQL en `api/` (auth JWT, RBAC, ordenes, insumos, bajas, uploads).
+- En desarrollo, Vite redirige `/api` y `/uploads` al backend en `http://127.0.0.1:3001`.
+- En produccion, nginx sirve el `dist/` y hace de proxy de `/api` hacia el servicio `bertika-api`.
+
+## Backend (api/)
+
+```bash
+cd api
+cp .env.example .env     # completar DATABASE_URL, JWT_SECRET, etc.
+npm install
+npm run seed             # carga datos demo (opcional)
+npm start                # http://127.0.0.1:3001
+```
+
+Nota: las paginas publicas (contacto, seguimiento, tracker, cotizacion) consumen la API real. Los paneles de plataforma (admin/tecnico/cliente) aun corren sobre el store local de demostracion.
 
 ## Rutas
 
@@ -42,7 +54,7 @@ Regla central de negocio: `testing -> in_repair` (si la prueba final falla, la b
 
 ## Datos demo
 
-Datos semilla precargados (5 tecnicos, 5 clientes, 9 baterias, 10+ insumos, 8 ordenes en distintos estados). Los cambios persisten en `localStorage` (`vertika-db`). Usa el boton **Restablecer demo** para volver al estado inicial.
+Datos semilla precargados (5 tecnicos, 5 clientes, 9 baterias, 10+ insumos, 8 ordenes en distintos estados). Los cambios persisten en `localStorage` (`bertika-db`). Usa el boton **Restablecer demo** para volver al estado inicial.
 
 ## Flujos de ejemplo
 

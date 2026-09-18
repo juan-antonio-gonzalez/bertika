@@ -1,4 +1,4 @@
-# Vertika · Manual de uso
+# Bertika · Manual de uso
 
 Sistema de gestion para taller de baterias industriales. Esta guia explica como
 ejecutar la aplicacion, entrar con cada rol y recorrer el flujo completo del taller.
@@ -191,7 +191,7 @@ Prueba con las ordenes de ejemplo: `ord_01` … `ord_08`.
 - **8 ordenes** en todos los estados (Recibida, Diagnostico, Cotizada, En reparacion, Prueba final, Lista, Entregadas).
 - **11 insumos** con stock inicial.
 
-> Los cambios que hagas se persisten en el navegador (localStorage, clave `vertika-db`).
+> Los cambios que hagas se persisten en el navegador (localStorage, clave `bertika-db`).
 > Usa **Restablecer demo** para volver al estado inicial cuando quieras.
 
 ---

@@ -8,9 +8,10 @@ import helmet from 'helmet';
 import multer from 'multer';
 import nodemailer from 'nodemailer';
 import bcrypt from 'bcryptjs';
+import rateLimit from 'express-rate-limit';
 import { query, one, tx } from './db.js';
 import { nextId } from './ids.js';
-import { signToken, authRequired, requireRol } from './middleware/auth.js';
+import { signToken, authRequired, requireRol, SECRET } from './middleware/auth.js';
 import { canTransition, ORDEN_ESTADOS, ESTADO_LABEL } from './reglas.js';
 import { generarCodigoUnico, digitar, formatearCodigo } from './codigo.js';
 
@@ -20,9 +21,40 @@ const PUBLIC_URL = process.env.PUBLIC_URL || 'http://localhost:5173';
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || PUBLIC_URL).split(',').map((s) => s.trim());
 
 const app = express();
+// Detras de nginx (1 proxy) req.ip debe ser la IP real del cliente para que
+// el rate limiting sea por usuario y no uno compartido para todo el sitio.
+app.set('trust proxy', 1);
 app.use(helmet());
 app.use(cors({ origin: ALLOWED_ORIGINS, credentials: true }));
 app.use(express.json({ limit: '2mb' }));
+
+// ---------- Rate limiting ----------
+// Login: contiene el brute-force de credenciales.
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'Demasiados intentos de login. Espera unos minutos y reintenta.' },
+});
+
+// Endpoints publicos: evitan abuso de consultas/seguimiento.
+const publicLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 60,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'Demasiadas consultas. Intenta de nuevo en unos minutos.' },
+});
+
+// Contacto: limite estricto (anti-spam de ordenes/correos).
+const contactoLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 5,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'Limite de envios alcanzado. Intenta de nuevo mas tarde.' },
+});
 
 export { PUBLIC_URL };
 
@@ -109,9 +141,21 @@ function puedeEscribirOrden(req, orden) {
   return false;
 }
 
+// Filtro SQL para que cada usuario solo vea/opere sus propias notificaciones.
+function notifWhere(req) {
+  if (esAdmin(req)) return { clause: 'TRUE', params: [] };
+  if (esTecnico(req)) {
+    return { clause: 'EXISTS (SELECT 1 FROM ordenes o WHERE o.id = n.orden_id AND o.tecnico_id = $1)', params: [req.user.tecnico_id] };
+  }
+  if (esCliente(req)) {
+    return { clause: 'EXISTS (SELECT 1 FROM ordenes o WHERE o.id = n.orden_id AND o.cliente_id = $1)', params: [req.user.cliente_id] };
+  }
+  return { clause: 'FALSE', params: [] };
+}
+
 // Capacidad firmada para enlaces publicos de cotizacion (aprueba/rechaza/lee)
 function hornoSigCot(ordenId) {
-  return createHmac('sha256', process.env.JWT_SECRET || '').update(`cot:${ordenId}`).digest('hex');
+  return createHmac('sha256', SECRET).update(`cot:${ordenId}`).digest('hex');
 }
 function validarSigCot(ordenId, t) {
   if (!t) return false;
@@ -173,11 +217,11 @@ async function transition(cliente, orden, target, detalle) {
 }
 
 // ---------- Auth ----------
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', loginLimiter, async (req, res) => {
   const { email, password } = req.body || {};
   if (!email || !password) return res.status(400).json({ error: 'Faltan email y password' });
   const u = await one('SELECT * FROM usuarios WHERE email = $1 AND activo = true', [String(email).toLowerCase().trim()]);
-  if (!u || !bcrypt.compareSync(String(password), u.password_hash)) {
+  if (!u || !(await bcrypt.compare(String(password), u.password_hash))) {
     return res.status(401).json({ error: 'Credenciales invalidas' });
   }
   const token = signToken(u);
@@ -232,7 +276,7 @@ app.get('/api/ordenes/:id', authRequired, async (req, res) => {
 });
 
 // Publico: estadisticas de la landing (sin login)
-app.get('/api/public/stats', async (req, res) => {
+app.get('/api/public/stats', publicLimiter, async (req, res) => {
   const [clientes, baterias, activas, entregadas] = await Promise.all([
     query('SELECT COUNT(*) AS n FROM clientes'),
     query('SELECT COUNT(*) AS n FROM baterias'),
@@ -248,7 +292,7 @@ app.get('/api/public/stats', async (req, res) => {
 });
 
 // Publico: busqueda por id de orden, numero de serie o codigo de 16 digitos (sin login)
-app.get('/api/public/ordenes', async (req, res) => {
+app.get('/api/public/ordenes', publicLimiter, async (req, res) => {
   const { q } = req.query || {};
   const term = String(q || '').trim();
   if (!term) return res.status(400).json({ error: 'Falta el parametro q' });
@@ -265,7 +309,7 @@ app.get('/api/public/ordenes', async (req, res) => {
 
 // Publico: seguimiento / cotizacion publica (sin login). Se resuelve por id de
 // la orden o por el codigo de seguimiento de 16 digitos (con o sin guiones).
-app.get('/api/public/ordenes/:id', async (req, res) => {
+app.get('/api/public/ordenes/:id', publicLimiter, async (req, res) => {
   const param = String(req.params.id).trim();
   const dig = digitar(param);
   const o = dig.length === 16
@@ -288,7 +332,7 @@ app.get('/api/public/ordenes/:id', async (req, res) => {
   });
 });
 
-app.get('/api/public/cotizacion/:orden_id', async (req, res) => {
+app.get('/api/public/cotizacion/:orden_id', publicLimiter, async (req, res) => {
   if (!validarSigCot(req.params.orden_id, req.query.t || '')) {
     return res.status(403).json({ error: 'Acceso no autorizado: usa el enlace enviado por el taller.' });
   }
@@ -317,7 +361,7 @@ async function puedeDecidirCotizacion(req, orden) {
   return false;
 }
 
-app.post('/api/ordenes/:id/cotizacion/aprobar', async (req, res) => {
+app.post('/api/ordenes/:id/cotizacion/aprobar', publicLimiter, async (req, res) => {
   await tx(async (client) => {
     const o = await client.query('SELECT * FROM ordenes WHERE id = $1', [req.params.id]);
     const orden = o.rows[0];
@@ -329,7 +373,7 @@ app.post('/api/ordenes/:id/cotizacion/aprobar', async (req, res) => {
   return res.json({ ok: true });
 });
 
-app.post('/api/ordenes/:id/cotizacion/rechazar', async (req, res) => {
+app.post('/api/ordenes/:id/cotizacion/rechazar', publicLimiter, async (req, res) => {
   await tx(async (client) => {
     const o = await client.query('SELECT * FROM ordenes WHERE id = $1', [req.params.id]);
     const orden = o.rows[0];
@@ -605,12 +649,14 @@ app.post('/api/tecnicos', authRequired, requireRol('admin'), async (req, res) =>
 
 // ---------- Notificaciones ----------
 app.post('/api/notificaciones/leidas', authRequired, async (req, res) => {
-  await query('UPDATE notificaciones SET leida = true');
+  const { clause, params } = notifWhere(req);
+  await query(`UPDATE notificaciones n SET leida = true WHERE ${clause}`, params);
   return res.json({ ok: true });
 });
 
 app.delete('/api/notificaciones', authRequired, async (req, res) => {
-  await query('DELETE FROM notificaciones');
+  const { clause, params } = notifWhere(req);
+  await query(`DELETE FROM notificaciones n WHERE ${clause}`, params);
   return res.json({ ok: true });
 });
 
@@ -646,7 +692,7 @@ app.post('/api/usuarios', authRequired, requireRol('admin'), async (req, res) =>
   const id = await nextId('usr');
   await query(
     'INSERT INTO usuarios (id, email, password_hash, rol, tecnico_id, cliente_id, activo) VALUES ($1,$2,$3,$4,$5,$6,true)',
-    [id, email.toLowerCase().trim(), bcrypt.hashSync(String(password), 10), rol, tecnico_id || null, cliente_id || null]
+    [id, email.toLowerCase().trim(), await bcrypt.hash(String(password), 10), rol, tecnico_id || null, cliente_id || null]
   );
   return res.status(201).json({ id });
 });
@@ -660,7 +706,7 @@ app.patch('/api/usuarios/:id', authRequired, requireRol('admin'), async (req, re
   if (tecnico_id !== undefined) { params.push(tecnico_id ?? null); sets.push(`tecnico_id = $${params.length}`); }
   if (cliente_id !== undefined) { params.push(cliente_id ?? null); sets.push(`cliente_id = $${params.length}`); }
   if (activo !== undefined) { params.push(Boolean(activo)); sets.push(`activo = $${params.length}`); }
-  if (password) { params.push(bcrypt.hashSync(String(password), 10)); sets.push(`password_hash = $${params.length}`); }
+  if (password) { params.push(await bcrypt.hash(String(password), 10)); sets.push(`password_hash = $${params.length}`); }
   if (!sets.length) return res.status(400).json({ error: 'Sin campos para actualizar' });
   params.push(req.params.id);
   await query(`UPDATE usuarios SET ${sets.join(', ')} WHERE id = $${params.length}`, params);
@@ -681,8 +727,10 @@ app.post('/api/bajas/:id/reciclar', authRequired, requireRol('admin'), async (re
 app.get('/api/bajas', authRequired, requireRol('admin'), async (req, res) => res.json(await query('SELECT * FROM bajas ORDER BY fecha DESC')));
 
 // ---------- Contacto publico (crea orden si es reparacion + envia correo a ventas) ----------
-app.post('/api/public/contacto', async (req, res) => {
-  const { nombre, empresa, email, telefono, serie, asunto, mensaje } = req.body || {};
+app.post('/api/public/contacto', contactoLimiter, async (req, res) => {
+  const { nombre, empresa, email, telefono, serie, asunto, mensaje, website } = req.body || {};
+  // Honeypot: campo oculto que solo completan bots. Se descarta silenciosamente.
+  if (website) return res.status(201).json({ ok: true, emailEnviado: false, codigo: '' });
   if (!nombre || !email || !mensaje) {
     return res.status(400).json({ error: 'Faltan nombre, email y mensaje' });
   }

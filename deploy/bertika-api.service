@@ -9,6 +9,7 @@ Wants=postgresql.service
 [Service]
 Type=simple
 WorkingDirectory=/var/www/bertika/api
+Environment=NODE_ENV=production
 EnvironmentFile=/etc/bertika/bertika-api.env
 ExecStart=/usr/bin/node server.js
 Restart=always

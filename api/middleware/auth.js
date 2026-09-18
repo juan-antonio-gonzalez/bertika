@@ -1,8 +1,24 @@
 // Autenticacion JWT para la API.
 // expone req.user = { id, email, rol, tecnico_id, cliente_id }
+import { randomBytes } from 'node:crypto';
 import jwt from 'jsonwebtoken';
 
-const SECRET = process.env.JWT_SECRET;
+// En produccion JWT_SECRET debe estar definido (fail-fast al firmar si no).
+// En desarrollo sin .env se genera un secreto efimero: los tokens dejan de
+// validar tras reiniciar el proceso, pero nunca se firma con clave vacia.
+const ENV_SECRET = process.env.JWT_SECRET;
+
+// En produccion no se admite arrancar sin secreto: falla rapido y claro.
+if (!ENV_SECRET && process.env.NODE_ENV === 'production') {
+  throw new Error('JWT_SECRET no definido en produccion. Configuralo en /etc/bertika/bertika-api.env');
+}
+
+export const SECRET = ENV_SECRET
+  || randomBytes(32).toString('hex');
+
+if (!ENV_SECRET) {
+  console.warn('[auth] JWT_SECRET no definido: se usa un secreto efimero (solo para desarrollo local).');
+}
 
 export function signToken(user) {
   return jwt.sign(
