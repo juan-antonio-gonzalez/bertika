@@ -384,8 +384,8 @@ select.input option { background: var(--bg-3); }
 .auth-card { background: var(--bg-3); border: 1px solid var(--line); border-radius: 14px; padding: 22px; }
 .auth-card .input, .auth-card select.input { background: #fff; }
 .auth-card select.input option { background: #fff; color: var(--text); }
-.auth-card .field { gap: 8px; margin-bottom: 16px; }
-.auth-card .form-row { margin-bottom: 16px; }
+.auth-card .field { gap: 6px; margin-bottom: 12px; }
+.auth-card .form-row { margin-bottom: 12px; }
 .auth-card .card-title { margin-bottom: 6px; }
 .auth-card .card-sub { margin-bottom: 16px; }
 .auth-card-wide { width: 100%; }
