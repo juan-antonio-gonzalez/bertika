@@ -22,7 +22,7 @@ import {
 const SCHEMA_SQL = readFileSync(new URL('./schema.sql', import.meta.url), 'utf8')
 
 export async function seedDatabase() {
-  const hash = (p) => bcrypt.hashSync(p, 10);
+  const hash = (p) => bcrypt.hashSync(p, 12);
   await pool.query(SCHEMA_SQL);
 
   const client = await pool.connect();
@@ -108,13 +108,16 @@ export async function seedDatabase() {
     // e informan por consola para poder ingresar por primera vez.
     const randomPass = () =>
       randomBytes(12).toString('base64url').slice(0, 14) + 'K1!';
+    // Contrasenas >= 8 caracteres; las del .env demasiado cortas se descartan.
+    const envOK = (p) => p && p.length >= 8 && p.length <= 72;
     const demoUsers = [
-      { id: 'usr_admin', email: 'admin@bertika.com', rol: 'admin', env: process.env.DEMO_ADMIN_PASS },
-      { id: 'usr_tec01', email: 'tec01@bertika.com', rol: 'tecnico', tecnico_id: 'tec_01', env: process.env.DEMO_TEC01_PASS },
-      { id: 'usr_cli01', email: 'cli01@bertika.com', rol: 'cliente', cliente_id: 'cli_01', env: process.env.DEMO_CLI01_PASS },
+      { id: 'usr_admin', email: 'admin@bertika.com', rol: 'admin', env: envOK(process.env.DEMO_ADMIN_PASS) ? process.env.DEMO_ADMIN_PASS : undefined },
+      { id: 'usr_tec01', email: 'tec01@bertika.com', rol: 'tecnico', tecnico_id: 'tec_01', env: envOK(process.env.DEMO_TEC01_PASS) ? process.env.DEMO_TEC01_PASS : undefined },
+      { id: 'usr_cli01', email: 'cli01@bertika.com', rol: 'cliente', cliente_id: 'cli_01', env: envOK(process.env.DEMO_CLI01_PASS) ? process.env.DEMO_CLI01_PASS : undefined },
     ];
     const usuarios = demoUsers.map((u) => ({ ...u, pass: u.env || randomPass() }));
-    if (demoUsers.some((u) => !u.env)) {
+    const requierePrint = demoUsers.some((u) => !u.env) && process.env.NODE_ENV !== 'production';
+    if (requierePrint) {
       console.log('[seed] DEMO credenciales no configuradas en el .env. Se generaron:');
       for (const u of usuarios) if (!u.env) console.log(`[seed]   ${u.email} / ${u.pass}`);
       console.log('[seed] Defini DEMO_ADMIN_PASS, DEMO_TEC01_PASS y DEMO_CLI01_PASS para fijar las cuentas.');

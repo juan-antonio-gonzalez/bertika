@@ -1,99 +1,152 @@
 import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { Link, useNavigate, Navigate } from 'react-router-dom';
+import { Icon } from '../components/ui';
 import { useStore } from '../store/store';
-import { Icon, fmtMXN, ResetDemoBtn } from '../components/ui';
+import { CONTACTO } from '../data/siteData';
+
+const IcoMarker = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+    <circle cx="12" cy="10" r="3" />
+  </svg>
+);
+
+const IcoPhone = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z" />
+  </svg>
+);
 
 export default function Auth() {
   const navigate = useNavigate();
+  const user = useStore((s) => s.user);
   const login = useStore((s) => s.login);
-  const data = useStore((s) => s.data);
-  const [rol, setRol] = useState(null);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [ver, setVer] = useState(false);
+  const [enviando, setEnviando] = useState(false);
+  const [error, setError] = useState('');
 
-  const entrar = (r, id) => {
-    login(r, id);
-    navigate('/home');
+  const onSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    if (!email.trim() || !password) {
+      setError('Ingresá tu email y contraseña.');
+      return;
+    }
+    setEnviando(true);
+    try {
+      await login(email.trim(), password);
+      navigate('/home');
+    } catch (err) {
+      setError(err.message || 'No se pudo iniciar sesión. Verificá tus credenciales.');
+    } finally {
+      setEnviando(false);
+    }
   };
 
   return (
-    <div className="wrap page">
-      <div className="center mb24">
-        <h1 className="page-title" style={{ fontSize: 30 }}>Acceso a Bertika</h1>
-        <p className="page-sub">Demo con login simulado. Elige un rol para explorar la plataforma.</p>
-        <div className="row" style={{ justifyContent: 'center', marginTop: 12 }}>
-          <Link to="/" className="btn sm"><Icon name="home" size={13} /> Volver a la landing</Link>
-          <ResetDemoBtn compact />
-        </div>
-      </div>
-
-      <div className="login-grid" style={{ marginTop: 24 }}>
-        <div className="login-card" onClick={() => setRol('admin')}>
-          <div className="li" style={{ background: 'var(--amber-bg)', color: 'var(--amber)' }}><Icon name="gear" size={26} /></div>
-          <h4>Admin</h4>
-          <p>Operacion, kanban, inventario, flotillas, garantias y reportes.</p>
-        </div>
-        <div className="login-card" onClick={() => setRol('tecnico')}>
-          <div className="li" style={{ background: 'var(--blue-bg)', color: 'var(--blue)' }}><Icon name="tools" size={26} /></div>
-          <h4>Tecnico</h4>
-          <p>Diagnostico, reparacion, insumos y prueba final desde el piso del taller.</p>
-        </div>
-        <div className="login-card" onClick={() => setRol('cliente')}>
-          <div className="li" style={{ background: 'var(--green-bg)', color: 'var(--green)' }}><Icon name="user" size={26} /></div>
-          <h4>Cliente</h4>
-          <p>Seguimiento tipo paqueteria, cotizaciones, historial y garantia.</p>
-        </div>
-      </div>
-
-      {rol && (
-        <div className="card mt24" style={{ maxWidth: 640, marginLeft: 'auto', marginRight: 'auto' }}>
-          <div className="row between mb16">
-            <h3 className="card-title">
-              {rol === 'admin' && <><Icon name="gear" size={16} />Iniciar como Administrador</>}
-              {rol === 'tecnico' && <><Icon name="tools" size={16} />Selecciona el tecnico</>}
-              {rol === 'cliente' && <><Icon name="user" size={16} />Selecciona el cliente</>}
-            </h3>
-            <button className="btn sm ghost" onClick={() => setRol(null)}>Cancelar</button>
+    <div className="wrap page-wide">
+      {user && <Navigate to="/home" replace />}
+      <div className="auth-wrap">
+        <div className="auth-brand">
+          <div>
+            <div className="auth-logo">
+              <span className="auth-logo-box"><Icon name="bolt" size={22} /></span>
+              <span>BERTIKA<sup style={{ fontSize: 10 }}>®</sup></span>
+            </div>
+            <div className="auth-tag">Plataforma de clientes del taller</div>
           </div>
 
-          {rol === 'admin' && (
-            <button
-              className="btn primary lg block"
-              onClick={() => entrar('admin', 'admin')}
-            >
-              <Icon name="bolt" size={16} /> Entrar como Administrador del taller
-            </button>
-          )}
+          <div className="auth-mid">
+            <h2>Acceso seguro</h2>
+            <p className="auth-brand-lead">
+              Seguimiento en tiempo real de tus baterías en reparación, cotizaciones para
+              aprobar, historial, garantías y reportes. Cada cuenta tiene permisos según su
+              rol: administrador, técnico o cliente.
+            </p>
+            <ul className="auth-contact">
+              <li>
+                <span className="fi"><IcoMarker /></span>
+                <span><span className="lbl">Ubicación</span>{CONTACTO.direccion}</span>
+              </li>
+              <li>
+                <span className="fi"><IcoPhone /></span>
+                <span><span className="lbl">Ventas (tel/WhatsApp)</span><a href={CONTACTO.telHref} target="_blank" rel="noopener noreferrer">{CONTACTO.telefono}</a></span>
+              </li>
+              <li>
+                <span className="fi"><Icon name="tools" size={13} /></span>
+                <span><span className="lbl">Soporte técnico</span><a href={CONTACTO.telHrefSoporte} target="_blank" rel="noopener noreferrer">{CONTACTO.telefonoSoporte}</a></span>
+              </li>
+              <li>
+                <span className="fi"><Icon name="mail" size={13} /></span>
+                <span><span className="lbl">Soporte técnico</span><a href={`mailto:${CONTACTO.emailSoporte}`}>{CONTACTO.emailSoporte}</a></span>
+              </li>
+            </ul>
+          </div>
 
-          {rol === 'tecnico' && (
-            <div className="col">
-              {data.tecnicos.filter((t) => t.activo).map((t) => (
-                <button key={t.id} className="btn block" style={{ justifyContent: 'space-between', padding: '12px 16px' }} onClick={() => entrar('tecnico', t.id)}>
-                  <span className="row"><Icon name="tools" size={15} /> {t.nombre}</span>
-                  <span className="badge blue">{t.especialidad}</span>
-                </button>
-              ))}
-            </div>
-          )}
-
-          {rol === 'cliente' && (
-            <div className="col">
-              {data.clientes.map((c) => (
-                <button key={c.id} className="btn block" style={{ justifyContent: 'space-between', padding: '12px 16px' }} onClick={() => entrar('cliente', c.id)}>
-                  <span className="row">
-                    <Icon name={c.tipo === 'flotilla_corporativa' ? 'building' : 'user'} size={15} />
-                    {c.nombre}
-                  </span>
-                  <span className="badge gray">{c.tipo === 'flotilla_corporativa' ? 'Flotilla corporativa' : 'Particular'}</span>
-                </button>
-              ))}
-            </div>
-          )}
-
-          <p className="muted mt16" style={{ fontSize: 12.5 }}>
-            Datos de ejemplo: {data.ordenes.filter((o) => o.estado !== 'delivered' && o.estado !== 'cancelled').length} ordenes activas ·
-            Inventario actual ${fmtMXN(data.insumos.reduce((a, i) => a + i.stock * i.precio, 0))}
-          </p>
+          <div className="auth-amsa">Representante oficial de <b>AMSA Forbat</b></div>
         </div>
-      )}
+
+        <div className="auth-form-side">
+          <div className="auth-card auth-card-wide">
+            <h2>Iniciar sesión</h2>
+            <p className="auth-sub">
+              Usá el email y la contraseña que te entregó el taller para acceder
+              a tu plataforma.
+            </p>
+
+            {error && (
+              <div className="banner-red" style={{ marginBottom: 16 }}>
+                <div><Icon name="x" size={15} /> {error}</div>
+              </div>
+            )}
+
+            <form onSubmit={onSubmit} noValidate>
+              <div className="field">
+                <label>Email *</label>
+                <input
+                  className="input"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="tu@email.com"
+                  autoComplete="username"
+                  disabled={enviando}
+                />
+              </div>
+              <div className="field">
+                <label>Contraseña *</label>
+                <div className="pass-wrap">
+                  <input
+                    className="input"
+                    type={ver ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Tu contraseña"
+                    autoComplete="current-password"
+                    disabled={enviando}
+                  />
+                  <button type="button" className="pass-eye" onClick={() => setVer((v) => !v)} title={ver ? 'Ocultar contraseña' : 'Mostrar contraseña'}>
+                    <Icon name={ver ? 'eye-off' : 'eye'} size={16} />
+                  </button>
+                </div>
+              </div>
+              <button className="btn primary lg block auth-submit" disabled={enviando}>
+                <Icon name="check" size={16} /> {enviando ? 'Ingresando...' : 'Ingresar a la plataforma'}
+              </button>
+            </form>
+
+            <div className="auth-foot">
+              <Link to="/" className="auth-back"><Icon name="home" size={13} /> Volver al sitio</Link>
+              <Link to="/seguimiento" className="auth-back"><Icon name="search" size={13} /> Hacer seguimiento</Link>
+              <a className="auth-back" href={`mailto:${CONTACTO.emailSoporte}?subject=${encodeURIComponent('No puedo ingresar a la plataforma')}`}>
+                <Icon name="mail" size={13} /> ¿Olvidaste la contraseña?
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

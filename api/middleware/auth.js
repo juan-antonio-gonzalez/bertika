@@ -24,7 +24,7 @@ export function signToken(user) {
   return jwt.sign(
     { sub: user.id, email: user.email, rol: user.rol, tecnico_id: user.tecnico_id, cliente_id: user.cliente_id },
     SECRET,
-    { expiresIn: '12h' }
+    { expiresIn: '12h', issuer: 'bertika-api', audience: 'bertika-web', algorithm: 'HS256' }
   );
 }
 
@@ -33,7 +33,7 @@ export function authRequired(req, res, next) {
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
   if (!token) return res.status(401).json({ error: 'Autenticacion requerida' });
   try {
-    const payload = jwt.verify(token, SECRET);
+    const payload = jwt.verify(token, SECRET, { issuer: 'bertika-api', audience: 'bertika-web', algorithms: ['HS256'] });
     req.user = payload;
     return next();
   } catch {

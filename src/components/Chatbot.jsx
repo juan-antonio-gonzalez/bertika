@@ -110,7 +110,7 @@ export default function Chatbot() {
               </span>
               <div>
                 <div className="chat-title">Asistente Bertika</div>
-                <div className="chat-status">Simulación de chat · demo</div>
+                <div className="chat-status">Respuesta automática · online</div>
               </div>
             </div>
             <button className="chat-close" onClick={() => setOpen(false)} aria-label="Cerrar chat">

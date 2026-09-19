@@ -23,6 +23,7 @@ import Seguimiento from './pages/Seguimiento';
 import Cotizador from './pages/Cotizador';
 import CotizacionPublica from './pages/CotizacionPublica';
 import Reportes from './pages/Reportes';
+import Usuarios from './pages/Usuarios';
 import WhatsAppFloat from './components/WhatsAppFloat';
 
 function Protected({ children }) {
@@ -105,7 +106,7 @@ export default function App() {
         <Route path="/plataforma" element={<PublicLayout><Plataforma /></PublicLayout>} />
 
         {/* Acceso */}
-        <Route path="/auth" element={<Auth />} />
+        <Route path="/auth" element={<PublicLayout><Auth /></PublicLayout>} />
 
         {/* Plataforma */}
         <Route path="/home" element={<AppLayout><Protected><Home /></Protected></AppLayout>} />
@@ -115,6 +116,7 @@ export default function App() {
         <Route path="/tracker/:orden_id" element={<AppLayout><Tracker /></AppLayout>} />
         <Route path="/settings" element={<AppLayout><Protected><Settings /></Protected></AppLayout>} />
         <Route path="/reportes" element={<AppLayout><RequireRol rol="admin"><Reportes /></RequireRol></AppLayout>} />
+        <Route path="/usuarios" element={<AppLayout><RequireRol rol="admin"><Usuarios /></RequireRol></AppLayout>} />
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { useStore, SEED_VERSION } from '../store/store';
+import { useStore } from '../store/store';
 import { ESTADO_LABEL, STATUS_STEP_INDEX, TRACKER_STEPS } from '../data/seed';
 
 /* ---------------- Icons (energy/electric themed) ---------------- */
@@ -40,6 +40,8 @@ const S = {
   mail: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2" /><polyline points="22,6 12,13 2,6" /></svg>,
   dollar: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="6" x2="12" y2="18" /><line x1="6" y1="12" x2="18" y2="12" /></svg>,
   bell: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>,
+  eye: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>,
+  'eye-off': <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" /><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" /><line x1="1" y1="1" x2="23" y2="23" /></svg>,
 };
 
 export const Icon = ({ name, size = 16, style }) => (
@@ -160,8 +162,6 @@ export function Toast() {
 export function Shell() {
   const user = useStore((s) => s.user);
   const logout = useStore((s) => s.logout);
-  const reset = useStore((s) => s.reset);
-  const toastShow = useStore((s) => s.toastShow);
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -169,12 +169,6 @@ export function Shell() {
   const onLanding = location.pathname === '/';
 
   if (isAuth) return null;
-
-  const resetDemo = () => {
-    reset();
-    toastShow('Demo restablecida al estado inicial', 'ok');
-    navigate('/');
-  };
 
   const dest = (rol) => ({ admin: '/hub', tecnico: '/tecnico', cliente: '/cliente' }[rol]);
 
@@ -199,9 +193,8 @@ export function Shell() {
               <Link to={dest(user.rol)} className={location.pathname.startsWith(dest(user.rol)) ? 'active' : ''}>
                 {user.rol === 'admin' ? 'Hub' : user.rol === 'tecnico' ? 'Operativo' : 'Mi espacio'}
               </Link>
-              {user.rol === 'admin' && <Link to="/hub" className={location.pathname === '/hub' ? 'active' : ''}>Panel</Link>}
+              {user.rol === 'admin' && <Link to="/usuarios" className={location.pathname === '/usuarios' ? 'active' : ''}><Icon name="users" size={14} />Usuarios</Link>}
               <Link to="/settings" className={location.pathname === '/settings' ? 'active' : ''}><Icon name="gear" size={14} />Ajustes</Link>
-              <button onClick={resetDemo} title="Restablecer datos demo (v{SEED_VERSION})"><Icon name="refresh" size={14} />Reset demo</button>
               <button onClick={() => { logout(); navigate('/'); }}><Icon name="logout" size={14} />Salir</button>
               <span className="userchip" style={{ marginLeft: 4 }}>
                 <span className="avatar">{user.nombre?.slice(0, 1) || 'U'}</span>
@@ -305,7 +298,7 @@ export function estLabel(key) {
   return ESTADO_LABEL[key] || key;
 }
 
-/* ---------------- Modal estado orden bonus: timeline ---------------- */
+/* ---------------- Timeline ---------------- */
 export function Timeline({ eventos }) {
   if (!eventos) return null;
   const tipos = {
@@ -330,22 +323,5 @@ export function Timeline({ eventos }) {
         );
       })}
     </div>
-  );
-}
-
-/* ---------------- Boton reset (standalone) ---------------- */
-export function ResetDemoBtn({ compact }) {
-  const reset = useStore((s) => s.reset);
-  const toastShow = useStore((s) => s.toastShow);
-  const navigate = useNavigate();
-  return (
-    <button
-      className={`btn danger sm ${compact ? '' : ''}`}
-      onClick={() => { reset(); toastShow('Demo restablecida', 'ok'); navigate('/'); }}
-      title={`Restablecer datos demo (v${SEED_VERSION})`}
-    >
-      <Icon name="refresh" size={13} />
-      Restablecer demo
-    </button>
   );
 }

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useStore } from '../store/store';
-import { Icon, EstadoPill, OrdenCard, fmtDate, fmtMXN, fmtFecha, ResetDemoBtn } from '../components/ui';
+import { Icon, EstadoPill, OrdenCard, fmtDate, fmtMXN, fmtFecha } from '../components/ui';
 import OrdenDetalle from '../components/OrdenDetalle';
 
 const ESTADOS = ['received', 'diagnosing', 'quoted', 'in_repair', 'testing', 'ready', 'delivered'];
@@ -437,7 +437,6 @@ export default function Hub() {
         </div>
         <div className="row">
           <button className="btn primary" onClick={() => setNueva(true)}><Icon name="plus" size={15} /> Nueva orden</button>
-          <ResetDemoBtn compact />
         </div>
       </div>
 

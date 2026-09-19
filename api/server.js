@@ -24,7 +24,8 @@ const app = express();
 // Detras de nginx (1 proxy) req.ip debe ser la IP real del cliente para que
 // el rate limiting sea por usuario y no uno compartido para todo el sitio.
 app.set('trust proxy', 1);
-app.use(helmet());
+app.use(helmet({ referrerPolicy: { policy: 'no-referrer' } }));
+app.disable('x-powered-by');
 app.use(cors({ origin: ALLOWED_ORIGINS, credentials: true }));
 app.use(express.json({ limit: '2mb' }));
 
@@ -61,6 +62,14 @@ export { PUBLIC_URL };
 // ---------- helpers ----------
 const fmtARS = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 });
 const nowIso = () => new Date().toISOString();
+
+// ---------- validacion de entrada (hardening) ----------
+const BCRYPT_ROUNDS = 12;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const limStr = (v, max = 200) => (typeof v === 'string' ? v.trim().slice(0, max).replace(/\u0000/g, '') : '');
+const validEmail = (e) => typeof e === 'string' && e.length <= 254 && EMAIL_RE.test(e);
+const validPassword = (p) => typeof p === 'string' && p.length >= 8 && p.length <= 72;
+const arrBounded = (v, max = 50) => Array.isArray(v) && v.length <= max;
 
 // ---------- Correo (consultas del sitio -> ventas) ----------
 const MAIL_TO = process.env.MAIL_TO || 'ventas@bertika.com';
@@ -219,7 +228,9 @@ async function transition(cliente, orden, target, detalle) {
 // ---------- Auth ----------
 app.post('/api/auth/login', loginLimiter, async (req, res) => {
   const { email, password } = req.body || {};
-  if (!email || !password) return res.status(400).json({ error: 'Faltan email y password' });
+  if (!validEmail(email) || !password || password.length > 128) {
+    return res.status(400).json({ error: 'Faltan email y password' });
+  }
   const u = await one('SELECT * FROM usuarios WHERE email = $1 AND activo = true', [String(email).toLowerCase().trim()]);
   if (!u || !(await bcrypt.compare(String(password), u.password_hash))) {
     return res.status(401).json({ error: 'Credenciales invalidas' });
@@ -358,6 +369,8 @@ app.get('/api/public/cotizacion/:orden_id', publicLimiter, async (req, res) => {
 async function puedeDecidirCotizacion(req, orden) {
   if (validarSigCot(orden.id, req.query.t || '')) return true;
   if (req.user?.rol === 'cliente' && orden.cliente_id === req.user.cliente_id) return true;
+  // Staff (admin/tecnico de la orden) tambien puede aprobar/rechazar desde el panel.
+  if (puedeEscribirOrden(req, orden)) return true;
   return false;
 }
 
@@ -387,19 +400,22 @@ app.post('/api/ordenes/:id/cotizacion/rechazar', publicLimiter, async (req, res)
 
 app.post('/api/ordenes', authRequired, requireRol('admin'), async (req, res) => {
   const { serie, tipo, voltaje, capacidad, aplicacion, marca, modelo, equipo, cliente_id, falla, tecnico_id } = req.body || {};
-  if (!serie || !cliente_id || !falla) {
+  const serieT = limStr(serie, 64);
+  const fallaT = limStr(falla, 500);
+  const clienteT = limStr(cliente_id, 32);
+  if (!serieT || !clienteT || !fallaT) {
     return res.status(400).json({ error: 'Faltan datos obligatorios (serie, cliente y falla)' });
   }
   const ordId = await tx(async (client) => {
-    let bat = (await client.query('SELECT * FROM baterias WHERE numero_serie = $1', [serie])).rows[0];
+    let bat = (await client.query('SELECT * FROM baterias WHERE numero_serie = $1', [serieT])).rows[0];
     if (!bat) {
       const batId = await nextId('bat');
       await client.query(
         `INSERT INTO baterias (id, numero_serie, tipo, voltaje, capacidad, aplicacion, marca, modelo, equipo, fecha_fabricacion, cliente_id, ciclos_estimados, estado_vida)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,300,'activa')`,
-        [batId, serie, tipo || 'Plomo-Acido', voltaje || '12V', Number(capacidad) || 60, aplicacion || 'Automotriz', marca || 'Generica', modelo || 'Estandar', equipo || serie, new Date().toISOString().slice(0, 10), cliente_id]
+        [batId, serieT, limStr(tipo, 40) || 'Plomo-Acido', limStr(voltaje, 12) || '12V', Number(capacidad) || 60, limStr(aplicacion, 40) || 'Automotriz', limStr(marca, 60) || 'Generica', limStr(modelo, 60) || 'Estandar', limStr(equipo, 120) || serieT, new Date().toISOString().slice(0, 10), clienteT]
       );
-      bat = { id: batId, numero_serie: serie };
+      bat = { id: batId, numero_serie: serieT };
     }
     const evId = await nextId('ev');
     const ordId = await nextId('ord');
@@ -411,9 +427,9 @@ app.post('/api/ordenes', authRequired, requireRol('admin'), async (req, res) => 
       `INSERT INTO ordenes (id, codigo_seguimiento, bateria_serie, cliente_id, tecnico_id, falla, motivo, estado, fecha_ingreso, hora_entrega, eventos, cotizacion, estado_cotizacion, insumos_utilizados, prueba_final, diagnostico)
        VALUES ($1,$2,$3,$4,$5,$6,$6,'received',$7,$8,$9::jsonb,NULL,NULL,'[]'::jsonb,'{"estado":"pending"}',NULL)`,
       [
-        ordId, codigo, serie, cliente_id, tecnico_id || null, falla,
+        ordId, codigo, serieT, clienteT, tecnico_id ? limStr(tecnico_id, 32) : null, fallaT,
         nowIso(), new Date(Date.now() + 24 * 3600000).toISOString(),
-        JSON.stringify([{ id: evId, tipo: 'ingreso', detalle: `Bateria ${serie} ingresada al taller. Falla reportada: ${falla}`, fecha: nowIso() }]),
+        JSON.stringify([{ id: evId, tipo: 'ingreso', detalle: `Bateria ${serieT} ingresada al taller. Falla reportada: ${fallaT}`, fecha: nowIso() }]),
       ]
     );
     return ordId;
@@ -439,21 +455,23 @@ app.patch('/api/ordenes/:id/tecnico', authRequired, requireRol('admin'), async (
 
 app.post('/api/ordenes/:id/diagnostico', authRequired, async (req, res) => {
   const { voltaje, resistencia, pruebaCarga, notas, servicioTipo, fotos } = req.body || {};
-  const detalle = `Diagnostico registrado: ${voltaje}V, RI ${resistencia} mOhm. Prueba: ${pruebaCarga === 'passed' ? 'aprobada' : 'fallida'}.${notas ? ` ${notas}` : ''}`;
+  const notasT = limStr(notas, 1000);
+  const servicioT = limStr(servicioTipo, 80);
+  const detalle = `Diagnostico registrado: ${limStr(voltaje, 12)}V, RI ${limStr(resistencia, 12)} mOhm. Prueba: ${pruebaCarga === 'passed' ? 'aprobada' : 'fallida'}.${notasT ? ` ${notasT}` : ''}`;
   await tx(async (client) => {
     const o = (await client.query('SELECT * FROM ordenes WHERE id = $1', [req.params.id])).rows[0];
     if (!o) throw { status: 404, message: 'Orden no encontrada' };
     if (!puedeEscribirOrden(req, o)) throw { status: 403, message: 'Sin permisos para esta orden' };
     await client.query(
       `UPDATE ordenes SET diagnostico = $2::jsonb, estado = CASE WHEN estado = 'received' THEN 'diagnosing' ELSE estado END WHERE id = $1`,
-      [o.id, JSON.stringify({ voltaje_medido: voltaje, resistencia_interna: resistencia, prueba_carga: pruebaCarga, notas: notas || '', servicioTipo: servicioTipo || '', fotos: fotos || [] })]
+      [o.id, JSON.stringify({ voltaje_medido: limStr(voltaje, 12), resistencia_interna: limStr(resistencia, 12), prueba_carga: ['passed', 'failed'].includes(pruebaCarga) ? pruebaCarga : 'pending', notas: notasT, servicioTipo: servicioT, fotos: arrBounded(fotos, 6) ? fotos.slice(0, 6) : [] })]
     );
     const updated = (await client.query('SELECT * FROM ordenes WHERE id = $1', [o.id])).rows[0];
     await pushEvento(client, o.id, 'diagnostico', detalle);
     if (updated.estado === 'received') {
       await transition(client, updated, 'diagnosing', 'Diagnostico iniciado por el tecnico.');
     }
-    await transition(client, { ...updated, estado: 'diagnosing' }, 'quoted', `Diagnostico completado. Cotizacion generada por ${servicioTipo || 'el servicio'}.`);
+    await transition(client, { ...updated, estado: 'diagnosing' }, 'quoted', `Diagnostico completado. Cotizacion generada por ${servicioT || 'el servicio'}.`);
   });
   await notificar(null, req.params.id, `Orden ${req.params.id}: diagnostico registrado y cotizacion generada. El cliente debe aprobarla.`, 'Email');
   return res.json({ ok: true });
@@ -461,20 +479,24 @@ app.post('/api/ordenes/:id/diagnostico', authRequired, async (req, res) => {
 
 app.post('/api/ordenes/:id/cotizacion', authRequired, async (req, res) => {
   const { monto, servicios, insumos } = req.body || {};
+  const montoN = Math.max(0, Math.min(Number(monto) || 0, 1e9));
+  if (!arrBounded(servicios) || !arrBounded(insumos)) {
+    return res.status(400).json({ error: 'Demasiados renglones en la cotizacion' });
+  }
   const orden = await one('SELECT * FROM ordenes WHERE id = $1', [req.params.id]);
   if (!orden) return res.status(404).json({ error: 'Orden no encontrada' });
   if (!puedeEscribirOrden(req, orden)) return res.status(403).json({ error: 'Sin permisos para esta orden' });
   await query(
     `UPDATE ordenes SET cotizacion = $2::jsonb, estado = 'quoted', estado_cotizacion = 'pending' WHERE id = $1`,
     [orden.id, JSON.stringify({
-      monto: Number(monto) || 0,
-      servicios_costos: (servicios || []).map((s) => ({ nombre: s.nombre, monto: Number(s.monto) || 0 })),
-      insumos: (insumos || []).map((i) => ({ nombre: i.nombre, cantidad: Number(i.cantidad) || 1, precio: Number(i.precio) || 0 })),
+      monto: montoN,
+      servicios_costos: (servicios || []).slice(0, 50).map((s) => ({ nombre: limStr(s.nombre, 120) || 'Servicio', monto: Math.max(0, Math.min(Number(s.monto) || 0, 1e9)) })),
+      insumos: (insumos || []).slice(0, 50).map((i) => ({ nombre: limStr(i.nombre, 120) || 'Insumo', cantidad: Math.max(0, Math.min(Number(i.cantidad) || 1, 1e4)), precio: Math.max(0, Math.min(Number(i.precio) || 0, 1e9)) })),
     })]
   );
   await tx(async (client) => {
     const o = (await client.query('SELECT * FROM ordenes WHERE id = $1', [req.params.id])).rows[0];
-    await pushEvento(client, o.id, 'cotizacion', `Cotizacion generada por ${fmtARS.format(Number(monto) || 0)}.`);
+    await pushEvento(client, o.id, 'cotizacion', `Cotizacion generada por ${fmtARS.format(montoN)}.`);
   });
   return res.json({ ok: true });
 });
@@ -592,10 +614,11 @@ app.post('/api/ordenes/:id/compartir', authRequired, async (req, res) => {
 // ---------- Insumos ----------
 app.post('/api/insumos', authRequired, requireRol('admin'), async (req, res) => {
   const { nombre, categoria, stock, precio } = req.body || {};
-  if (!nombre) return res.status(400).json({ error: 'Falta nombre' });
+  const nombreT = limStr(nombre, 120);
+  if (!nombreT) return res.status(400).json({ error: 'Falta nombre' });
   const id = await nextId('ins');
   await query('INSERT INTO insumos (id, nombre, categoria, stock, precio) VALUES ($1,$2,$3,$4,$5)', [
-    id, nombre, categoria || '', Number(stock) || 0, Number(precio) || 0,
+    id, nombreT, limStr(categoria, 60), Math.max(0, Math.min(Number(stock) || 0, 1000000)), Math.max(0, Math.min(Number(precio) || 0, 1e9)),
   ]);
   return res.status(201).json({ id });
 });
@@ -612,24 +635,28 @@ app.patch('/api/insumos/:id/stock', authRequired, requireRol('admin'), async (re
 // ---------- Clientes ----------
 app.get('/api/clientes', authRequired, requireRol('admin', 'tecnico'), async (req, res) => res.json(await query('SELECT * FROM clientes ORDER BY nombre')));
 
-app.post('/api/clientes', authRequired, async (req, res) => {
+app.post('/api/clientes', authRequired, requireRol('admin'), async (req, res) => {
   const { nombre, empresa, email, telefono } = req.body || {};
-  if (!nombre || !email) return res.status(400).json({ error: 'Faltan nombre y email' });
+  const nombreT = limStr(nombre, 120);
+  const emailT = String(email || '').trim();
+  if (!nombreT || !validEmail(emailT)) return res.status(400).json({ error: 'Faltan nombre y email valido' });
   const id = await nextId('cli');
   await query('INSERT INTO clientes (id, nombre, tipo, telefono, contacto, email, empresa) VALUES ($1,$2,$3,$4,$5,$6,$7)', [
-    id, nombre, 'particular', telefono || '', nombre, email, empresa || '',
+    id, nombreT, 'particular', limStr(telefono, 40), nombreT, emailT, limStr(empresa, 120),
   ]);
   return res.status(201).json({ id });
 });
 
-app.post('/api/clientes/find-or-create', authRequired, async (req, res) => {
+app.post('/api/clientes/find-or-create', authRequired, requireRol('admin'), async (req, res) => {
   const { nombre, empresa, email, telefono } = req.body || {};
-  if (!email) return res.status(400).json({ error: 'Falta email' });
-  const exist = await one('SELECT * FROM clientes WHERE LOWER(email) = LOWER($1)', [email]);
+  const emailT = String(email || '').trim();
+  if (!validEmail(emailT)) return res.status(400).json({ error: 'Falta email valido' });
+  const exist = await one('SELECT * FROM clientes WHERE LOWER(email) = LOWER($1)', [emailT]);
   if (exist) return res.json({ id: exist.id });
   const id = await nextId('cli');
+  const nombreT = limStr(nombre, 120) || 'Cliente';
   await query('INSERT INTO clientes (id, nombre, tipo, telefono, contacto, email, empresa) VALUES ($1,$2,$3,$4,$5,$6,$7)', [
-    id, nombre || 'Cliente', 'particular', telefono || '', nombre || 'Cliente', email, empresa || '',
+    id, nombreT, 'particular', limStr(telefono, 40), nombreT, emailT, limStr(empresa, 120),
   ]);
   return res.status(201).json({ id });
 });
@@ -639,10 +666,12 @@ app.get('/api/tecnicos', authRequired, requireRol('admin', 'tecnico'), async (re
 
 app.post('/api/tecnicos', authRequired, requireRol('admin'), async (req, res) => {
   const { nombre, especialidad, certificaciones } = req.body || {};
-  if (!nombre || !especialidad) return res.status(400).json({ error: 'Faltan nombre y especialidad' });
+  const nombreT = limStr(nombre, 120);
+  const especialidadT = limStr(especialidad, 80);
+  if (!nombreT || !especialidadT) return res.status(400).json({ error: 'Faltan nombre y especialidad' });
   const id = await nextId('tec_');
   await query('INSERT INTO tecnicos (id, nombre, especialidad, certificaciones, activo) VALUES ($1,$2,$3,$4,true)', [
-    id, nombre, especialidad, JSON.stringify(certificaciones || []),
+    id, nombreT, especialidadT, JSON.stringify((certificaciones || []).slice(0, 20).map((c) => limStr(c, 120))),
   ]);
   return res.status(201).json({ id });
 });
@@ -660,8 +689,11 @@ app.delete('/api/notificaciones', authRequired, async (req, res) => {
   return res.json({ ok: true });
 });
 
-// ---------- Reset demo (solo admin) ----------
+// ---------- Reset demo (solo admin; deshabilitado salvo ALLOW_RESET=1) ----------
 app.post('/api/reset', authRequired, requireRol('admin'), async (req, res) => {
+  if (process.env.ALLOW_RESET !== '1') {
+    return res.status(403).json({ error: 'Reset deshabilitado en este entorno (requiere ALLOW_RESET=1). Borra datos solo con cuidado manual.' });
+  }
   try {
     const seedScript = await import('./seed.js');
     // seed.js usa su propio pool; la re-ejecucion se hace en proceso hijo para limpiar
@@ -686,27 +718,43 @@ app.get('/api/usuarios', authRequired, requireRol('admin'), async (req, res) => 
 
 app.post('/api/usuarios', authRequired, requireRol('admin'), async (req, res) => {
   const { email, password, rol, tecnico_id, cliente_id } = req.body || {};
-  if (!email || !password || !['admin', 'tecnico', 'cliente'].includes(rol)) {
-    return res.status(400).json({ error: 'Faltan email, password y rol valido' });
+  const emailT = String(email || '').trim();
+  if (!validEmail(emailT) || !validPassword(password) || !['admin', 'tecnico', 'cliente'].includes(rol)) {
+    return res.status(400).json({ error: 'Email, password (min 8 caracteres) y rol valido son obligatorios' });
   }
   const id = await nextId('usr');
   await query(
     'INSERT INTO usuarios (id, email, password_hash, rol, tecnico_id, cliente_id, activo) VALUES ($1,$2,$3,$4,$5,$6,true)',
-    [id, email.toLowerCase().trim(), await bcrypt.hash(String(password), 10), rol, tecnico_id || null, cliente_id || null]
+    [id, emailT, await bcrypt.hash(String(password), BCRYPT_ROUNDS), rol, tecnico_id ? limStr(tecnico_id, 32) : null, cliente_id ? limStr(cliente_id, 32) : null]
   );
   return res.status(201).json({ id });
 });
 
 app.patch('/api/usuarios/:id', authRequired, requireRol('admin'), async (req, res) => {
   const { email, password, rol, tecnico_id, cliente_id, activo } = req.body || {};
+  const isSelf = req.params.id === req.user.sub;
   const sets = [];
   const params = [];
-  if (email !== undefined) { params.push(email.toLowerCase().trim()); sets.push(`email = $${params.length}`); }
-  if (rol !== undefined) { params.push(rol); sets.push(`rol = $${params.length}`); }
-  if (tecnico_id !== undefined) { params.push(tecnico_id ?? null); sets.push(`tecnico_id = $${params.length}`); }
-  if (cliente_id !== undefined) { params.push(cliente_id ?? null); sets.push(`cliente_id = $${params.length}`); }
-  if (activo !== undefined) { params.push(Boolean(activo)); sets.push(`activo = $${params.length}`); }
-  if (password) { params.push(await bcrypt.hash(String(password), 10)); sets.push(`password_hash = $${params.length}`); }
+  if (email !== undefined) {
+    const e = String(email).trim();
+    if (!validEmail(e)) return res.status(400).json({ error: 'Email invalido' });
+    params.push(e); sets.push(`email = $${params.length}`);
+  }
+  if (rol !== undefined) {
+    if (!['admin', 'tecnico', 'cliente'].includes(rol)) return res.status(400).json({ error: 'Rol invalido' });
+    if (isSelf) return res.status(403).json({ error: 'No podes cambiarte el rol a vos mismo' });
+    params.push(rol); sets.push(`rol = $${params.length}`);
+  }
+  if (tecnico_id !== undefined) { params.push(tecnico_id ? limStr(tecnico_id, 32) : null); sets.push(`tecnico_id = $${params.length}`); }
+  if (cliente_id !== undefined) { params.push(cliente_id ? limStr(cliente_id, 32) : null); sets.push(`cliente_id = $${params.length}`); }
+  if (activo !== undefined) {
+    if (isSelf) return res.status(403).json({ error: 'No podes desactivarte a vos mismo' });
+    params.push(Boolean(activo)); sets.push(`activo = $${params.length}`);
+  }
+  if (password !== undefined && password !== null && password !== '') {
+    if (!validPassword(password)) return res.status(400).json({ error: 'Password invalido (min 8 caracteres)' });
+    params.push(await bcrypt.hash(String(password), BCRYPT_ROUNDS)); sets.push(`password_hash = $${params.length}`);
+  }
   if (!sets.length) return res.status(400).json({ error: 'Sin campos para actualizar' });
   params.push(req.params.id);
   await query(`UPDATE usuarios SET ${sets.join(', ')} WHERE id = $${params.length}`, params);
@@ -714,6 +762,7 @@ app.patch('/api/usuarios/:id', authRequired, requireRol('admin'), async (req, re
 });
 
 app.delete('/api/usuarios/:id', authRequired, requireRol('admin'), async (req, res) => {
+  if (req.params.id === req.user.sub) return res.status(403).json({ error: 'No podes eliminar tu propio usuario' });
   await query('DELETE FROM usuarios WHERE id = $1', [req.params.id]);
   return res.json({ ok: true });
 });
@@ -731,22 +780,27 @@ app.post('/api/public/contacto', contactoLimiter, async (req, res) => {
   const { nombre, empresa, email, telefono, serie, asunto, mensaje, website } = req.body || {};
   // Honeypot: campo oculto que solo completan bots. Se descarta silenciosamente.
   if (website) return res.status(201).json({ ok: true, emailEnviado: false, codigo: '' });
-  if (!nombre || !email || !mensaje) {
-    return res.status(400).json({ error: 'Faltan nombre, email y mensaje' });
+  const nombreT = limStr(nombre, 120);
+  const emailT = String(email || '').trim();
+  const mensajeT = limStr(mensaje, 2000);
+  if (!nombreT || !validEmail(emailT) || !mensajeT) {
+    return res.status(400).json({ error: 'Faltan nombre, email valido y mensaje' });
   }
   const esReparacion = Boolean(serie && String(serie).trim());
-  const serieTxt = esReparacion ? String(serie).trim() : '';
+  const serieTxt = esReparacion ? String(serie).trim().slice(0, 64) : '';
+  const empresaT = limStr(empresa, 120);
+  const asuntoT = limStr(asunto, 120);
   let codigoTxt = '';
 
   if (esReparacion) {
     await tx(async (client) => {
-      let c = (await client.query('SELECT * FROM clientes WHERE LOWER(email) = LOWER($1)', [email])).rows[0];
+      let c = (await client.query('SELECT * FROM clientes WHERE LOWER(email) = LOWER($1)', [emailT])).rows[0];
       if (!c) {
         const cid = await nextId('cli');
         await client.query('INSERT INTO clientes (id, nombre, tipo, telefono, contacto, email, empresa) VALUES ($1,$2,$3,$4,$5,$6,$7)', [
-          cid, nombre, 'particular', telefono || '', nombre, email, empresa || '',
+          cid, nombreT, 'particular', limStr(telefono, 40), nombreT, emailT, empresaT,
         ]);
-        c = { id: cid, nombre };
+        c = { id: cid, nombre: nombreT };
       }
       const evId = await nextId('ev');
       const ordId = await nextId('ord');
@@ -759,15 +813,15 @@ app.post('/api/public/contacto', contactoLimiter, async (req, res) => {
         `INSERT INTO ordenes (id, codigo_seguimiento, bateria_serie, cliente_id, tecnico_id, falla, motivo, estado, fecha_ingreso, hora_entrega, eventos, cotizacion, estado_cotizacion, insumos_utilizados, prueba_final, diagnostico)
          VALUES ($1,$2,$3,$4,NULL,$5,$5,'received',$6,$7,$8::jsonb,NULL,NULL,'[]'::jsonb,'{"estado":"pending"}',NULL)`,
         [
-          ordId, codigo, serieTxt, c.id, mensaje,
+          ordId, codigo, serieTxt, c.id, mensajeT,
           nowIso(), new Date(Date.now() + 24 * 3600000).toISOString(),
-          JSON.stringify([{ id: evId, tipo: 'ingreso', detalle: `Bateria ${serieTxt} ingresada al taller (por web). Falla reportada: ${mensaje}`, fecha: nowIso() }]),
+          JSON.stringify([{ id: evId, tipo: 'ingreso', detalle: `Bateria ${serieTxt} ingresada al taller (por web). Falla reportada: ${mensajeT}`, fecha: nowIso() }]),
         ]
       );
     });
   }
 
-  const mail = await enviarMailContacto({ nombre, empresa, email, telefono, serie: serieTxt, asunto, mensaje, codigo: codigoTxt });
+  const mail = await enviarMailContacto({ nombre: nombreT, empresa: empresaT, email: emailT, telefono: limStr(telefono, 40), serie: serieTxt, asunto: asuntoT, mensaje: mensajeT, codigo: codigoTxt });
   return res.status(201).json({ ok: true, emailEnviado: mail.ok, codigo: codigoTxt });
 });
 

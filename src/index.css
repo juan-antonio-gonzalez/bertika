@@ -383,6 +383,10 @@ select.input option { background: var(--bg-3); }
 .auth-form-side { padding: 34px; }
 .auth-card { background: var(--bg-3); border: 1px solid var(--line); border-radius: 14px; padding: 22px; }
 .auth-card .input, .auth-card select.input { background: #fff; padding: 10px 13px; }
+.pass-wrap { position: relative; }
+.pass-wrap .input { padding-right: 44px; }
+.pass-eye { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); background: none; border: 0; color: var(--muted); padding: 6px; cursor: pointer; display: grid; place-items: center; }
+.pass-eye:hover { color: var(--amber-d); }
 .auth-card select.input option { background: #fff; color: var(--text); }
 .auth-card > h2 { margin: 0 0 6px; font-size: 22px; }
 .auth-sub { margin: 0 0 26px; color: var(--muted); font-size: 13px; line-height: 1.65; }
