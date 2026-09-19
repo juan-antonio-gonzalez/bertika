@@ -21,6 +21,70 @@ const ESTADO_LB = {
   in_repair: 'En reparacion', testing: 'Prueba final', ready: 'Listas', delivered: 'Entregadas',
 };
 
+function AltasForm({ onClose }) {
+  const crearCliente = useStore((s) => s.crearCliente);
+  const crearTecnico = useStore((s) => s.crearTecnico);
+  const crearInsumo = useStore((s) => s.crearInsumo);
+  const [tipo, setTipo] = useState('cliente');
+  const [cliente, setCliente] = useState({ nombre: '', empresa: '', email: '', telefono: '' });
+  const [tecnico, setTecnico] = useState({ nombre: '', especialidad: '', certificaciones: '' });
+  const [insumo, setInsumo] = useState({ nombre: '', categoria: '', stock: '', precio: '' });
+  const [busy, setBusy] = useState(false);
+
+  const guardar = async () => {
+    setBusy(true);
+    if (tipo === 'cliente') {
+      await crearCliente(cliente);
+    } else if (tipo === 'tecnico') {
+      await crearTecnico({ ...tecnico, certificaciones: tecnico.certificaciones.split(',').map((c) => c.trim()).filter(Boolean) });
+    } else {
+      await crearInsumo({ ...insumo, stock: Number(insumo.stock) || 0, precio: Number(insumo.precio) || 0 });
+    }
+    setBusy(false);
+    onClose();
+  };
+
+  return (
+    <div>
+      <div className="tabs mb16">
+        <button className={`tab ${tipo === 'cliente' ? 'active' : ''}`} onClick={() => setTipo('cliente')}><Icon name="building" size={13} /> Cliente</button>
+        <button className={`tab ${tipo === 'tecnico' ? 'active' : ''}`} onClick={() => setTipo('tecnico')}><Icon name="users" size={13} /> Tecnico</button>
+        <button className={`tab ${tipo === 'insumo' ? 'active' : ''}`} onClick={() => setTipo('insumo')}><Icon name="box" size={13} /> Insumo</button>
+      </div>
+
+      {tipo === 'cliente' && (
+        <div className="col">
+          <div className="field"><label>Nombre</label><input className="input" value={cliente.nombre} onChange={(e) => setCliente({ ...cliente, nombre: e.target.value })} placeholder="Nombre del cliente" /></div>
+          <div className="field"><label>Empresa / flotilla</label><input className="input" value={cliente.empresa} onChange={(e) => setCliente({ ...cliente, empresa: e.target.value })} placeholder="ej. Transportes La Union" /></div>
+          <div className="field"><label>Email</label><input className="input" type="email" value={cliente.email} onChange={(e) => setCliente({ ...cliente, email: e.target.value })} placeholder="cliente@empresa.com" /></div>
+          <div className="field"><label>Telefono</label><input className="input" value={cliente.telefono} onChange={(e) => setCliente({ ...cliente, telefono: e.target.value })} placeholder="(55) 0000-0000" /></div>
+        </div>
+      )}
+
+      {tipo === 'tecnico' && (
+        <div className="col">
+          <div className="field"><label>Nombre</label><input className="input" value={tecnico.nombre} onChange={(e) => setTecnico({ ...tecnico, nombre: e.target.value })} placeholder="Nombre del tecnico" /></div>
+          <div className="field"><label>Especialidad</label><input className="input" value={tecnico.especialidad} onChange={(e) => setTecnico({ ...tecnico, especialidad: e.target.value })} placeholder="ej. Plomo-Acido" /></div>
+          <div className="field"><label>Certificaciones (separadas por coma)</label><input className="input" value={tecnico.certificaciones} onChange={(e) => setTecnico({ ...tecnico, certificaciones: e.target.value })} placeholder="ej. Cert. Bosch, Seguridad industrial" /></div>
+        </div>
+      )}
+
+      {tipo === 'insumo' && (
+        <div className="col">
+          <div className="field"><label>Nombre</label><input className="input" value={insumo.nombre} onChange={(e) => setInsumo({ ...insumo, nombre: e.target.value })} placeholder="ej. Acido sulfurico" /></div>
+          <div className="field"><label>Categoria</label><input className="input" value={insumo.categoria} onChange={(e) => setInsumo({ ...insumo, categoria: e.target.value })} placeholder="ej. Insumo / Repuesto" /></div>
+          <div className="row">
+            <div className="field"><label>Stock inicial</label><input className="input" type="number" value={insumo.stock} onChange={(e) => setInsumo({ ...insumo, stock: e.target.value })} placeholder="0" /></div>
+            <div className="field"><label>Precio unitario (MXN)</label><input className="input" type="number" value={insumo.precio} onChange={(e) => setInsumo({ ...insumo, precio: e.target.value })} placeholder="0" /></div>
+          </div>
+        </div>
+      )}
+
+      <button className="btn primary block lg" disabled={busy} onClick={guardar}><Icon name="plus" size={15} /> {busy ? 'Guardando...' : 'Dar de alta'}</button>
+    </div>
+  );
+}
+
 function Kanban({ onOpen }) {
   const ordenes = useStore((s) => s.data.ordenes);
   const grupos = ESTADOS.map((e) => [e, ordenes.filter((o) => o.estado === e)]);
@@ -426,6 +490,7 @@ export default function Hub() {
   const [tab, setTab] = useState('kanban');
   const [sel, setSel] = useState(null);
   const [nueva, setNueva] = useState(false);
+  const [altas, setAltas] = useState(false);
   const activas = data.ordenes.filter((o) => !['delivered', 'cancelled'].includes(o.estado)).length;
 
   return (
@@ -437,6 +502,7 @@ export default function Hub() {
         </div>
         <div className="row">
           <button className="btn primary" onClick={() => setNueva(true)}><Icon name="plus" size={15} /> Nueva orden</button>
+          <button className="btn" onClick={() => setAltas(true)}><Icon name="users" size={15} /> Altas</button>
         </div>
       </div>
 
@@ -468,6 +534,18 @@ export default function Hub() {
               <button className="btn icon sm" onClick={() => setNueva(false)}><Icon name="x" size={14} /></button>
             </div>
             <NewOrdenForm onClose={() => setNueva(false)} />
+          </div>
+        </div>
+      )}
+
+      {altas && (
+        <div className="modal-back">
+          <div className="modal">
+            <div className="row between mb16">
+              <div><h3>Altas administrativas</h3><div className="sub">Da de alta clientes, tecnicos e insumos del taller</div></div>
+              <button className="btn icon sm" onClick={() => setAltas(false)}><Icon name="x" size={14} /></button>
+            </div>
+            <AltasForm onClose={() => setAltas(false)} />
           </div>
         </div>
       )}

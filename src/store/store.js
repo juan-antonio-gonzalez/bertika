@@ -290,6 +290,37 @@ export const useStore = create()((set, get) => ({
     }
   },
 
+  // ---------- Altas (admin) ----------
+  async crearCliente({ nombre, empresa, email, telefono }) {
+    try {
+      await api('/clientes', { method: 'POST', body: { nombre, empresa, email, telefono } });
+      await get().sync();
+      get().toastShow('Cliente creado', 'ok');
+    } catch (e) {
+      get().toastShow(e.message, 'error');
+    }
+  },
+
+  async crearTecnico({ nombre, especialidad, certificaciones }) {
+    try {
+      await api('/tecnicos', { method: 'POST', body: { nombre, especialidad, certificaciones } });
+      await get().sync();
+      get().toastShow('Tecnico creado', 'ok');
+    } catch (e) {
+      get().toastShow(e.message, 'error');
+    }
+  },
+
+  async crearInsumo({ nombre, categoria, stock, precio }) {
+    try {
+      await api('/insumos', { method: 'POST', body: { nombre, categoria, stock, precio } });
+      await get().sync();
+      get().toastShow('Insumo creado', 'ok');
+    } catch (e) {
+      get().toastShow(e.message, 'error');
+    }
+  },
+
   // ---------- Baja / reciclaje ----------
   async darDeBaja(ordenId, motivo) {
     try {
