@@ -2,13 +2,17 @@ import { useMemo, useState } from 'react';
 import { useStore } from '../store/store';
 import { Icon, EstadoPill, OrdenCard, fmtDate, fmtMXN, fmtFecha } from '../components/ui';
 import OrdenDetalle from '../components/OrdenDetalle';
+import { ORDEN_ESTADOS } from '../data/reglas';
 
-const ESTADOS = ['received', 'diagnosing', 'quoted', 'in_repair', 'testing', 'ready', 'delivered'];
+// Columnas del tablero: todos los estados del flujo (incluye "approved" y
+// "cancelled", que antes no tenian columna y desaparecian del kanban).
+const ESTADOS = ORDEN_ESTADOS;
 
 const ESTADO_COLOR = {
   received: ['#d98e04', 'var(--amber-bg)'],
   diagnosing: ['#4aa4ff', 'var(--blue-bg)'],
   quoted: ['#d9a04e', 'rgba(217,160,78,.12)'],
+  approved: ['#7a6cff', 'rgba(122,108,255,.12)'],
   in_repair: ['#ff7a1a', 'var(--orange-bg)'],
   testing: ['#ffc04a', 'rgba(255,192,74,.12)'],
   ready: ['#36c97a', 'var(--green-bg)'],
@@ -19,6 +23,7 @@ const ESTADO_COLOR = {
 const ESTADO_LB = {
   received: 'Recibidas', diagnosing: 'Diagnostico', quoted: 'Cotizadas', approved: 'Aprobadas',
   in_repair: 'En reparacion', testing: 'Prueba final', ready: 'Listas', delivered: 'Entregadas',
+  cancelled: 'Canceladas',
 };
 
 function AltasForm({ onClose }) {
@@ -75,7 +80,7 @@ function AltasForm({ onClose }) {
           <div className="field"><label>Categoria</label><input className="input" value={insumo.categoria} onChange={(e) => setInsumo({ ...insumo, categoria: e.target.value })} placeholder="ej. Insumo / Repuesto" /></div>
           <div className="row">
             <div className="field"><label>Stock inicial</label><input className="input" type="number" value={insumo.stock} onChange={(e) => setInsumo({ ...insumo, stock: e.target.value })} placeholder="0" /></div>
-            <div className="field"><label>Precio unitario (MXN)</label><input className="input" type="number" value={insumo.precio} onChange={(e) => setInsumo({ ...insumo, precio: e.target.value })} placeholder="0" /></div>
+            <div className="field"><label>Precio unitario (ARS)</label><input className="input" type="number" value={insumo.precio} onChange={(e) => setInsumo({ ...insumo, precio: e.target.value })} placeholder="0" /></div>
           </div>
         </div>
       )}

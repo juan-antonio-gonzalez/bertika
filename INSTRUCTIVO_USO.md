@@ -1,19 +1,36 @@
 # Bertika · Manual de uso
 
 Sistema de gestion para taller de baterias industriales. Esta guia explica como
-ejecutar la aplicacion, entrar con cada rol y recorrer el flujo completo del taller.
+ejecutar la aplicacion (frontend + API + PostgreSQL), entrar con cada rol y
+recorrer el flujo completo del taller.
 
 ---
 
 ## 1. Requisitos y arranque
 
-El proyecto es una app web 100% frontend (Vite + React). No requiere backend ni base de datos:
-todos los datos demostrativos viven en el navegador (localStorage).
+El proyecto tiene dos partes que se ejecutan juntas:
+
+| Parte | Carpeta | Que es |
+| --- | --- | --- |
+| Frontend | `src/` | Vite + React 19 (SPA). Se hidrata desde la API. |
+| Backend | `api/` | Express + PostgreSQL (auth JWT, ordenes, insumos, bajas, uploads). |
+
+Requisitos: **Node 22+** y **PostgreSQL 18** (local o en el VPS). No hay datos
+demostrativos en el navegador: todo vive en la base de datos.
 
 ```bash
-# desde la carpeta del proyecto
+# 1) frontend
 npm install        # una sola vez
-npm run dev        # abre http://localhost:5173/
+
+# 2) backend
+cd api
+cp .env.example .env     # completar DATABASE_URL, JWT_SECRET y DEMO_*_PASS
+npm install
+npm run seed             # crea las tablas y carga los datos de ejemplo (idempotente)
+npm start                # API en http://127.0.0.1:3001
+
+# 3) frontend (en otra terminal, desde la raiz)
+npm run dev              # http://localhost:5173 (Vite proxya /api y /uploads al 3001)
 ```
 
 Comandos adicionales:
@@ -22,30 +39,39 @@ Comandos adicionales:
 | --- | --- |
 | `npm run build` | Genera la version de produccion en `dist/` |
 | `npm run preview` | Sirve la version de produccion (despues de `build`) |
-| `npm run lint` | Revisa el codigo (oxlint) |
+| `npx oxlint` | Revisa el codigo (no hay script `lint` en `package.json`) |
+| `bash scripts/checkpoint.sh "mensaje"` | Snapshot local: commitea todo (tracked + untracked), sin push |
+| `bash scripts/deploy.sh` | Build + deploy a produccion (no existe script `npm run deploy`) |
+
+En produccion nginx sirve `dist/` y hace de proxy de `/api` hacia el servicio
+systemd `bertika-api`; los detalles estan en `docs/PRODUCCION.md`.
 
 ---
 
-## 2. Acceso (login simulado)
+## 2. Acceso (login real)
 
-En `/auth` se elige un rol con un clic — no hay contrasenas reales.
+En `/auth` se entra con **email y contrasena**; el backend valida con bcrypt y
+devuelve un JWT de 12 h que se guarda en `localStorage` (clave `bertika-token`).
 
 | Rol | Que ofrece | Quien lo usa |
 | --- | --- | --- |
-| **Admin** | Operacion completa del taller | Recepcionista / administrador |
-| **Tecnico** | Trabajo en el piso del taller | Tecnicos (5 disponibles, cada uno con especialidad) |
-| **Cliente** | Seguimiento, cotizaciones y garantia | Clientes particulares y flotillas |
+| **Admin** | Operacion completa del taller, reportes y usuarios | Recepcionista / administrador |
+| **Tecnico** | Trabajo en el piso del taller (solo sus ordenes asignadas) | Tecnicos (5 disponibles, cada uno con especialidad) |
+| **Cliente** | Seguimiento, cotizaciones y garantia (solo sus datos) | Clientes particulares y flotillas |
+
+Las cuentas demo las crea `npm run seed` a partir de `DEMO_ADMIN_PASS`,
+`DEMO_TEC01_PASS` y `DEMO_CLI01_PASS` del `.env`. Si esas variables no estan
+definidas, el seed genera contrasenas al azar y las imprime por consola (solo en
+desarrollo). En la maquina local estan anotadas en `local/credenciales-demo.txt`
+(archivo ignorado por git, nunca versionar secretos).
 
 Pasos:
 
 1. Entra a `/auth` (boton **Acceder** en la landing).
-2. Clic en la tarjeta del rol deseado.
-3. Selecciona la persona (Tecnico o Cliente) — o entra directo en el caso de Admin.
-4. Aceptado, `/home` te manda a tu panel segun rol:
-   - Admin → `/hub`  ·  Tecnico → `/tecnico`  ·  Cliente → `/cliente`
+2. Escribi email y contrasena.
+3. El sistema redirige segun rol: Admin → `/hub` · Tecnico → `/tecnico` · Cliente → `/cliente`.
 
-Truco: se puede "cambiar de rol" volviendo a `/auth` en cualquier momento
-los datos mostrados son los mismos para todos.
+La sesion se puede cerrar desde `/settings` (**Salir / cambiar de usuario**).
 
 ---
 
@@ -55,16 +81,24 @@ Cada bateria que entra al taller genera una **orden de trabajo** que avanza por
 esta cadena:
 
 ```
-Recibida → Diagnostico → Cotizada → Aprobada → En reparacion → Prueba final → Lista → Entregada
+Recibida → Diagnosticando → Cotizada → Aprobada → En reparacion → Prueba final → Lista → Entregada
+                                                                            ↘ (falla) → En reparacion
 ```
 
 Reglas importantes:
 
-- **Cotizacion**: si el cliente **rechaza**, la orden se **cancela**.
+- **Cotizacion**: si el cliente **rechaza**, la orden se **cancela**. Tambien se
+  puede cancelar desde Recibida, Diagnosticando, Aprobada y En reparacion.
+- **No se repara sin aprobacion**: el paso a *En reparacion* exige que el cliente
+  haya aprobado la cotizacion (unica excepcion: volver de una prueba final fallida).
 - **Prueba final fallida**: la bateria **regresa a reparacion** automaticamente.
   NO se puede entregar sin pasar la prueba de carga.
 - **Garantia** se otorga al momento de **entregar** (meses y ciclos).
 - Las baterias **no reparables** se pueden **dar de baja** con trazabilidad para reciclaje.
+
+Estas reglas viven en un solo archivo (`src/data/reglas.js`) y las usan **el
+frontend y la API**, asi que una transicion permitida en la UI siempre lo es en
+la base y viceversa.
 
 ### Ejemplo del flujo (de ventanilla a entrega)
 
@@ -87,14 +121,17 @@ Panel principal para administrar la operacion. Pestañas:
 
 | Pestaña | Funcion |
 | --- | --- |
-| **Kanban** | Tablero con las 8 columnas de estado. Arrastra visualmente el estado de cada orden; abre detalles con clic. KPIs arriba (ordenes recibidas, en piso, listas, garantias por vencer, tecnicos activos). |
+| **Kanban** | Tablero con **una columna por estado** (Recibidas, Diagnostico, Cotizadas, Aprobadas, En reparacion, Prueba final, Listas, Entregadas, Canceladas). KPIs arriba y boton **+ Crear orden de trabajo**. |
 | **Dashboard** | Indicadores globales del taller. |
-| **Historial** | Todas las ordenes (abiertas y cerradas). |
+| **Historial por serie** | Busca todas las ordenes de una bateria por su numero de serie. |
 | **Inventario** | Stock de insumos con valorizacion; **agregar stock** a cada insumo. El stock se descuenta en tiempo real cuando un tecnico registra un insumo. |
 | **Tecnicos** | Catalogo de tecnicos, especialidad, certificaciones y carga de trabajo. |
 | **Flotillas** | Baterias activas de clientes corporativos + estado de garantia. |
 | **Garantias** | Tabla de garantias vigentes y por vencer. |
 | **Baja / reciclaje** | Baterias dadas de baja con motivo y disposicion; trazabilidad para reciclaje responsable. |
+
+El admin tambien tiene `/reportes` (exporta CSV) y `/usuarios` (alta, edicion de
+rol/estado y reseteo de contrasenas de cualquier cuenta).
 
 ### Crear orden de trabajo
 
@@ -103,7 +140,8 @@ Panel principal para administrar la operacion. Pestañas:
    - Si la bateria **ya existe**: el sistema la reconoce y solo pides cliente y falla.
    - Si es **serie nueva**: registra tipo, voltaje, capacidad (Ah), aplicacion, marca, modelo y equipo.
 3. Selecciona **cliente** y escribe la **falla reportada**.
-4. **Crear orden de trabajo** → la bateria aparece en la columna **Recibida**.
+4. **Crear orden de trabajo** → la bateria aparece en la columna **Recibidas** con su
+   **codigo de seguimiento** de 16 digitos.
 
 ### Asignar tecnico
 
@@ -120,24 +158,28 @@ Panel principal para administrar la operacion. Pestañas:
 
 ### Dar de baja (no reparable)
 
-1. Abre una orden en estado **Recibida** → pestaña **Acciones admin** → **Dar de baja**.
-2. Indica el motivo y confirma. La bateria queda `dada_de_baja` y aparece en **Baja / reciclaje**.
+1. Abre la orden en **Acciones admin** → **Dar de baja**.
+2. Escribe el **motivo** (viene pre-cargado y es editable) y confirma.
+3. La bateria queda `dada_de_baja`, la orden se cancela y la baja aparece en **Baja / reciclaje**
+   con su motivo en la trazabilidad.
 
 ---
 
 ## 5. Vista operativa del tecnico (`/tecnico`)
 
-Muestra las ordenes activas con su estado. Con el boton **Diagnosticar / Detalle** se abre la orden con 3 pestañas: **Orden**, **Trabajo** y **Eventos**.
+Muestra las ordenes activas asignadas al tecnico (mas las recibidas sin asignar).
+Con el boton **Diagnosticar / Detalle** se abre la orden con 3 pestañas: **Orden**,
+**Trabajo** y **Eventos**.
 
 Trabajo dentro de cada etapa:
 
 | Estado de la orden | Que hace el tecnico |
 | --- | --- |
-| **Recibida / Diagnostico** | Llena voltaje (V), resistencia interna (mOhm), **prueba de carga** (aprobada/fallida), tipo de servicio a cotizar y notas tecnicas → **Guardar diagnostico y generar cotizacion**. |
+| **Recibida / Diagnosticando** | Llena voltaje (V), resistencia interna (mOhm), **prueba de carga** (aprobada/fallida), tipo de servicio a cotizar y notas tecnicas → **Guardar diagnostico y generar cotizacion**. |
 | **Cotizada** | Puede ajustar la cotizacion (servicios, insumos, otros) mientras el cliente no haya respondido. |
 | **Aprobada** | **Iniciar reparacion**. |
 | **En reparacion** | Registra **insumos/celdas** usados (filtra por categoria, el stock se descuenta). Al terminar, **Iniciar prueba final de carga**. |
-| **Prueba final** | Registra **capacidad medida (Ah)** y resultado **Aprobada/Fallida**. Si falla, la orden regresa a reaparacion automaticamente. |
+| **Prueba final** | Registra **capacidad medida (Ah)** y resultado **Aprobada/Fallida**. Si falla, la orden regresa a reparacion automaticamente. |
 
 - La pestaña **Eventos** muestra el historial completo (fecha y responsable) como trazabilidad.
 - La pestaña **Orden** muestra lecturas del diagnostico, cotizacion, prueba final, garantia e historial de la serie.
@@ -159,27 +201,31 @@ Secciones:
 | **Cotizaciones** | Aprobar o **Rechazar** el presupuesto (rechazar cancela la orden). |
 | **Historial** | Ordenes anteriores de tu bateria/flotilla. |
 | **Garantia** | Baterias bajo garantia, vigencia y cobertura. |
-| **Agenda** | Agendar proxima visita o mantenimiento (simulado). |
+| **Agenda** | Agendar proxima visita o mantenimiento (**simulado**: registra la intencion, sin backend todavia). |
 
 ---
 
-## 7. Seguimiento publico (`/tracker/:orden_id`)
+## 7. Seguimiento publico (sin login)
 
-Cualquier persona con el enlace puede ver el avance sin iniciar sesion
-(ideal para compartir por WhatsApp). Ejemplo:
+**Por enlace:** `/tracker/:orden_id` — cualquiera con el enlace ve el avance.
+Ideal para compartir por WhatsApp.
 
-```
-http://localhost:5173/tracker/ord_01
-```
+**Por busqueda:** `/seguimiento` acepta el **codigo de seguimiento de 16 digitos**
+(se formatea solo, `XXXX-XXXX-XXXX-XXXX`) o el **numero de serie** de la bateria.
 
-Prueba con las ordenes de ejemplo: `ord_01` … `ord_08`.
+**Cotizacion publica:** `/cotizacion/:orden_id?t=<firma>` permite al cliente
+aprobar o rechazar sin cuenta. El parametro `t` es una firma HMAC que se obtiene
+con `POST /api/ordenes/:id/compartir` (staff con acceso a la orden); sin firma el
+endpoint responde 403.
 
 ---
 
 ## 8. Settings (`/settings`)
 
-- Muestra el **usuario activo** (rol, especialidad o cliente).
-- Algunas acciones permiten **Restablecer demo** (limpia cambios y vuelve a los datos de inicio).
+- Muestra el **usuario activo** (rol, especialidad o cliente) y el resumen de datos sincronizados.
+- **Cambiar contrasena**: pide la contrasena actual y la nueva (minimo 8 caracteres).
+  Funciona para los tres roles (`POST /api/auth/password`); los cambios de
+  contrasena de terceros los hace un admin desde `/usuarios`.
 
 ---
 
@@ -191,14 +237,18 @@ Prueba con las ordenes de ejemplo: `ord_01` … `ord_08`.
 - **8 ordenes** en todos los estados (Recibida, Diagnostico, Cotizada, En reparacion, Prueba final, Lista, Entregadas).
 - **11 insumos** con stock inicial.
 
-> Los cambios que hagas se persisten en el navegador (localStorage, clave `bertika-db`).
-> Usa **Restablecer demo** para volver al estado inicial cuando quieras.
+> Fuente de verdad: `src/data/seed.js`; se cargan en PostgreSQL con `node api/seed.js`
+> (idempotente: recrea tablas vacias y reinserta). Para volver al estado inicial en
+> un entorno de demo, **con respaldo previo**, se puede usar `POST /api/reset`, que
+> solo funciona si el backend corre con `ALLOW_RESET=1` (nunca en produccion).
 
 ---
 
-## 10. Notas y limites de la demo
+## 10. Notas y limites actuales
 
-- El login es **simulado** (sin backend ni seguridad real).
-- La agenda y el envio de cotizaciones son **simulados** (no envian correos/WhatsApp).
-- La persistencia es local: al borrar datos del navegador, la app vuelve al estado de fábrica.
-- Fases futuras previstas: Supabase (auth real + datos en la nube), WhatsApp/email, CFDI/facturacion, pagos y lecturas automaticas del equipo de diagnostico.
+- La autenticacion es **real** (JWT + bcrypt) y los datos viven en PostgreSQL.
+- Las **notificaciones** se registran en la base (`notificaciones`) pero el envio por
+  WhatsApp/email es simulado: solo el formulario de contacto envia correo real (SMTP).
+- La **agenda** de visitas y la emision de **CFDI/facturacion** estan pendientes;
+  tampoco hay pagos ni lecturas automaticas del equipo de diagnostico.
+- El **cotizador de visita** usa tarifas provisorias en USD (`src/data/cotizadorVisita.js`).

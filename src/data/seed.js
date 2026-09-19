@@ -5,69 +5,18 @@ const iso = (ms) => new Date(ms).toISOString();
 
 const baseEvents = [];
 
-export const ORDEN_ESTADOS = [
-  { key: 'received', label: 'Recibida' },
-  { key: 'diagnosing', label: 'Diagnostico' },
-  { key: 'quoted', label: 'Cotizada' },
-  { key: 'approved', label: 'Aprobada' },
-  { key: 'in_repair', label: 'En reparacion' },
-  { key: 'testing', label: 'Prueba final' },
-  { key: 'ready', label: 'Lista' },
-  { key: 'delivered', label: 'Entregada' },
-  { key: 'cancelled', label: 'Cancelada' },
-];
-
-export const ESTADO_LABEL = Object.fromEntries(
-  ORDEN_ESTADOS.map((e) => [e.key, e.label])
-);
-
-// Flujo visible en el tracker (pasos de negocio)
-export const TRACKER_STEPS = [
-  { key: 'received', label: 'Recibida' },
-  { key: 'diagnosing', label: 'Diagnostico' },
-  { key: 'quoted', label: 'Cotizacion' },
-  { key: 'approved', label: 'En reparacion' },
-  { key: 'testing', label: 'Prueba final' },
-  { key: 'ready', label: 'Lista' },
-  { key: 'delivered', label: 'Entregada' },
-];
-
-// Indice del paso alcanzado segun el estado de la orden
-export const STATUS_STEP_INDEX = {
-  received: 0,
-  diagnosing: 1,
-  quoted: 2,
-  approved: 3,
-  in_repair: 3,
-  testing: 4,
-  ready: 5,
-  delivered: 6,
-  cancelled: 0,
-};
-
-export const TRANSITIONS = {
-  received: ['diagnosing'],
-  diagnosing: ['quoted'],
-  quoted: ['approved', 'cancelled'],
-  approved: ['in_repair'],
-  in_repair: ['testing'],
-  testing: ['ready', 'in_repair'],
-  ready: ['delivered'],
-  delivered: [],
-  cancelled: [],
-};
-
-// Transicion central del negocio
-export const FLOW_CHAIN = [
-  'received',
-  'diagnosing',
-  'quoted',
-  'approved',
-  'in_repair',
-  'testing',
-  'ready',
-  'delivered',
-];
+// Estados, etiquetas y transiciones: definidos UNA sola vez en ./reglas.js y
+// reexportados aca para no romper los imports existentes del frontend.
+export {
+  ORDEN_ESTADOS,
+  ESTADOS,
+  ESTADO_LABEL,
+  TRACKER_STEPS,
+  STATUS_STEP_INDEX,
+  TRANSITIONS,
+  FLOW_CHAIN,
+  canTransition,
+} from './reglas.js';
 
 export const seedTecnicos = [
   { id: 'tec_01', nombre: 'Carlos Ruiz', especialidad: 'Plomo-Acido', certificaciones: ['Manejo de materiales peligrosos', 'Reacondicionamiento de celdas'], activo: true },

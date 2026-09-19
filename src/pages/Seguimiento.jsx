@@ -9,10 +9,17 @@ export default function Seguimiento() {
   const navigate = useNavigate();
   const [q, setQ] = useState('');
 
-  // Auto-formato: solo digitos (max 16) con guion cada 4 cifras, como se tipea.
+  // El campo acepta las dos formas de busqueda:
+  //  - codigo de seguimiento: solo digitos; se formatea con guion cada 4 cifras.
+  //  - numero de serie: texto libre (letras, digitos y guiones), sin formatear.
   const alEscribir = (e) => {
-    const digitos = e.target.value.replace(/\D/g, '').slice(0, 16);
-    setQ(digitos.replace(/(.{4})/g, '$1-').replace(/-$/, ''));
+    const v = e.target.value;
+    if (/^[\d\s-]*$/.test(v)) {
+      const digitos = v.replace(/\D/g, '').slice(0, 16);
+      setQ(digitos.replace(/(.{4})/g, '$1-').replace(/-$/, ''));
+    } else {
+      setQ(v.slice(0, 64));
+    }
   };
 
   const buscar = async (e) => {
@@ -20,9 +27,12 @@ export default function Seguimiento() {
     const term = q.trim();
     if (!term) { toastShow('Ingresá el código de seguimiento o el número de serie', 'warn'); return; }
     try {
-      const rows = await api(`/public/ordenes?q=${encodeURIComponent(term.replace(/-/g, ''))}`);
-      const exact = rows.find((o) => o.id.toUpperCase() === term.replace(/-/g, '').toUpperCase()
-        || o.bateria_serie.toUpperCase() === term.replace(/-/g, '').toUpperCase());
+      const rows = await api(`/public/ordenes?q=${encodeURIComponent(term)}`);
+      const norm = term.toUpperCase();
+      const dig = norm.replace(/\D/g, '');
+      const exact = rows.find((o) => o.id.toUpperCase() === norm
+        || (o.bateria_serie || '').toUpperCase() === norm
+        || (dig.length === 16 && (o.codigo || '').replace(/\D/g, '') === dig));
       if (exact) {
         navigate(`/tracker/${exact.id}`);
       } else if (rows.length === 1) {
@@ -50,13 +60,12 @@ export default function Seguimiento() {
           <div className="card" style={{ padding: 32 }}>
             <h2 className="sec-title center">Seguí tu reparación</h2>
             <p className="sec-sub center" style={{ margin: '8px auto 24px' }}>
-              Ingresá tu código de seguimiento de 16 dígitos para ver el estado en tiempo real.
+              Ingresá tu código de seguimiento de 16 dígitos —o el número de serie de la batería— para ver el estado en tiempo real.
             </p>
             <form onSubmit={buscar} style={{ display: 'flex', gap: 10 }}>
               <input
                 className="input"
-                placeholder="0000-0000-0000-0000"
-                inputMode="numeric"
+                placeholder="0000-0000-0000-0000 o N° de serie"
                 autoComplete="off"
                 value={q}
                 onChange={alEscribir}

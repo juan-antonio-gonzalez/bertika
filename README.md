@@ -11,7 +11,7 @@ npm install
 npm run dev      # desarrollo en http://localhost:5173
 npm run build    # produccion en dist/
 npm run preview  # servir el build
-npm run lint     # oxlint
+npx oxlint       # lint
 ```
 
 ## Stack
@@ -31,20 +31,25 @@ npm run seed             # carga datos demo (opcional)
 npm start                # http://127.0.0.1:3001
 ```
 
-Nota: las paginas publicas (contacto, seguimiento, tracker, cotizacion) consumen la API real. Los paneles de plataforma (admin/tecnico/cliente) aun corren sobre el store local de demostracion.
+Las paginas publicas (contacto, seguimiento, tracker, cotizacion) y los paneles de plataforma (admin/tecnico/cliente) consumen la API real: el store del frontend se hidrata desde `GET /api/estado` y se re-sincroniza tras cada accion.
 
 ## Rutas
 
 | Ruta | Descripcion |
 | --- | --- |
 | `/` | Landing publica del taller |
-| `/auth` | Login mock (Admin / Tecnico / Cliente) |
+| `/empresa`, `/productos`, `/servicios`, `/politica-ecologica`, `/como-llegar`, `/contacto` | Sitio publico institucional |
+| `/cotizador` | Cotizador de visita tecnica (tarifas en `src/data/cotizadorVisita.js`) |
+| `/seguimiento` | Busqueda publica por codigo de 16 digitos o N° de serie |
+| `/cotizacion/:orden_id` | Cotizacion publica con enlace firmado (`?t=`) para aprobar/rechazar |
+| `/auth` | Login real (JWT) de Admin / Tecnico / Cliente |
 | `/home` | Redireccion segun rol |
-| `/hub` | Panel administrativo (kanban, dashboard, inventario, flotillas, garantias, reciclaje) |
+| `/hub` | Panel administrativo (kanban, dashboard, historial, inventario, tecnicos, flotillas, garantias, reciclaje) |
 | `/tecnico` | Vista operativa (diagnostico, reparacion, insumos, prueba final) |
 | `/cliente` | Tracker, cotizaciones, historial, flotilla, garantias, agenda |
 | `/tracker/:orden_id` | Seguimiento publico sin login |
-| `/settings` | Perfil del usuario activo |
+| `/reportes`, `/usuarios` | Reportes y alta/edicion de usuarios (solo admin) |
+| `/settings` | Perfil y cambio de contrasena del usuario activo |
 
 ## Estados de la orden
 
@@ -54,7 +59,7 @@ Regla central de negocio: `testing -> in_repair` (si la prueba final falla, la b
 
 ## Datos demo
 
-Datos semilla precargados (5 tecnicos, 5 clientes, 9 baterias, 10+ insumos, 8 ordenes en distintos estados). Los cambios persisten en `localStorage` (`bertika-db`). Usa el boton **Restablecer demo** para volver al estado inicial.
+Datos semilla precargados (5 tecnicos, 5 clientes, 9 baterias, 10+ insumos, 8 ordenes en distintos estados), cargados en PostgreSQL con `node api/seed.js` (idempotente). Los cambios persisten en la base de datos. `POST /api/reset` vuelve al estado inicial, pero solo si el backend corre con `ALLOW_RESET=1` (nunca en produccion).
 
 ## Flujos de ejemplo
 
@@ -66,4 +71,4 @@ Datos semilla precargados (5 tecnicos, 5 clientes, 9 baterias, 10+ insumos, 8 or
 6. Admin entrega, registra cobro y garantia (meses/ciclos) > la bateria pasa a `en_garantia`.
 7. Baterias no reparables se dan de baja con trazabilidad para reciclaje responsable.
 
-> Nota: en fases posteriores se integraran Supabase, auth real, WhatsApp, CFDI, pagos y lecturas automaticas de equipo de diagnostico.
+> Nota: en fases posteriores se integraran WhatsApp/email transaccionales, CFDI, pagos y lecturas automaticas de equipo de diagnostico.

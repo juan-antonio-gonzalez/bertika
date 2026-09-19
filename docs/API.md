@@ -12,6 +12,9 @@ Body: `{ "email", "password" }` → `200 { token, user }`, donde `user = { id, e
 ### `GET /auth/me`
 Requiere token. Devuelve el usuario actual (`{ id, email, rol, tecnico_id, cliente_id }`).
 
+### `POST /auth/password`
+Requiere token (cualquier rol). Body: `{ password_actual, password }`. Cambia la contraseña de la **propia** cuenta; exige la contraseña actual y valida que la nueva tenga entre 8 y 72 caracteres. `PATCH /usuarios/:id` sigue siendo exclusivo de admin.
+
 ## Estado global (sincronización del store)
 
 ### `GET /estado`
@@ -22,7 +25,7 @@ Requiere token. Devuelve `{ tecnicos[], clientes[], baterias[], insumos[], orden
 | Método | Ruta | Descripción |
 | --- | --- | --- |
 | `GET` | `/public/stats` | `{ clientes, baterias, activas, entregadas }` para la landing. |
-| `GET` | `/public/ordenes?q=...` | Búsqueda por id de orden o número de serie (ILIKE, top 10). |
+| `GET` | `/public/ordenes?q=...` | Búsqueda por id de orden, número de serie o código de seguimiento (ILIKE, top 10). |
 | `GET` | `/public/ordenes/:id` | Seguimiento público: orden + `bateria` + `cliente` + `eventos`. |
 | `GET` | `/public/cotizacion/:orden_id` | Cotización pública: datos, `cotizacion`, `estado_cotizacion`, `bateria`, `cliente`. |
 | `POST` | `/ordenes/:id/cotizacion/aprobar` | Aprueba la cotización (solo si `estado === 'quoted'`). |

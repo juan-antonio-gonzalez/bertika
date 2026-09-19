@@ -208,7 +208,7 @@ export default function Cliente() {
         <div className="col">
           {bateriasDelCliente.map((b) => {
             const o = data.ordenes.find((oo) => oo.bateria_serie === b.numero_serie && !['delivered', 'cancelled'].includes(oo.estado));
-            const g = garantias.find((x) => x.o.bateria_serie === b.numero_serie);
+            const g = porVencer.find((x) => x.o.bateria_serie === b.numero_serie);
             const bajaCap = o?.prueba_final?.estado === 'failed';
             const idx = o ? STATUS_STEP_INDEX[o.estado] : 6;
             return (

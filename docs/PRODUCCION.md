@@ -106,8 +106,7 @@ Template versionado: `deploy/bertika.conf`. Validar con `nginx -t` y recargar co
 ## 6. Despliegue
 
 ```bash
-npm run deploy
-# = scripts/deploy.sh
+bash scripts/deploy.sh
 ```
 
 Qué hace `scripts/deploy.sh`:
@@ -191,7 +190,7 @@ ssh bertika-vps "systemctl is-active bertika-api bertika-api; curl -s -o /dev/nu
 ssh bertika-vps "journalctl -u bertika-api -n 50 --no-pager"
 
 # Deploy
-npm run deploy
+bash scripts/deploy.sh
 
 # Backup manual
 ssh bertika-vps "PGPASSWORD='<PASS>' /usr/local/bin/bertika-backup.sh"

@@ -246,6 +246,22 @@ app.get('/api/auth/me', authRequired, async (req, res) => {
   return res.json({ id: u.id, email: u.email, rol: u.rol, tecnico_id: u.tecnico_id, cliente_id: u.cliente_id });
 });
 
+// Cambio de contrasena de la PROPIA cuenta: cualquier rol autenticado.
+// Exige la contrasena actual; el PATCH /api/usuarios/:id sigue siendo solo admin.
+app.post('/api/auth/password', authRequired, async (req, res) => {
+  const { password_actual, password } = req.body || {};
+  if (!validPassword(password)) {
+    return res.status(400).json({ error: 'La contrasena nueva debe tener entre 8 y 72 caracteres' });
+  }
+  const u = await one('SELECT * FROM usuarios WHERE id = $1', [req.user.sub]);
+  if (!u || !u.activo) return res.status(401).json({ error: 'Usuario inexistente o inactivo' });
+  if (!password_actual || !(await bcrypt.compare(String(password_actual), u.password_hash))) {
+    return res.status(401).json({ error: 'La contrasena actual no es correcta' });
+  }
+  await query('UPDATE usuarios SET password_hash = $2 WHERE id = $1', [u.id, await bcrypt.hash(String(password), BCRYPT_ROUNDS)]);
+  return res.json({ ok: true });
+});
+
 // ---------- Estado global (para sincronizar el store) ----------
 // Se expone segun rol: admin ve todo; tecnico ve catalogos y sus ordenes
 // asignadas (+ no asignadas en recepcion); cliente ve solo sus datos.

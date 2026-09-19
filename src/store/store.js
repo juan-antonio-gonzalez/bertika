@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { api, getToken, setToken } from './api';
-import { TRANSITIONS } from '../data/seed';
+import { canTransition as reglaTransicion } from '../data/reglas';
 
 const emptyData = () => ({
   tecnicos: [],
@@ -101,21 +101,9 @@ export const useStore = create()((set, get) => ({
     return get().data.ordenes.find((o) => o.id === id);
   },
 
+  // Misma validacion que aplica la API (fuente unica: src/data/reglas.js).
   canTransition(orden, target) {
-    const t = TRANSITIONS[orden.estado] || [];
-    if (!t.includes(target)) return { ok: false, err: `Transicion ${orden.estado} -> ${target} no permitida` };
-    if (target === 'ready') {
-      if (orden.prueba_final?.estado !== 'passed') {
-        return { ok: false, err: 'La orden no puede marcarse lista: la prueba final debe estar aprobada' };
-      }
-    }
-    if (target === 'in_repair' && orden.estado === 'testing') return { ok: true };
-    if (target === 'in_repair') {
-      if (orden.estado_cotizacion !== 'approved') {
-        return { ok: false, err: 'La cotizacion debe ser aprobada por el cliente antes de reparar' };
-      }
-    }
-    return { ok: true };
+    return reglaTransicion(orden, target);
   },
 
   async transition(ordenId, target, detalle = '') {

@@ -415,7 +415,7 @@ export default function OrdenDetalle({ orden, role, onClose, onEntregado, onBaja
           )}
 
           {orden.estado === 'received' && role === 'admin' && (
-            <button className="btn danger block" onClick={() => setConfirm({ type: 'baja' })}><Icon name="recycl" size={15} /> Dar de baja (no reparable / cancelar)</button>
+            <button className="btn danger block" onClick={() => setConfirm({ type: 'baja', motivo: 'Capacidad por debajo del 40% / no reparable' })}><Icon name="recycl" size={15} /> Dar de baja (no reparable / cancelar)</button>
           )}
           {orden.estado === 'quoted' && role === 'admin' && (
             <button className="btn danger block" onClick={() => { rechazarCotizacion(orden.id); onClose(); }}><Icon name="x" size={15} /> Cancelar orden (cliente rechaza)</button>
@@ -432,7 +432,7 @@ export default function OrdenDetalle({ orden, role, onClose, onEntregado, onBaja
         <Modal title="Dar de baja la bateria" sub="Trazabilidad obligatoria para disposicion responsable" onClose={() => setConfirm(null)}>
           <div className="col">
             <Warning>La bateria {orden.bateria_serie} quedara marcada como dada_de_baja (no reparable) y pasara al panel de reciclaje.</Warning>
-            <div className="field"><label>Motivo</label><textarea className="input" defaultValue="Capacidad por debajo del 40% / no reparable" /></div>
+            <div className="field"><label>Motivo</label><textarea className="input" value={confirm.motivo ?? ''} onChange={(e) => setConfirm({ ...confirm, motivo: e.target.value })} placeholder="Motivo de la baja (queda en la trazabilidad de reciclaje)" /></div>
             <button className="btn danger block" onClick={() => { darDeBaja(orden.id, confirm.motivo || 'Capacidad por debajo del 40% / no reparable'); setConfirm(null); onClose(); if (onBaja) onBaja(); }}>
               Confirmar baja
             </button>

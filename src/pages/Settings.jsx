@@ -10,6 +10,7 @@ export default function Settings() {
   const logout = useStore((s) => s.logout);
   const toastShow = useStore((s) => s.toastShow);
   const navigate = useNavigate();
+  const [actual, setActual] = useState('');
   const [pass, setPass] = useState('');
   const [pass2, setPass2] = useState('');
   const [busy, setBusy] = useState(false);
@@ -22,11 +23,14 @@ export default function Settings() {
 
   const cambiarPass = async (e) => {
     e.preventDefault();
+    if (!actual) return toastShow('Ingresá tu contraseña actual', 'warn');
     if (pass.length < 8) return toastShow('La contraseña debe tener al menos 8 caracteres', 'warn');
     if (pass !== pass2) return toastShow('Las contraseñas no coinciden', 'warn');
     setBusy(true);
     try {
-      await api(`/usuarios/${user.uid}`, { method: 'PATCH', body: { password: pass } });
+      // Endpoint de autoservicio: funciona para cualquier rol (admin/tecnico/cliente).
+      await api('/auth/password', { method: 'POST', body: { password_actual: actual, password: pass } });
+      setActual('');
       setPass('');
       setPass2('');
       toastShow('Contraseña actualizada', 'ok');
@@ -76,6 +80,10 @@ export default function Settings() {
             <h3 className="card-title"><Icon name="shield" size={15} /> Cambiar contraseña</h3>
             <form onSubmit={cambiarPass} className="col">
               <div className="field">
+                <label>Contraseña actual</label>
+                <input className="input" type="password" value={actual} onChange={(e) => setActual(e.target.value)} placeholder="Tu contraseña actual" autoComplete="current-password" />
+              </div>
+              <div className="field">
                 <label>Nueva contraseña</label>
                 <input className="input" type="password" value={pass} onChange={(e) => setPass(e.target.value)} placeholder="Mínimo 8 caracteres" autoComplete="new-password" />
               </div>
@@ -83,7 +91,7 @@ export default function Settings() {
                 <label>Repetir contraseña</label>
                 <input className="input" type="password" value={pass2} onChange={(e) => setPass2(e.target.value)} placeholder="Repetí la contraseña" autoComplete="new-password" />
               </div>
-              <button className="btn primary" disabled={busy || !pass}><Icon name="check" size={14} /> {busy ? 'Guardando...' : 'Actualizar contraseña'}</button>
+              <button className="btn primary" disabled={busy || !actual || !pass}><Icon name="check" size={14} /> {busy ? 'Guardando...' : 'Actualizar contraseña'}</button>
             </form>
           </div>
         </div>
