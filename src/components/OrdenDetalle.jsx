@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useStore } from '../store/store';
-import { Modal, EstadoPill, Timeline, Icon, fmtDate, fmtMXN, appIconName, fmtFecha } from './ui';
-import { CONTACTO } from '../data/siteData';
+import { api } from '../store/api';
+import { Modal, EstadoPill, Timeline, Icon, fmtDate, fmtARS, appIconName, fmtFecha } from './ui';
+import { CONTACTO, OFICIAL } from '../data/siteData';
 
 const INS_CAT = ['Celdas', 'Electrolito', 'Bornes y Conectores', 'Cargadores', 'Cables', 'EPP y Seguridad'];
 
@@ -81,7 +82,7 @@ function CotizacionForm({ orden }) {
       <div className="field"><label>Otros conceptos</label><input className="input" value={extra} onChange={(e) => setExtra(e.target.value)} placeholder="ej. traslado a planta" /></div>
       <div className="row between" style={{ background: 'var(--bg-3)', borderRadius: 10, padding: '10px 14px' }}>
         <span style={{ fontWeight: 700 }}>TOTAL</span>
-        <span style={{ fontWeight: 800, fontSize: 18, color: 'var(--amber)' }}>{fmtMXN(total)}</span>
+        <span style={{ fontWeight: 800, fontSize: 18, color: 'var(--amber)' }}>{fmtARS(total)}</span>
       </div>
       <button className="btn primary block" disabled={!total || servicios.every((s) => !s.nombre)} onClick={() => generarCotizacion(orden.id, { monto: total, servicios, insumos })}>
         <Icon name="clipboard" size={15} /> Guardar cotizacion
@@ -116,7 +117,7 @@ function InsumosForm({ orden }) {
               <span className="row" style={{ textAlign: 'left' }}><Icon name={i.categoria === 'Celdas' ? 'battery' : 'box'} size={14} /> {i.nombre}</span>
               <span className="row">
                 <span className={`badge ${crit ? 'red' : i.stock === 0 ? 'gray' : 'green'}`}>{i.stock} disp.</span>
-                <span className="muted mono">{fmtMXN(i.precio)}</span>
+                <span className="muted mono">{fmtARS(i.precio)}</span>
               </span>
             </button>
           );
@@ -128,7 +129,7 @@ function InsumosForm({ orden }) {
           {orden.insumos_utilizados.map((u, i) => (
             <div key={i} className="row between" style={{ fontSize: 13 }}>
               <span>{u.nombre} x{u.cantidad}</span>
-              <span className="muted">{fmtMXN(u.precio * u.cantidad)}</span>
+              <span className="muted">{fmtARS(u.precio * u.cantidad)}</span>
             </div>
           ))}
         </div>
@@ -175,10 +176,12 @@ export default function OrdenDetalle({ orden, role, onClose, onEntregado, onBaja
   const rechazarCotizacion = useStore((s) => s.rechazarCotizacion);
   const deliverOrder = useStore((s) => s.deliverOrder);
   const darDeBaja = useStore((s) => s.darDeBaja);
+  const toastShow = useStore((s) => s.toastShow);
   const [sec, setSec] = useState('info');
   const [tecnicoSel, setTecnicoSel] = useState(orden.tecnico_id || '');
   const [confirm, setConfirm] = useState(null);
   const [entregar, setEntregar] = useState(false);
+  const [compartir, setCompartir] = useState(null);
 
   const bateria = data.baterias.find((b) => b.numero_serie === orden.bateria_serie);
   const cliente = data.clientes.find((c) => c.id === orden.cliente_id);
@@ -200,6 +203,21 @@ export default function OrdenDetalle({ orden, role, onClose, onEntregado, onBaja
     if (onEntregado) onEntregado();
     onClose();
   };
+
+  // Enlaces publicos: cotizacion con firma HMAC + tracker. Genera o reusa el
+  // enlace firmado del servidor para compartirlo por WhatsApp.
+  const abrirCompartir = async () => {
+    try {
+      const r = await api(`/ordenes/${orden.id}/compartir`, { method: 'POST' });
+      setCompartir(r);
+    } catch (e) {
+      toastShow(e.message, 'error');
+    }
+  };
+
+  const textoCompartir = compartir
+    ? `Seguimiento de tu batería ${orden.bateria_serie}: ${compartir.tracker}\nCotización para aprobar: ${compartir.cotizacion}`
+    : '';
 
   const actionsAvailable = orden.estado === 'received' || orden.estado === 'diagnosing' || orden.estado === 'approved' || orden.estado === 'in_repair' || orden.estado === 'testing' || orden.estado === 'ready' || orden.estado === 'quoted';
 
@@ -274,14 +292,14 @@ export default function OrdenDetalle({ orden, role, onClose, onEntregado, onBaja
             <div className="card" style={{ background: 'var(--bg-3)' }}>
               <div className="row between">
                 <div className="card-title"><Icon name="clipboard" size={14} /> Cotizacion</div>
-                <span className="badge amber">Total {fmtMXN(orden.cotizacion.monto)}</span>
+                <span className="badge amber">Total {fmtARS(orden.cotizacion.monto)}</span>
               </div>
               <ul className="ulist mt8">
                 {(orden.cotizacion.servicios_costos || []).map((s, i) => (
-                  <li key={i}><span>{s.nombre}</span><span className="mono">{fmtMXN(s.monto)}</span></li>
+                  <li key={i}><span>{s.nombre}</span><span className="mono">{fmtARS(s.monto)}</span></li>
                 ))}
                 {(orden.cotizacion.insumos || []).map((s, i) => (
-                  <li key={i}><span>{s.nombre} x{s.cantidad}</span><span className="c mono">{fmtMXN(s.precio * s.cantidad)}</span></li>
+                  <li key={i}><span>{s.nombre} x{s.cantidad}</span><span className="c mono">{fmtARS(s.precio * s.cantidad)}</span></li>
                 ))}
               </ul>
             </div>
@@ -345,12 +363,12 @@ export default function OrdenDetalle({ orden, role, onClose, onEntregado, onBaja
               <div className="banner-green"><Icon name="clipboard" size={15} /> Revisa la cotizacion y aprueba o rechaza el servicio.</div>
               <div className="card" style={{ background: 'var(--bg-3)' }}>
                 <ul className="ulist">
-                  {(orden.cotizacion?.servicios_costos || []).map((s, i) => <li key={i}><span>{s.nombre}</span><span className="mono">{fmtMXN(s.monto)}</span></li>)}
-                  {(orden.cotizacion?.insumos || []).map((s, i) => <li key={i}><span>{s.nombre} x{s.cantidad}</span><span className="mono">{fmtMXN(s.precio * s.cantidad)}</span></li>)}
+                  {(orden.cotizacion?.servicios_costos || []).map((s, i) => <li key={i}><span>{s.nombre}</span><span className="mono">{fmtARS(s.monto)}</span></li>)}
+                  {(orden.cotizacion?.insumos || []).map((s, i) => <li key={i}><span>{s.nombre} x{s.cantidad}</span><span className="mono">{fmtARS(s.precio * s.cantidad)}</span></li>)}
                 </ul>
                 <div className="row between" style={{ borderTop: '1px solid var(--line)', paddingTop: 10 }}>
                   <b>Total</b>
-                  <b style={{ color: 'var(--amber)', fontSize: 18 }}>{fmtMXN(orden.cotizacion?.monto)}</b>
+                  <b style={{ color: 'var(--amber)', fontSize: 18 }}>{fmtARS(orden.cotizacion?.monto)}</b>
                 </div>
               </div>
               <div className="grid2">
@@ -363,6 +381,7 @@ export default function OrdenDetalle({ orden, role, onClose, onEntregado, onBaja
             <>
               <p className="muted">Cotizacion enviada. Esperando aprobacion del cliente.</p>
               <CotizacionForm orden={orden} />
+              <button className="btn block mt8" onClick={abrirCompartir}><Icon name="mail" size={15} /> Compartir cotización con el cliente</button>
             </>
           )}
           {orden.estado === 'approved' && esTec && (
@@ -423,6 +442,7 @@ export default function OrdenDetalle({ orden, role, onClose, onEntregado, onBaja
           {orden.estado === 'ready' && role === 'admin' && (
             <button className="btn primary block lg" onClick={() => setEntregar(true)}><Icon name="truck" size={16} /> Entregar y cobrar</button>
           )}
+          <button className="btn block" onClick={abrirCompartir}><Icon name="mail" size={15} /> Compartir seguimiento y cotización</button>
         </div>
       )}
 
@@ -453,10 +473,44 @@ export default function OrdenDetalle({ orden, role, onClose, onEntregado, onBaja
         </Modal>
       )}
 
+      {compartir && (
+        <Modal title="Compartir con el cliente" sub="Enlaces publicos de esta orden (sin login)" onClose={() => setCompartir(null)}>
+          <div className="col">
+            <div className="field">
+              <label>Seguimiento en tiempo real</label>
+              <input className="input mono" readOnly value={compartir.tracker} onFocus={(e) => e.target.select()} />
+            </div>
+            <div className="field">
+              <label>Cotización para aprobar (enlace firmado)</label>
+              <input className="input mono" readOnly value={compartir.cotizacion} onFocus={(e) => e.target.select()} />
+            </div>
+            <div className="grid2">
+              <a
+                className="btn primary"
+                href={`https://wa.me/${CONTACTO.waVentas}?text=${encodeURIComponent(textoCompartir)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <Icon name="mail" size={14} /> Enviar por WhatsApp
+              </a>
+              <button
+                className="btn"
+                onClick={() => {
+                  navigator.clipboard?.writeText(textoCompartir);
+                  toastShow('Enlaces copiados', 'ok');
+                }}
+              >
+                <Icon name="clipboard" size={14} /> Copiar enlaces
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
       <div className="muted" style={{ marginTop: 18, paddingTop: 12, borderTop: '1px solid var(--line-soft)', fontSize: 11.5, lineHeight: 1.7, textAlign: 'center' }}>
-        Bertika® · Acumuladores Industriales · Buenos Aires, Argentina<br />
+        Bertika® · Acumuladores Industriales · {CONTACTO.direccion}<br />
         Ventas (tel/WhatsApp): {CONTACTO.telefono} · Soporte técnico: {CONTACTO.telefonoSoporte}<br />
-        Representante oficial de AMSA Forbat
+        {OFICIAL}
       </div>
     </Modal>
   );

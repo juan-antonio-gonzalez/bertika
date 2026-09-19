@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { Icon } from '../components/ui';
 import { useStore } from '../store/store';
 import { api } from '../store/api';
-import { CONTACTO } from '../data/siteData';
+import { CONTACTO, HORARIOS } from '../data/siteData';
 
 const IcoMarker = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -126,7 +126,7 @@ export default function Contacto() {
               </li>
               <li>
                 <span className="fi"><Icon name="clock" size={13} /></span>
-                <span><span className="lbl">Horarios</span>Lun a Vie 8:00–17:00 · Sáb 9:00–13:00</span>
+                <span><span className="lbl">Horarios</span>{HORARIOS.map((h) => `${h.dias} ${h.horas}`).join(' · ')}</span>
               </li>
             </ul>
           </div>

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useStore } from '../store/store';
-import { Icon, EstadoPill, ProgressTracker, fmtDate, fmtMXN, fmtFecha, appIconName, Timeline } from '../components/ui';
+import { Icon, EstadoPill, ProgressTracker, fmtDate, fmtARS, fmtFecha, appIconName, Timeline } from '../components/ui';
 import OrdenDetalle from '../components/OrdenDetalle';
 import { STATUS_STEP_INDEX } from '../data/seed';
 
@@ -24,7 +24,7 @@ function TrackerPanel({ orden, onVer }) {
         {bateria ? `${bateria.tipo} · ${bateria.voltaje} · ${bateria.capacidad}Ah · ${bateria.equipo}` : ''}
       </div>
 
-      <ProgressTracker orden={orden} ordenesAnteriores={[]} />
+      <ProgressTracker orden={orden} />
 
       <div className="grid2 mt16" style={{ gridTemplateColumns: '1fr 1fr' }}>
         <div className="card" style={{ background: 'var(--bg-3)', padding: 12 }}>
@@ -36,7 +36,7 @@ function TrackerPanel({ orden, onVer }) {
           <div className="muted" style={{ fontSize: 11, textTransform: 'uppercase' }}>Hora estimada de entrega</div>
           <div style={{ fontWeight: 800, fontSize: 15, color: 'var(--amber)', marginTop: 4 }}>{fmtDate(orden.hora_entrega)}</div>
           {orden.estado === 'ready' && <div className="badge green" style={{ marginTop: 6 }}>Lista para recogida</div>}
-          {orden.estado === 'delivered' && <div className="badge green" style={{ marginTop: 6 }}>Entregada {orden.monto_cobrado ? `· ${fmtMXN(orden.monto_cobrado)}` : ''}</div>}
+          {orden.estado === 'delivered' && <div className="badge green" style={{ marginTop: 6 }}>Entregada {orden.monto_cobrado ? `· ${fmtARS(orden.monto_cobrado)}` : ''}</div>}
         </div>
       </div>
 
@@ -47,7 +47,7 @@ function TrackerPanel({ orden, onVer }) {
               <b style={{ fontSize: 14 }}><Icon name="clipboard" size={14} /> Cotizacion por aprobar</b>
               <div className="muted" style={{ fontSize: 12.5 }}>El taller espera tu aprobacion para iniciar.</div>
             </div>
-            <b style={{ fontSize: 20, color: 'var(--amber)' }}>{fmtMXN(orden.cotizacion?.monto)}</b>
+            <b style={{ fontSize: 20, color: 'var(--amber)' }}>{fmtARS(orden.cotizacion?.monto)}</b>
           </div>
           <div className="grid2 mt16">
             <button className="btn primary lg" onClick={() => onVer(orden)}><Icon name="check" size={15} /> Revisar y aprobar</button>
@@ -154,10 +154,10 @@ export default function Cliente() {
                   <b style={{ fontSize: 15 }}>{o.bateria_serie}</b>
                   <div className="muted" style={{ fontSize: 12.5 }}>{data.baterias.find((b) => b.numero_serie === o.bateria_serie)?.equipo}</div>
                 </div>
-                <b style={{ fontSize: 22, color: 'var(--amber)' }}>{fmtMXN(o.cotizacion?.monto)}</b>
+                <b style={{ fontSize: 22, color: 'var(--amber)' }}>{fmtARS(o.cotizacion?.monto)}</b>
               </div>
               <ul className="ulist mt8">
-                {(o.cotizacion?.servicios_costos || []).map((s, i) => <li key={i}><span>{s.nombre}</span><span className="mono">{fmtMXN(s.monto)}</span></li>)}
+                {(o.cotizacion?.servicios_costos || []).map((s, i) => <li key={i}><span>{s.nombre}</span><span className="mono">{fmtARS(s.monto)}</span></li>)}
               </ul>
               <div className="grid2 mt16">
                 <button className="btn primary lg" onClick={() => setSel(o)}><Icon name="check" size={15} /> Aprobar cotizacion</button>
@@ -183,7 +183,7 @@ export default function Cliente() {
                   </div>
                   <div className="row" style={{ gap: 8 }}>
                     <span className="badge green"><Icon name="check" size={11} /> {fmtFecha(o.fecha_entrega)}</span>
-                    <b style={{ fontSize: 15 }}>{o.monto_cobrado ? fmtMXN(o.monto_cobrado) : ''}</b>
+                    <b style={{ fontSize: 15 }}>{o.monto_cobrado ? fmtARS(o.monto_cobrado) : ''}</b>
                   </div>
                 </div>
                 {o.servicios?.length > 0 && (

@@ -6,7 +6,7 @@ const menuItems = [
   { label: 'NUESTRA EMPRESA', to: '/empresa' },
   {
     label: 'PRODUCTOS',
-    to: '#',
+    to: '/productos',
     children: [
       { label: 'Baterías Ferroviarias', to: '/productos#ferroviarias' },
       { label: 'Baterías de Tracción', to: '/productos#traccion' },
@@ -14,6 +14,7 @@ const menuItems = [
       { label: 'Baterías de uso Solar y Eólico', to: '/productos#solar' },
       { label: 'Baterías de Arranque', to: '/productos#arranque' },
       { label: 'Baterías Especiales', to: '/productos#especiales' },
+      { label: 'Cargadores de Baterías', to: '/productos#cargadores' },
     ],
   },
   { label: 'SERVICIOS', to: '/servicios' },
@@ -75,7 +76,7 @@ export default function SiteHeader() {
             {menuItems.map((item) =>
               item.children ? (
                 <div key={item.label} className="has-dropdown">
-                  <a href="#">{item.label}</a>
+                  <Link to={item.to} className={location.pathname === item.to ? 'active' : ''}>{item.label}</Link>
                   <div className="dropdown">
                     {item.children.map((child) => (
                       <Link key={child.to} to={child.to}>{child.label}</Link>

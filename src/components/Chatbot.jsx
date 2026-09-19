@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { CONTACTO, HORARIOS_TEXTO } from '../data/siteData';
 
 const norm = (t) => t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
@@ -18,7 +19,7 @@ function botReply(raw) {
     return '¡Hola! Soy el asistente virtual de Bertika. Consultame sobre baterías, servicios, precios, garantía o seguimiento de tu orden.';
   }
   if (/precio|cuanto cuesta|costo|presupuesto|cotiz|valor|tarifa|barato|caro/.test(t)) {
-    return 'Los precios varían según línea y formato (ferroviarias, tracción, estacionarias, solar y eólico, arranque, especiales y cargadores). Para armarte una cotización personalizada escribinos por WhatsApp (1124813392) o por el formulario de contacto.';
+    return `Los precios varían según línea y formato (ferroviarias, tracción, estacionarias, solar y eólico, arranque, especiales y cargadores). Para armarte una cotización personalizada escribinos por WhatsApp (${CONTACTO.telefono}) o por el formulario de contacto.`;
   }
   if (/ferroviar|locomotora|tren/.test(t)) {
     return 'Las baterías ferroviarias están diseñadas para el arranque de locomotoras: soportan vibraciones, condiciones de temperatura severas y un alto número de ciclos de arranque. Cumplen normas FA8019 y FA8020.';
@@ -54,13 +55,13 @@ function botReply(raw) {
     return 'Estamos comprometidos con el medio ambiente: los acumuladores usados se consideran fuente de materias primas secundarias. Metales, plásticos y ácidos se desvían de los residuos urbanos hacia operaciones de reutilización autorizadas.';
   }
   if (/horario|abren|abierto|cierran|atenden|lunes a|sabado|lunes a viernes/.test(t)) {
-    return 'Horarios de atención: Lunes a Viernes de 8:00 a 17:00 hs y Sábados de 9:00 a 13:00 hs.';
+    return `Horarios de atención: ${HORARIOS_TEXTO}.`;
   }
   if (/donde|ubicacion|llego|llegar|direccion|mapa|buenos aires|bsas|caba|estan/.test(t)) {
-    return 'Estamos en Buenos Aires, Argentina. En la página "Cómo llegar" encontrarás el mapa interactivo y un botón para abrir la navegación directa en Google Maps.';
+    return `Estamos en ${CONTACTO.direccion}. En la página "Cómo llegar" encontrarás el mapa interactivo y un botón para abrir la navegación directa en Google Maps.`;
   }
   if (/contacto|contactar|email|telefono|whatsapp|escribir|mail/.test(t)) {
-    return 'Podés escribirnos por WhatsApp (1124813392, ventas), Soporte técnico al 1124869443, por mail a ventas@bertika.com (ventas y consultas), soporte.tecnico@bertika.com (soporte técnico) o desde el formulario de contacto del sitio.';
+    return `Podés escribirnos por WhatsApp (${CONTACTO.telefono}, ventas), Soporte técnico al ${CONTACTO.telefonoSoporte}, por mail a ${CONTACTO.emailVentas} (ventas y consultas), ${CONTACTO.emailSoporte} (soporte técnico) o desde el formulario de contacto del sitio.`;
   }
   if (/gracias|graci|perfecto|excelente|buenisimo|genial/.test(t)) {
     return '¡A vos! Cualquier otra consulta sobre baterías, estoy acá para ayudarte.';

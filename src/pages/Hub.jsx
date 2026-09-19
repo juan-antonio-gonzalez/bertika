@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useStore } from '../store/store';
-import { Icon, EstadoPill, OrdenCard, fmtDate, fmtMXN, fmtFecha } from '../components/ui';
+import { Icon, EstadoPill, OrdenCard, fmtDate, fmtARS, fmtFecha } from '../components/ui';
 import OrdenDetalle from '../components/OrdenDetalle';
 import { ORDEN_ESTADOS } from '../data/reglas';
 
@@ -126,7 +126,10 @@ function Dashboard() {
       if (dias <= 30 && dias >= 0) gPorVencer.push({ orden: o, dias });
     }
   }
-  const pasadasHoy = data.ordenes.filter((o) => !['delivered', 'cancelled'].includes(o.estado) && new Date(o.fecha_entrega).toDateString() === hoy);
+  // Entrega estimada para hoy y todavia abierta. Ojo: fecha_entrega solo se
+  // completa al entregar, por eso antes contaba siempre 0.
+  const pasadasHoy = data.ordenes.filter((o) => !['delivered', 'cancelled'].includes(o.estado)
+    && o.hora_entrega && new Date(o.hora_entrega).toDateString() === hoy);
   const bateriasActivas = data.baterias.filter((b) => b.estado_vida !== 'dada_de_baja');
   const garantiaTip = data.baterias.filter((b) => b.estado_vida === 'en_garantia').length;
 
@@ -135,7 +138,7 @@ function Dashboard() {
       <div className="grid4">
         <div className="kpi"><div className="kpi-label">Baterias activas en taller</div><div className="kpi-value">{activas.length}</div><div className="kpi-sub">{bateriasActivas.length} registradas en total</div></div>
         <div className="kpi"><div className="kpi-label">Ordenes cerradas hoy</div><div className="kpi-value green">{cerradasHoy.length}</div><div className="kpi-sub">{pasadasHoy.length} entrega(s) pendiente(s) del dia</div></div>
-        <div className="kpi"><div className="kpi-label">Ingresos del dia</div><div className="kpi-value">{fmtMXN(ingresosHoy)}</div><div className="kpi-sub">facturados hoy</div></div>
+        <div className="kpi"><div className="kpi-label">Ingresos del dia</div><div className="kpi-value">{fmtARS(ingresosHoy)}</div><div className="kpi-sub">facturados hoy</div></div>
         <div className={`kpi ${stockCritico.length ? 'alert' : ''}`}><div className="kpi-label">Stock bajo (critico &lt; 3)</div><div className="kpi-value">{stockCritico.length}</div><div className="kpi-sub">cargadores y celdas con atencion</div></div>
         <div className={`kpi ${reproceso.length ? 'danger' : ''}`}><div className="kpi-label">Prueba fallida (reproceso)</div><div className="kpi-value">{reproceso.length}</div><div className="kpi-sub">regresadas a reparacion</div></div>
         <div className="kpi"><div className="kpi-label">Garantias por vencer (30 dias)</div><div className="kpi-value">{gPorVencer.length}</div><div className="kpi-sub">{garantiaTip} baterias bajo garantia activa</div></div>
@@ -251,8 +254,8 @@ function Inventario() {
                     <td><b>{i.nombre}</b></td>
                     <td><span className="chip">{i.categoria}</span></td>
                     <td className="num"><span className={`badge ${i.stock === 0 ? 'gray' : crit ? 'red' : 'green'}`}>{i.stock}</span></td>
-                    <td className="num">{fmtMXN(i.precio)}</td>
-                    <td className="num mono">{fmtMXN(i.stock * i.precio)}</td>
+                    <td className="num">{fmtARS(i.precio)}</td>
+                    <td className="num mono">{fmtARS(i.stock * i.precio)}</td>
                     <td>
                       <div className="row">
                         <input className="input" type="number" min={1} style={{ width: 70 }} value={extra[i.id] || ''} onChange={(e) => setExtra({ ...extra, [i.id]: e.target.value })} placeholder="cant" />
@@ -476,7 +479,7 @@ function HistorialSerie() {
               <div key={o.id} className="row between" style={{ borderTop: '1px solid var(--line-soft)', padding: '10px 0' }}>
                 <span className="mono">{o.id}</span>
                 <span>{fmtDate(o.fecha_ingreso)}</span>
-                {o.cotizacion && <span className="mono">{fmtMXN(o.monto_cobrado || o.cotizacion.monto)}</span>}
+                {o.cotizacion && <span className="mono">{fmtARS(o.monto_cobrado || o.cotizacion.monto)}</span>}
                 <EstadoPill estado={o.estado} />
                 {o.garantia && <span className="badge green">Garantia {o.garantia.meses}m</span>}
               </div>
@@ -503,7 +506,7 @@ export default function Hub() {
       <div className="row between wrap mb24">
         <div>
           <h1 className="page-title">Hub administrativo</h1>
-          <p className="page-sub">Operacion del taller · {activas} ordenes activas · {fmtMXN(data.ordenes.filter((o) => o.estado === 'delivered').reduce((a, o) => a + (o.monto_cobrado || 0), 0))} facturados en total</p>
+          <p className="page-sub">Operacion del taller · {activas} ordenes activas · {fmtARS(data.ordenes.filter((o) => o.estado === 'delivered').reduce((a, o) => a + (o.monto_cobrado || 0), 0))} facturados en total</p>
         </div>
         <div className="row">
           <button className="btn primary" onClick={() => setNueva(true)}><Icon name="plus" size={15} /> Nueva orden</button>

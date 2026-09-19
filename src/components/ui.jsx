@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useStore } from '../store/store';
-import { ESTADO_LABEL, STATUS_STEP_INDEX, TRACKER_STEPS } from '../data/seed';
+import { ESTADO_LABEL, STATUS_STEP_INDEX, TRACKER_STEPS } from '../data/reglas';
 
 /* ---------------- Icons (energy/electric themed) ---------------- */
 const S = {
@@ -48,39 +48,11 @@ export const Icon = ({ name, size = 16, style }) => (
   <span style={{ display: 'inline-flex', width: size + 2, height: size + 2, ...style }}>{S[name] || S.bolt}</span>
 );
 
-export function AppIcon({ type, size = 16 }) {
-  const map = {
-    Automotriz: 'car',
-    Autoelevador: RampIcon(size),
-    Ferroviario: 'train',
-    'Industrial/UPS': 'building',
-    Marino: 'ship',
-  };
-  return <Icon name={map[type] || 'bolt'} size={size} />;
-}
-
-export function RampIcon(size) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M3 18 21 6M3 18h18V9" />
-      <path d="M6 18l7-6" />
-    </svg>
-  );
-}
-
 export function EstadoPill({ estado }) {
-  const map = {
-    received: ['amber', 'Recibida'],
-    diagnosing: ['blue', 'Diagnostico'],
-    quoted: ['amber', 'Cotizada'],
-    approved: ['amber', 'Aprobada'],
-    in_repair: ['orange', 'En reparacion'],
-    testing: ['blue', 'Prueba final'],
-    ready: ['green', 'Lista'],
-    delivered: ['gray', 'Entregada'],
-    cancelled: ['red', 'Cancelada'],
-  };
-  const [cls, label] = map[estado] || ['gray', estado];
+  const cls = {
+    received: 'amber', diagnosing: 'blue', quoted: 'amber', approved: 'amber',
+    in_repair: 'orange', testing: 'blue', ready: 'green', delivered: 'gray', cancelled: 'red',
+  }[estado] || 'gray';
   const ic = {
     received: 'battery', diagnosing: 'volt', quoted: 'clipboard', approved: 'check',
     in_repair: 'tools', testing: 'gauge', ready: 'check', delivered: 'truck', cancelled: 'x',
@@ -88,17 +60,13 @@ export function EstadoPill({ estado }) {
   return (
     <span className={`badge ${cls}`}>
       <Icon name={ic} size={12} />
-      {label}
+      {ESTADO_LABEL[estado] || estado}
     </span>
   );
 }
 
-export function EstadoStepIndex(estado) {
-  return STATUS_STEP_INDEX[estado] ?? 0;
-}
-
 /* ---------------- Progress tracker ---------------- */
-export function ProgressTracker({ orden, ordenesAnteriores }) {
+export function ProgressTracker({ orden }) {
   const eventos = orden.eventos || [];
   const pasoFechas = {};
   for (const ev of eventos) {
@@ -114,16 +82,12 @@ export function ProgressTracker({ orden, ordenesAnteriores }) {
     }[ev.tipo];
     if (idx && !pasoFechas[idx]) pasoFechas[idx] = ev.fecha;
   }
-  const currentIdx = STATUS_STEP_INDEX[orden.estado];
-  const hist = ordenesAnteriores || [];
-  void currentIdx;
+  const currentIdx = STATUS_STEP_INDEX[orden.estado] ?? 0;
   return (
     <div className="tracker">
       {TRACKER_STEPS.map((step, i) => {
         const done = (pasoFechas[step.key] || i <= currentIdx) && orden.estado !== 'cancelled';
         const date = pasoFechas[step.key] || (i === 0 && orden.fecha_ingreso);
-        const pasoHist = hist.filter((o) => o.bateria_serie === orden.bateria_serie).length;
-        void pasoHist;
         return (
           <div key={step.key} className={`tstep ${done ? 'done' : ''}`}>
             <div className="ic"><Icon name={done ? 'check' : 'bolt'} size={14} /></div>
@@ -193,6 +157,7 @@ export function Shell() {
               <Link to={dest(user.rol)} className={location.pathname.startsWith(dest(user.rol)) ? 'active' : ''}>
                 {user.rol === 'admin' ? 'Hub' : user.rol === 'tecnico' ? 'Operativo' : 'Mi espacio'}
               </Link>
+              {user.rol === 'admin' && <Link to="/reportes" className={location.pathname === '/reportes' ? 'active' : ''}><Icon name="clipboard" size={14} />Reportes</Link>}
               {user.rol === 'admin' && <Link to="/usuarios" className={location.pathname === '/usuarios' ? 'active' : ''}><Icon name="users" size={14} />Usuarios</Link>}
               <Link to="/settings" className={location.pathname === '/settings' ? 'active' : ''}><Icon name="gear" size={14} />Ajustes</Link>
               <button onClick={() => { logout(); navigate('/'); }}><Icon name="logout" size={14} />Salir</button>
@@ -253,7 +218,7 @@ export function OrdenCard({ orden, onOpen }) {
         <span>Ingreso: {fmtDate(orden.fecha_ingreso)}</span>
       </div>
       <div className="foot">
-        {orden.cotizacion?.monto ? <span className="monto">{fmtMXN(orden.cotizacion.monto)}</span> : <span />}
+        {orden.cotizacion?.monto ? <span className="monto">{fmtARS(orden.cotizacion.monto)}</span> : <span />}
         <span className="muted" style={{ fontSize: 11 }}>{fmtTiempo(orden.fecha_ingreso)}</span>
       </div>
     </div>
@@ -288,14 +253,8 @@ export function fmtTiempo(isoStr) {
   return `hace ${Math.round(h / 24)}d`;
 }
 
-export function fmtMXN(n) {
+export function fmtARS(n) {
   return (Number(n) || 0).toLocaleString('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 });
-}
-
-export const fmtARS = fmtMXN;
-
-export function estLabel(key) {
-  return ESTADO_LABEL[key] || key;
 }
 
 /* ---------------- Timeline ---------------- */

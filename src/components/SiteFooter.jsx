@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { Icon } from './ui';
-import { CONTACTO } from '../data/siteData';
+import { CONTACTO, OFICIAL } from '../data/siteData';
 
 const productos = [
   { label: 'Baterías Ferroviarias', to: '/productos#ferroviarias' },
@@ -9,6 +9,7 @@ const productos = [
   { label: 'Baterías de uso Solar y Eólico', to: '/productos#solar' },
   { label: 'Baterías de Arranque', to: '/productos#arranque' },
   { label: 'Baterías Especiales', to: '/productos#especiales' },
+  { label: 'Cargadores de Baterías', to: '/productos#cargadores' },
 ];
 
 export default function SiteFooter() {
@@ -29,11 +30,11 @@ export default function SiteFooter() {
               Especialistas en acumuladores eléctricos industriales. Diagnóstico, reparación, reacondicionamiento y entrega con garantía.
             </p>
             <p style={{ margin: '0 0 16px', color: 'var(--amber)', fontWeight: 600 }}>
-              Representante oficial de AMSA Forbat
+              {OFICIAL}
             </p>
             <div className="footer-contact-item">
               <img src="/img/marker-footer.png" alt="" />
-              <span>Buenos Aires, Argentina</span>
+              <span>{CONTACTO.direccion}</span>
             </div>
             <div className="footer-contact-item">
               <img src="/img/phone-footer.png" alt="" />
@@ -45,15 +46,15 @@ export default function SiteFooter() {
             </div>
             <div className="footer-contact-item">
               <img src="/img/mail-footer.png" alt="" />
-              <span>Ventas: ventas@bertika.com</span>
+              <span>Ventas: {CONTACTO.emailVentas}</span>
             </div>
             <div className="footer-contact-item">
               <img src="/img/mail-footer.png" alt="" />
-              <span>Soporte técnico: soporte.tecnico@bertika.com</span>
+              <span>Soporte técnico: {CONTACTO.emailSoporte}</span>
             </div>
             <div className="footer-contact-item">
               <img src="/img/mail-footer.png" alt="" />
-              <span>Cobranzas: cobranzas@bertika.com</span>
+              <span>Cobranzas: {CONTACTO.emailCobranzas}</span>
             </div>
           </div>
 

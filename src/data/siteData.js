@@ -58,3 +58,17 @@ export const CONTACTO = {
 };
 
 export const OFICIAL = 'Representante oficial de AMSA Forbat';
+
+// Horarios de atencion: unica fuente (ComoLlegar, Contacto y Chatbot).
+export const HORARIOS = [
+  { dias: 'Lunes a Viernes', horas: '8:00 a 17:00' },
+  { dias: 'Sábado', horas: '9:00 a 13:00' },
+];
+
+// Resumen en una linea para textos y respuestas del chat.
+export const HORARIOS_TEXTO = `${HORARIOS[0].dias} de ${HORARIOS[0].horas} hs y ${HORARIOS[1].dias} de ${HORARIOS[1].horas} hs`;
+
+// URL de Google Maps derivada de la direccion (mapa embebido y "como llegar").
+export const MAPS_QUERY = encodeURIComponent(CONTACTO.direccion);
+export const MAPS_EMBED_URL = `https://maps.google.com/maps?q=${MAPS_QUERY}&z=11&output=embed`;
+export const MAPS_DIR_URL = `https://www.google.com/maps/dir/?api=1&destination=${MAPS_QUERY}`;

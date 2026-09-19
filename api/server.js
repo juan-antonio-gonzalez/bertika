@@ -12,7 +12,7 @@ import rateLimit from 'express-rate-limit';
 import { query, one, tx } from './db.js';
 import { nextId } from './ids.js';
 import { signToken, authRequired, requireRol, SECRET } from './middleware/auth.js';
-import { canTransition, ORDEN_ESTADOS, ESTADO_LABEL } from './reglas.js';
+import { canTransition, ORDEN_ESTADOS } from './reglas.js';
 import { generarCodigoUnico, digitar, formatearCodigo } from './codigo.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -711,7 +711,6 @@ app.post('/api/reset', authRequired, requireRol('admin'), async (req, res) => {
     return res.status(403).json({ error: 'Reset deshabilitado en este entorno (requiere ALLOW_RESET=1). Borra datos solo con cuidado manual.' });
   }
   try {
-    const seedScript = await import('./seed.js');
     // seed.js usa su propio pool; la re-ejecucion se hace en proceso hijo para limpiar
     const { execFile } = await import('node:child_process');
     await new Promise((resolve, reject) => {
@@ -888,7 +887,7 @@ app.post('/api/diagnostico/:orden_id/fotos', authRequired, upload.array('fotos',
 
 // ---------- server ----------
 const PORT = process.env.PORT || 3001;
-app.use((err, req, res, next) => {
+app.use((err, req, res, _next) => {
   console.error('Error:', err.message);
   return res.status(err.status || 400).json({ error: err.message });
 });

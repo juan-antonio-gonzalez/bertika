@@ -27,11 +27,11 @@ export const seedTecnicos = [
 ];
 
 export const seedClientes = [
-  { id: 'cli_01', nombre: 'Juan Garcia', tipo: 'particular', telefono: '5512345678', contacto: 'Juan Garcia' },
-  { id: 'cli_02', nombre: 'Maria Lopez', tipo: 'particular', telefono: '5598765432', contacto: 'Maria Lopez' },
-  { id: 'cli_03', nombre: 'Logistica del Valle S.A. de C.V.', tipo: 'flotilla_corporativa', telefono: '5567891234', contacto: 'Ricardo Paredes (Jefe de Flotilla)' },
-  { id: 'cli_04', nombre: 'Ferrocarriles del Norte', tipo: 'flotilla_corporativa', telefono: '5543219876', contacto: 'Ing. Elena Quintero (Mantenimiento)' },
-  { id: 'cli_05', nombre: 'Telecom Centro S.A.', tipo: 'flotilla_corporativa', telefono: '5588881122', contacto: 'Mario Vega (Infraestructura)' },
+  { id: 'cli_01', nombre: 'Juan Garcia', tipo: 'particular', telefono: '11 5555-0101', contacto: 'Juan Garcia' },
+  { id: 'cli_02', nombre: 'Maria Lopez', tipo: 'particular', telefono: '11 5555-0102', contacto: 'Maria Lopez' },
+  { id: 'cli_03', nombre: 'Logistica del Valle S.A.', tipo: 'flotilla_corporativa', telefono: '11 5555-0103', contacto: 'Ricardo Paredes (Jefe de Flotilla)' },
+  { id: 'cli_04', nombre: 'Ferrocarriles del Norte', tipo: 'flotilla_corporativa', telefono: '11 5555-0104', contacto: 'Ing. Elena Quintero (Mantenimiento)' },
+  { id: 'cli_05', nombre: 'Telecom Centro S.A.', tipo: 'flotilla_corporativa', telefono: '11 5555-0105', contacto: 'Mario Vega (Infraestructura)' },
 ];
 
 export const seedBaterias = [
@@ -61,7 +61,7 @@ export const seedInsumos = [
 ];
 
 export const seedBajas = [
-  { id: 'baja_01', bateria_id: 'bat_09', serie: 'BAT-MTC-103', fecha: iso(now - 26 * D), motivo: 'Celdas irreparables / capacidad bajo 40%', disposicion: 'Reciclaje de plomo-acido autorizado', pila: false },
+  { id: 'baja_01', bateria_id: 'bat_09', serie: 'BAT-MTC-103', fecha: iso(now - 26 * D), motivo: 'Celdas irreparables / capacidad bajo 40%', disposicion: 'Reciclaje de plomo-acido autorizado' },
 ];
 
 function evento(tipo, detalle, ms) {
@@ -130,14 +130,13 @@ export const seedOrdenes = [
     eventos: [
       evento('ingreso', 'Bateria ingresada al taller. Falla reportada: sulfatada, no retiene carga.', now - 2 * D),
       evento('diagnostico', 'Diagnostico registrado: 10.8V, RI 9.2 mOhm, prueba de carga fallida. Capacidad 18/45 Ah.', now - 2 * D + 4 * H),
-      evento('cotizacion', 'Cotizacion enviada al cliente por $1,450 MXN. Esperando aprobacion.', now - 2 * D + 5 * H),
+      evento('cotizacion', 'Cotizacion enviada al cliente por ARS 1.450. Esperando aprobacion.', now - 2 * D + 5 * H),
     ],
   }),
 
   orden('ord_04', 'BAT-MTC-102', 'cli_03', 'tec_01', 'No mantiene voltaje bajo carga, humedad en el banco', 'in_repair', {
     fecha_ingreso: iso(now - 3 * D),
     hora_entrega: iso(now + 30 * H),
-    diagnumero: 0,
     diagnostico: {
       voltaje_medido: 31.5,
       resistencia_interna: 21.0,
@@ -169,8 +168,8 @@ export const seedOrdenes = [
     eventos: [
       evento('ingreso', 'Bateria ingresada al taller. Falla reportada: no mantiene voltaje bajo carga, humedad en el banco.', now - 3 * D),
       evento('diagnostico', 'Diagnostico registrado: 31.5V, RI 21.0 mOhm. Celda 12 en corto.', now - 3 * D + 5 * H),
-      evento('cotizacion', 'Cotizacion enviada por $5,200 MXN.', now - 3 * D + 6 * H),
-      evento('aprobada', 'Cotizacion aprobada por Logistica del Valle S.A. de C.V.', now - 3 * D + 7 * H),
+      evento('cotizacion', 'Cotizacion enviada por ARS 5.200.', now - 3 * D + 6 * H),
+      evento('aprobada', 'Cotizacion aprobada por Logistica del Valle S.A.', now - 3 * D + 7 * H),
       evento('reparacion', 'Reparacion iniciada por Carlos Ruiz.', now - 2 * D),
       evento('insumo', 'Insumo utilizado: Celda de repuesto 2V (plomo-acido) x1', now - 2 * D + 1 * H),
       evento('insumo', 'Insumo utilizado: Electrolito acido sulfurico (1L) x3', now - 2 * D + 1 * H),
@@ -207,7 +206,7 @@ export const seedOrdenes = [
     eventos: [
       evento('ingreso', 'Bateria ingresada al taller. Falla reportada: caida de voltaje en banco 2 durante traccion.', now - 4 * D),
       evento('diagnostico', 'Diagnostico registrado: 65.4V, RI 38.0 mOhm. Electrolito bajo en celdas laterales.', now - 4 * D + 8 * H),
-      evento('cotizacion', 'Cotizacion enviada por $8,900 MXN.', now - 4 * D + 9 * H),
+      evento('cotizacion', 'Cotizacion enviada por ARS 8.900.', now - 4 * D + 9 * H),
       evento('aprobada', 'Cotizacion aprobada por Ferrocarriles del Norte.', now - 4 * D + 10 * H),
       evento('reparacion', 'Reparacion iniciada por Sofia Ramirez.', now - 3 * D),
       evento('insumo', 'Insumo utilizado: Electrolito acido sulfurico (1L) x4', now - 3 * D + 2 * H),
@@ -245,7 +244,7 @@ export const seedOrdenes = [
     eventos: [
       evento('ingreso', 'Bateria ingresada al taller. Reacondicionamiento preventivo programado.', now - 5 * D),
       evento('diagnostico', 'Diagnostico registrado: 12.1V, RI 6.8 mOhm. Prueba de carga aprobada.', now - 5 * D + 4 * H),
-      evento('cotizacion', 'Cotizacion enviada por $850 MXN.', now - 5 * D + 5 * H),
+      evento('cotizacion', 'Cotizacion enviada por ARS 850.', now - 5 * D + 5 * H),
       evento('aprobada', 'Cotizacion aprobada por el cliente.', now - 5 * D + 6 * H),
       evento('reparacion', 'Reparacion iniciada por Carlos Ruiz.', now - 4 * D),
       evento('insumo', 'Insumo utilizado: Borne/terminal universal x1', now - 4 * D + 3 * H),
@@ -277,15 +276,15 @@ export const seedOrdenHistorica = orden('ord_07', 'BAT-AUT-003', 'cli_01', 'tec_
   prueba_final: { estado: 'passed', capacidad_medida: 53, obs: 'Aprobada.' },
   monto_cobrado: 1200,
   fecha_entrega: iso(now - 90 * D + 30 * H),
-  garantia: { meses: 6, ciclos: 100, vence: iso(now) },
+  garantia: { meses: 6, ciclos: 100, vence: iso(now + 92 * D) },
   eventos: [
     evento('ingreso', 'Bateria ingresada. Falla: no retiene carga.', now - 90 * D),
     evento('diagnostico', 'Diagnostico registrado.', now - 90 * D + 2 * H),
-    evento('cotizacion', 'Cotizacion enviada por $1,200 MXN.', now - 90 * D + 3 * H),
+    evento('cotizacion', 'Cotizacion enviada por ARS 1.200.', now - 90 * D + 3 * H),
     evento('aprobada', 'Aprobada por el cliente.', now - 90 * D + 4 * H),
     evento('reparacion', 'Reparacion iniciada.', now - 90 * D + 5 * H),
     evento('prueba_aprobada', 'Prueba final aprobada.', now - 90 * D + 27 * H),
-    evento('entregada', 'Bateria entregada al cliente. $1,200 MXN cobrados.', now - 90 * D + 30 * H),
+    evento('entregada', 'Bateria entregada al cliente. ARS 1.200 cobrados.', now - 90 * D + 30 * H),
   ],
 });
 
@@ -294,7 +293,7 @@ export const seedOrdenEntregadaReciente = orden('ord_08', 'BAT-UPS-301', 'cli_05
   fecha_ingreso: iso(now - 12 * D),
   hora_entrega: iso(now - 11 * D),
   diagnostico: {
-    voltaje_medido: '44.1V',
+    voltaje_medido: '44.1',
     resistencia_interna: 18.2,
     prueba_carga: 'failed',
     notas: 'Celda 21 degradada. Reemplazo preventivo.',
@@ -314,10 +313,10 @@ export const seedOrdenEntregadaReciente = orden('ord_08', 'BAT-UPS-301', 'cli_05
   eventos: [
     evento('ingreso', 'Bateria ingresada. Alerta de bajo voltaje en banco UPS.', now - 12 * D),
     evento('diagnostico', 'Diagnostico registrado.', now - 12 * D + 3 * H),
-    evento('cotizacion', 'Cotizacion enviada por $6,800 MXN.', now - 12 * D + 4 * H),
+    evento('cotizacion', 'Cotizacion enviada por ARS 6.800.', now - 12 * D + 4 * H),
     evento('aprobada', 'Aprobada por Telecom Centro S.A.', now - 12 * D + 5 * H),
     evento('reparacion', 'Reparacion iniciada.', now - 11 * D),
     evento('prueba_aprobada', 'Prueba final aprobada.', now - 11 * D + 10 * H),
-    evento('entregada', 'Bateria entregada. $6,800 MXN cobrados.', now - 11 * D + 12 * H),
+    evento('entregada', 'Bateria entregada. ARS 6.800 cobrados.', now - 11 * D + 12 * H),
   ],
 });

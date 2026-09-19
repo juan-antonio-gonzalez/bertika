@@ -67,7 +67,7 @@ export default function Tracker() {
           <EstadoPill estado={orden.estado} />
         </div>
 
-        <ProgressTracker orden={orden} ordenesAnteriores={[]} />
+        <ProgressTracker orden={orden} />
 
         <div className="grid2 mt16" style={{ gridTemplateColumns: '1fr 1fr' }}>
           <div className="card" style={{ background: 'var(--bg-3)', padding: 12 }}>

@@ -27,7 +27,10 @@ export async function api(path, { method = 'GET', body, form } = {}) {
   }
   let res;
   try {
-    res = await fetch(BASE_URL + path, { method, headers, body: payload });
+    // GET/HEAD no admiten body: si algun caller lo pasa, se ignora.
+    const opciones = { method, headers };
+    if (method !== 'GET' && method !== 'HEAD' && payload !== undefined) opciones.body = payload;
+    res = await fetch(BASE_URL + path, opciones);
   } catch {
     throw new Error('No se pudo conectar con el servidor');
   }

@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { CONTACTO } from '../data/siteData';
+import { CONTACTO, HORARIOS, MAPS_EMBED_URL, MAPS_DIR_URL } from '../data/siteData';
 
 export default function ComoLlegar() {
   return (
@@ -46,7 +46,7 @@ export default function ComoLlegar() {
             <div className="card pad0">
               <iframe
                 title="Ubicación Bertika"
-                src="https://maps.google.com/maps?q=Buenos%20Aires%2C%20Argentina&z=11&output=embed"
+                src={MAPS_EMBED_URL}
                 style={{ width: '100%', height: 340, border: 0, display: 'block' }}
                 loading="lazy"
                 allowFullScreen
@@ -58,7 +58,7 @@ export default function ComoLlegar() {
           <div className="center mt24">
             <a
               className="btn primary lg"
-              href="https://www.google.com/maps/dir/?api=1&destination=Buenos%20Aires%2C%20Argentina"
+              href={MAPS_DIR_URL}
               target="_blank"
               rel="noopener noreferrer"
             >
@@ -69,14 +69,12 @@ export default function ComoLlegar() {
           <div className="card mt24">
             <h3 className="card-title">Horarios de atención</h3>
             <div className="ulist">
-              <div className="row between" style={{ padding: '8px 0' }}>
-                <span>Lunes a Viernes</span>
-                <strong>8:00 a 17:00</strong>
-              </div>
-              <div className="row between" style={{ padding: '8px 0' }}>
-                <span>Sábado</span>
-                <strong>9:00 a 13:00</strong>
-              </div>
+              {HORARIOS.map((h) => (
+                <div key={h.dias} className="row between" style={{ padding: '8px 0' }}>
+                  <span>{h.dias}</span>
+                  <strong>{h.horas}</strong>
+                </div>
+              ))}
             </div>
           </div>
         </div>

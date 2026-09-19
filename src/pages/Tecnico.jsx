@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import { useStore } from '../store/store';
-import { Icon, EstadoPill, fmtDate, appIconName, fmtTiempo, fmtMXN } from '../components/ui';
+import { Icon, EstadoPill, fmtDate, appIconName, fmtTiempo, fmtARS } from '../components/ui';
 import OrdenDetalle from '../components/OrdenDetalle';
+import { ESTADO_LABEL } from '../data/reglas';
 import { useNavigate } from 'react-router-dom';
 
 export default function Tecnico() {
@@ -52,7 +53,7 @@ export default function Tecnico() {
         <div className="row wrap mb16">
           {['todas', 'received', 'diagnosing', 'approved', 'in_repair', 'testing', 'ready'].map((e) => (
             <button key={e} className={`pill ${filtro === e ? 'amber-t' : 'muted'}`} onClick={() => setFiltro(e)}>
-              {e === 'todas' ? 'Todas' : e}
+              {e === 'todas' ? 'Todas' : ESTADO_LABEL[e]}
             </button>
           ))}
         </div>
@@ -85,7 +86,7 @@ export default function Tecnico() {
                   </div>
                 </div>
                 <div className="row" style={{ gap: 8 }}>
-                  {o.cotizacion?.monto && <span className="badge amber" style={{ fontSize: 13 }}>{fmtMXN(o.cotizacion.monto)}</span>}
+                  {o.cotizacion?.monto && <span className="badge amber" style={{ fontSize: 13 }}>{fmtARS(o.cotizacion.monto)}</span>}
                   <button className="btn primary" onClick={() => setSel(o)}><Icon name="volt" size={14} /> {o.estado === 'received' || o.estado === 'diagnosing' ? 'Diagnosticar' : 'Detalle'}</button>
                 </div>
               </div>
