@@ -30,7 +30,34 @@ Requiere token. Devuelve `{ tecnicos[], clientes[], baterias[], insumos[], orden
 | `GET` | `/public/cotizacion/:orden_id` | Cotización pública: datos, `cotizacion`, `estado_cotizacion`, `bateria`, `cliente`. |
 | `POST` | `/ordenes/:id/cotizacion/aprobar` | Aprueba la cotización (solo si `estado === 'quoted'`). |
 | `POST` | `/ordenes/:id/cotizacion/rechazar` | Rechaza la cotización → la orden se **cancela**. |
-| `POST` | `/public/contacto` | Envía la consulta por correo a `ventas@bertika.com`. Si viene `serie`, además crea cliente (si no existe por email) + orden en `received`. Body: `{ nombre, email, mensaje, empresa?, telefono?, asunto?, serie? }`. |
+| `POST` | `/public/contacto` | Envía la consulta por correo a `ventas@bertika.com`. Si viene `serie`, además crea cliente (si no existe por email) + orden en `received`. Body: `{ nombre, email, mensaje, empresa?, telefono?, asunto?, serie?, cotizacion_codigo? }`. |
+| `GET` | `/public/dolar` | Cotización del dólar oficial para el cotizador de visitas (proxy con caché de 10 min y respaldo entre proveedores). |
+| `GET` | `/public/cotizador` | Configuración vigente del cotizador (`config` normalizada + `actualizado` + `actualizadoPor`). La edita el admin. |
+| `POST` | `/public/cotizacion-visita` | Guarda la estimación del cotizador de visitas y devuelve su código (`CV-000123`). |
+| `GET` | `/public/cotizacion-visita/:codigo` | Detalle de una estimación por código (sin datos personales). |
+| `PUT` | `/cotizador` | **Admin.** Reemplaza la configuración del cotizador. Body: `{ config }`. Se valida con `normalizarConfig()` (franjas que avancen, precios ≥ 0, IVA 0-100%, al menos un tipo) y queda en el historial. |
+| `GET` | `/cotizador/historial` | **Admin.** Últimas 50 ediciones de la configuración (fecha y usuario). |
+
+### `POST /public/cotizacion-visita`
+
+Body: `{ km, renglones: [{ tipoId, cantidad }], extrasSel: [{ id, cantidad }], urgencia, turno, nombre?, empresa?,
+email?, telefono?, fecha_preferida? }`.
+
+Devuelve `{ ok, codigo, total, moneda, ars, dolar, avisos, resumen }`. El servidor **recalcula** el total con el mismo
+módulo que usa la web (`src/data/cotizadorVisita.js`) y con **la configuración vigente de la base** (`cotizador_config`),
+guarda la estimación con la cotización del dólar del momento y rechaza distancias mayores a la cobertura configurada
+(`fueraDeCobertura: true`).
+
+Modelo de precio (todo editable desde el panel del Hub → pestaña **Cotizador**):
+
+- **Franjas de traslado**: cada franja tiene una `base` que cubre hasta `cubreKm` km y, desde ahí, `kmAdicional` por km extra.
+- **Viáticos**: desde `viaticos.desdeKm` se suma `porDia` por día de viaje (1 día y uno más cada `diaCadaKm` km, con tope `maxDias`).
+- **Revisión** por tipo de batería, **descuentos** por volumen, **extras** (con `porEquipo`), **recargos** de urgencia/turno, **IVA** y **vigencia**.
+
+### `GET /public/dolar`
+
+`{ disponible, casa, compra, venta, fuente, actualizado, consultado, cacheado?, vencido? }`. Con `?forzar=1` refresca
+la caché. Si ningún proveedor responde y hay un valor previo, lo devuelve marcado `vencido: true`.
 
 ## Órdenes (requieren token)
 

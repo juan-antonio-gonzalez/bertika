@@ -124,3 +124,48 @@ CREATE TABLE IF NOT EXISTS insumos_movimientos (
   usuario JSONB,
   fecha TIMESTAMPTZ DEFAULT now()
 );
+
+-- Cotizador de visitas: estimaciones guardadas con su codigo y su cotizacion
+-- del dolar del momento (asi el mail a ventas lleva los importes completos).
+CREATE TABLE IF NOT EXISTS cotizaciones_visita (
+  id TEXT PRIMARY KEY,
+  fecha TIMESTAMPTZ DEFAULT now(),
+  km NUMERIC,
+  zona TEXT,
+  renglones JSONB,
+  extras JSONB,
+  urgencia TEXT,
+  turno TEXT,
+  subtotal NUMERIC,
+  descuento NUMERIC,
+  recargos NUMERIC,
+  iva NUMERIC,
+  total NUMERIC,
+  moneda TEXT DEFAULT 'USD',
+  dolar JSONB,
+  nombre TEXT,
+  empresa TEXT,
+  email TEXT,
+  telefono TEXT,
+  fecha_preferida DATE,
+  estado TEXT DEFAULT 'estimada',
+  resumen TEXT,
+  config_actualizado TIMESTAMPTZ,
+  viaticos NUMERIC,
+  viaticos_dias INTEGER
+);
+
+-- Configuracion editable del cotizador de visitas + historial de cambios.
+CREATE TABLE IF NOT EXISTS cotizador_config (
+  id TEXT PRIMARY KEY,
+  config JSONB NOT NULL,
+  actualizado_en TIMESTAMPTZ DEFAULT now(),
+  actualizado_por TEXT
+);
+
+CREATE TABLE IF NOT EXISTS cotizador_config_historial (
+  id TEXT PRIMARY KEY,
+  fecha TIMESTAMPTZ DEFAULT now(),
+  config JSONB,
+  usuario JSONB
+);

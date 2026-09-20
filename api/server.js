@@ -13,6 +13,8 @@ import { query, one, tx } from './db.js';
 import { nextId } from './ids.js';
 import { signToken, authRequired, requireRol, SECRET } from './middleware/auth.js';
 import { canTransition, ORDEN_ESTADOS, ESTADO_LABEL, MIN_CAPACIDAD_PCT } from './reglas.js';
+import { obtenerDolar } from './dolar.js';
+import { calcularVisita, normalizarConfig, CONFIG_DEFAULT, textoFueraCobertura } from '../src/data/cotizadorVisita.js';
 import { generarCodigoUnico, digitar, formatearCodigo } from './codigo.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -117,6 +119,50 @@ async function asegurarCodigos() {
     usuario JSONB,
     fecha TIMESTAMPTZ DEFAULT now()
   )`);
+  // Cotizador de visitas: estimaciones guardadas con su codigo y su cotizacion
+  // del dolar del momento (asi el mail a ventas lleva los importes completos).
+  await query(`CREATE TABLE IF NOT EXISTS cotizaciones_visita (
+    id TEXT PRIMARY KEY,
+    fecha TIMESTAMPTZ DEFAULT now(),
+    km NUMERIC,
+    zona TEXT,
+    renglones JSONB,
+    extras JSONB,
+    urgencia TEXT,
+    turno TEXT,
+    subtotal NUMERIC,
+    descuento NUMERIC,
+    recargos NUMERIC,
+    iva NUMERIC,
+    total NUMERIC,
+    moneda TEXT DEFAULT 'USD',
+    dolar JSONB,
+    nombre TEXT,
+    empresa TEXT,
+    email TEXT,
+    telefono TEXT,
+    fecha_preferida DATE,
+    estado TEXT DEFAULT 'estimada',
+    resumen TEXT,
+    config_actualizado TIMESTAMPTZ
+  )`);
+  await query('ALTER TABLE cotizaciones_visita ADD COLUMN IF NOT EXISTS config_actualizado TIMESTAMPTZ');
+  await query('ALTER TABLE cotizaciones_visita ADD COLUMN IF NOT EXISTS viaticos NUMERIC');
+  await query('ALTER TABLE cotizaciones_visita ADD COLUMN IF NOT EXISTS viaticos_dias INTEGER');
+  // Configuración editable del cotizador (tarifas, franjas, descuentos, IVA) +
+  // historial de cambios para saber quién tocó los precios y cuándo.
+  await query(`CREATE TABLE IF NOT EXISTS cotizador_config (
+    id TEXT PRIMARY KEY,
+    config JSONB NOT NULL,
+    actualizado_en TIMESTAMPTZ DEFAULT now(),
+    actualizado_por TEXT
+  )`);
+  await query(`CREATE TABLE IF NOT EXISTS cotizador_config_historial (
+    id TEXT PRIMARY KEY,
+    fecha TIMESTAMPTZ DEFAULT now(),
+    config JSONB,
+    usuario JSONB
+  )`);
   const faltantes = await query("SELECT id FROM ordenes WHERE codigo_seguimiento IS NULL OR codigo_seguimiento = ''");
   for (const o of faltantes) {
     const c = await generarCodigoUnico(async (cod) => {
@@ -134,7 +180,8 @@ async function asegurarCodigos() {
 async function enviarMailContacto(d) {
   const filas = [
     ['Nombre', d.nombre], ['Empresa', d.empresa], ['Email', d.email], ['Teléfono', d.telefono],
-    ['Asunto', d.asunto], ['N° de serie', d.serie], ['Código de seguimiento', d.codigo], ['Mensaje', d.mensaje],
+    ['Asunto', d.asunto], ['N° de serie', d.serie], ['Código de seguimiento', d.codigo],
+    ['Cotización de visita', d.cotizacionDetalle], ['Mensaje', d.mensaje],
   ].filter(([, v]) => v && String(v).trim());
   const text = filas.map(([k, v]) => `${k}: ${v}`).join('\n');
   const asunto = `[Web Bertika] ${d.asunto || 'Consulta'} — ${d.nombre}${d.serie ? ` (serie ${d.serie})` : ''}`;
@@ -946,9 +993,131 @@ app.post('/api/bajas/:id/reciclar', authRequired, requireRol('admin'), async (re
 
 app.get('/api/bajas', authRequired, requireRol('admin'), async (req, res) => res.json(await query('SELECT * FROM bajas ORDER BY fecha DESC')));
 
+// Configuracion vigente del cotizador de visitas: la que edito el admin desde
+// el panel (tabla cotizador_config) o, si no hay nada guardado todavia, la de
+// fabrica. Se cachea 30 segundos para no consultar en cada estimacion.
+let cacheConfig = null;
+async function configCotizador({ forzar = false } = {}) {
+  const ahora = Date.now();
+  if (!forzar && cacheConfig && cacheConfig.expira > ahora) return cacheConfig;
+  try {
+    const row = await one("SELECT config, actualizado_en, actualizado_por FROM cotizador_config WHERE id = 'actual'");
+    cacheConfig = {
+      config: normalizarConfig(row?.config || {}),
+      actualizado: row?.actualizado_en || null,
+      actualizadoPor: row?.actualizado_por || null,
+      expira: ahora + 30000,
+    };
+  } catch (e) {
+    console.error('[cotizador] config invalida, se usa la de fabrica:', e.message);
+    cacheConfig = { config: CONFIG_DEFAULT, actualizado: null, actualizadoPor: null, expira: ahora + 5000, error: e.message };
+  }
+  return cacheConfig;
+}
+
+// ---------- Cotizador de visitas (publico) ----------
+// Configuración vigente del cotizador (la usa la web para estimar en vivo).
+app.get('/api/public/cotizador', publicLimiter, async (req, res) => {
+  const c = await configCotizador();
+  return res.json({ config: c.config, actualizado: c.actualizado, actualizadoPor: c.actualizadoPor });
+});
+
+// Edición de la configuración: solo admin. Valida con normalizarConfig() para
+// que nunca quede una tabla de precios inconsistente.
+app.put('/api/cotizador', authRequired, requireRol('admin'), async (req, res) => {
+  const entrada = req.body?.config ?? req.body ?? {};
+  let config;
+  try {
+    config = normalizarConfig(entrada);
+  } catch (e) {
+    return res.status(400).json({ error: e.message });
+  }
+  await query(
+    `INSERT INTO cotizador_config (id, config, actualizado_en, actualizado_por)
+     VALUES ('actual', $1::jsonb, now(), $2)
+     ON CONFLICT (id) DO UPDATE SET config = EXCLUDED.config, actualizado_en = now(), actualizado_por = EXCLUDED.actualizado_por`,
+    [JSON.stringify(config), req.user.email]
+  );
+  await query(
+    'INSERT INTO cotizador_config_historial (id, config, usuario) VALUES ($1, $2::jsonb, $3::jsonb)',
+    [await nextId('cfg'), JSON.stringify(config), JSON.stringify(actorDe(req))]
+  );
+  await configCotizador({ forzar: true });
+  return res.json({ ok: true, config, actualizadoPor: req.user.email });
+});
+
+app.get('/api/cotizador/historial', authRequired, requireRol('admin'), async (req, res) => {
+  return res.json(await query('SELECT id, fecha, usuario FROM cotizador_config_historial ORDER BY fecha DESC LIMIT 50'));
+});
+
+// Cotización del dólar oficial: la resuelve el servidor (proxy + cache) para que
+// el navegador no dependa de terceros ni pierda la cotización si uno falla.
+app.get('/api/public/dolar', publicLimiter, async (req, res) => {
+  const d = await obtenerDolar({ forzar: String(req.query?.forzar || '') === '1' });
+  return res.json(d);
+});
+
+// Guarda la estimación del cotizador y devuelve su código (CV-000123).
+// El servidor RECALCULA el total con el mismo módulo que usa la web: el precio
+// no depende de lo que mande el cliente.
+app.post('/api/public/cotizacion-visita', publicLimiter, async (req, res) => {
+  const { km, renglones, extrasSel, urgencia, turno, nombre, empresa, email, telefono, fecha_preferida, website } = req.body || {};
+  if (website) return res.status(201).json({ ok: true, codigo: '', descartado: true });
+
+  const kmNum = numEnRango(km, 0.1, 1000000);
+  if (kmNum === null) return res.status(400).json({ error: 'Ingresá la distancia aproximada en km (número mayor a 0)' });
+  const { config, actualizado: configActualizada } = await configCotizador();
+  if (kmNum > config.maxKm) {
+    return res.status(400).json({ error: textoFueraCobertura(config.maxKm), fueraDeCobertura: true });
+  }
+  const emailT = email ? String(email).trim() : '';
+  if (emailT && !validEmail(emailT)) return res.status(400).json({ error: 'El email no es válido' });
+
+  const dolar = await obtenerDolar();
+  const cot = calcularVisita({ km: kmNum, renglones, extrasSel, urgencia, turno, dolar, config });
+  if (!cot.ok) return res.status(400).json({ error: cot.avisos[0]?.texto || textoFueraCobertura(config.maxKm), fueraDeCobertura: true });
+
+  const nro = String((await nextId('cv')).split('_')[1] || '').padStart(6, '0');
+  const codigo = `CV-${nro}`;
+  const fechaPref = limStr(fecha_preferida, 10);
+  await query(
+    `INSERT INTO cotizaciones_visita
+      (id, km, zona, renglones, extras, urgencia, turno, subtotal, descuento, recargos, iva, total, moneda, dolar,
+       nombre, empresa, email, telefono, fecha_preferida, resumen, config_actualizado, viaticos, viaticos_dias)
+     VALUES ($1,$2,$3,$4::jsonb,$5::jsonb,$6,$7,$8,$9,$10,$11,$12,$20,$13::jsonb,$14,$15,$16,$17,$18,$19,$21,$22,$23)`,
+    [
+      codigo, kmNum, cot.zona?.nombre || null,
+      JSON.stringify(cot.detalle.map((d) => ({ tipo: d.tipo.id, nombre: d.tipo.nombre, cantidad: d.cantidad, precioUnidad: d.tipo.precioUnidad, subtotal: d.subtotal }))),
+      JSON.stringify(cot.detExtras.map((e) => ({ id: e.id, nombre: e.nombre, cantidad: e.cantidad, precio: e.precio, subtotal: e.subtotal }))),
+      cot.urgencia, cot.turno, cot.subtotal, cot.descuentoVol, cot.recargo, cot.iva, cot.total,
+      JSON.stringify(dolar), limStr(nombre, 120), limStr(empresa, 120), emailT, limStr(telefono, 40),
+      /^\d{4}-\d{2}-\d{2}$/.test(fechaPref) ? fechaPref : null, cot.resumen,
+      config.moneda, configActualizada, cot.viaticos, cot.viaticosDias,
+    ]
+  );
+  return res.status(201).json({
+    ok: true, codigo, total: cot.total, moneda: cot.moneda, ars: cot.ars,
+    dolar: { disponible: dolar.disponible, venta: dolar.venta ?? null, actualizado: dolar.actualizado || null, fuente: dolar.fuente || null, vencido: Boolean(dolar.vencido) },
+    avisos: cot.avisos, resumen: cot.resumen,
+  });
+});
+
+// Consulta publica de una cotización por su código (sin datos personales).
+app.get('/api/public/cotizacion-visita/:codigo', publicLimiter, async (req, res) => {
+  const codigo = limStr(req.params.codigo, 20).toUpperCase();
+  const c = await one(
+    `SELECT id, fecha, km, zona, renglones, extras, urgencia, turno, subtotal, descuento, recargos, iva, total,
+            moneda, dolar, estado, resumen
+       FROM cotizaciones_visita WHERE id = $1`,
+    [codigo]
+  );
+  if (!c) return res.status(404).json({ error: 'Cotización no encontrada' });
+  return res.json(c);
+});
+
 // ---------- Contacto publico (crea orden si es reparacion + envia correo a ventas) ----------
 app.post('/api/public/contacto', contactoLimiter, async (req, res) => {
-  const { nombre, empresa, email, telefono, serie, asunto, mensaje, website } = req.body || {};
+  const { nombre, empresa, email, telefono, serie, asunto, mensaje, cotizacion_codigo, website } = req.body || {};
   // Honeypot: campo oculto que solo completan bots. Se descarta silenciosamente.
   if (website) return res.status(201).json({ ok: true, emailEnviado: false, codigo: '' });
   const nombreT = limStr(nombre, 120);
@@ -992,8 +1161,21 @@ app.post('/api/public/contacto', contactoLimiter, async (req, res) => {
     });
   }
 
-  const mail = await enviarMailContacto({ nombre: nombreT, empresa: empresaT, email: emailT, telefono: limStr(telefono, 40), serie: serieTxt, asunto: asuntoT, mensaje: mensajeT, codigo: codigoTxt });
-  return res.status(201).json({ ok: true, emailEnviado: mail.ok, codigo: codigoTxt });
+  // Si la consulta viene del cotizador de visitas, se adjunta la estimación
+  // guardada (con importes y cotización del dólar) y queda marcada como solicitada.
+  let cotizacionDetalle = '';
+  const cotCodigo = limStr(cotizacion_codigo, 20).toUpperCase();
+  if (cotCodigo) {
+    const c = await one('SELECT id, total, moneda, dolar, resumen, estado FROM cotizaciones_visita WHERE id = $1', [cotCodigo]);
+    if (c) {
+      const d = c.dolar || {};
+      cotizacionDetalle = `${c.id} · ${c.moneda} ${c.total}${d.venta ? ` · dólar ${d.casa || 'oficial'} venta ${d.venta}${d.fuente ? ` (${d.fuente})` : ''}` : ''}\n${c.resumen}`;
+      if (c.estado === 'estimada') await query("UPDATE cotizaciones_visita SET estado = 'solicitada' WHERE id = $1", [c.id]);
+    }
+  }
+
+  const mail = await enviarMailContacto({ nombre: nombreT, empresa: empresaT, email: emailT, telefono: limStr(telefono, 40), serie: serieTxt, asunto: asuntoT, mensaje: mensajeT, codigo: codigoTxt, cotizacionDetalle });
+  return res.status(201).json({ ok: true, emailEnviado: mail.ok, codigo: codigoTxt, cotizacion: cotCodigo || null });
 });
 
 // ---------- Fotos de diagnostico ----------

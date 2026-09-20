@@ -40,6 +40,7 @@ Comandos adicionales:
 | `npm run build` | Genera la version de produccion en `dist/` |
 | `npm run preview` | Sirve la version de produccion (despues de `build`) |
 | `npx oxlint` | Revisa el codigo (no hay script `lint` en `package.json`) |
+| `npm test` | Tests del cotizador de visitas y del proveedor de dolar (sin dependencias) |
 | `bash scripts/checkpoint.sh "mensaje"` | Snapshot local: commitea todo (tracked + untracked), sin push |
 | `bash scripts/deploy.sh` | Build + deploy a produccion (no existe script `npm run deploy`) |
 
@@ -135,6 +136,7 @@ Panel principal para administrar la operacion. Pestañas:
 | **Flotillas** | Baterias activas de clientes corporativos + estado de garantia. |
 | **Garantias** | Tabla de garantias vigentes y por vencer. |
 | **Baja / reciclaje** | Baterias dadas de baja con motivo y disposicion; trazabilidad para reciclaje responsable. |
+| **Cotizador** | Tarifas del cotizador de visitas: franjas de traslado, viaticos, precios por tipo de bateria, descuentos, extras, recargos, IVA, vigencia y limites. Vista previa en vivo y valores de fabrica. |
 
 El admin tambien tiene `/reportes` (exporta CSV) y `/usuarios` (alta, edicion de
 rol/estado y reseteo de contrasenas de cualquier cuenta).
@@ -237,6 +239,30 @@ plataforma el boton **Compartir seguimiento y cotizacion** (pestaña *Acciones
 admin*) o **Compartir cotizacion con el cliente** (vista del tecnico, orden
 cotizada) pide ambos enlaces al servidor y los envia por WhatsApp o los copia.
 Sin firma valida el endpoint responde 403.
+
+### Cotizador de visita (`/cotizador`)
+
+- **Cobertura configurable** (700 km por defecto). Por encima de ese tope **no se cotiza**: la pagina ofrece
+  hablar con un vendedor (WhatsApp o formulario) para analizar la viabilidad del servicio.
+- **Traslado por franjas + precio por km**: cada franja tiene una base que cubre hasta X km y, desde ahi, un
+  valor por km extra (por defecto: USD 600 hasta 200 km y **USD 3 por km** desde 200 km).
+- **Viaticos** para visitas largas: desde los 300 km se suma un dia de viaje y uno mas cada 200 km
+  (por defecto USD 150 por dia, tope 5 dias).
+- **Revision** por tipo y cantidad de baterias, con **descuento por volumen** (5/10/25 unidades → 5/10/15%).
+- **Servicios adicionales**: los que dicen "por equipo" se multiplican por la cantidad de baterias
+  cargadas (cantidad editable). Todos quedan **sujetos a analisis del comercial**.
+- **Urgencia** express 48 h (+25%) y **turno** de fin de semana (+30%).
+- **Estimacion en USD** con equivalente informativo en pesos al **dolar oficial (venta)** en tiempo
+  real: la cotizacion la resuelve el servidor (proxy con cache de 10 minutos y respaldo entre
+  proveedores), y si no hay dato se muestran solo los importes en USD.
+- Al pedir atencion personalizada se guarda una **cotizacion con codigo** (`CV-000123`), se puede
+  **imprimir o guardar en PDF** (con vigencia configurable) y el correo a ventas llega con el
+  **detalle completo de importes** y la cotizacion del dolar del momento.
+- **Todas las variables se editan desde el panel** (Hub → pestaña **Cotizador**): franjas de traslado,
+  viaticos, precios por tipo, descuentos, extras, recargos, IVA, vigencia, cobertura y limites. Hay vista
+  previa en vivo y "valores de fabrica"; cada cambio queda auditado con usuario y fecha.
+- Los calculos estan cubiertos por **`npm test`** (zonas, viaticos, descuentos, extras por equipo, recargos, IVA,
+  validacion de la configuracion y proveedor de dolar).
 
 ---
 

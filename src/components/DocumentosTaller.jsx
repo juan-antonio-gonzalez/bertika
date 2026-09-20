@@ -3,7 +3,7 @@ import { CONTACTO, OFICIAL } from '../data/siteData';
 
 // Impresion aislada: se marca el body, se imprime y se limpia la marca.
 // El CSS (@media print) oculta todo menos el bloque con la clase indicada.
-function imprimirClase(clase) {
+export function imprimirDocumento(clase = 'print-doc') {
   document.body.classList.add(clase);
   window.print();
   window.addEventListener('afterprint', () => document.body.classList.remove(clase), { once: true });
@@ -38,7 +38,7 @@ export function OrdenTrabajo({ orden, bateria, cliente, tecnico, historial = [] 
     <div className="card" style={{ background: 'var(--bg-3)' }}>
       <div className="row between wrap mb8" style={{ gap: 8 }}>
         <div className="card-title"><Icon name="clipboard" size={14} /> Orden de trabajo</div>
-        <button className="btn primary sm" onClick={() => imprimirClase('print-doc')}>
+        <button className="btn primary sm" onClick={() => imprimirDocumento('print-doc')}>
           <Icon name="clipboard" size={13} /> Imprimir orden de trabajo
         </button>
       </div>
@@ -148,7 +148,7 @@ export function ComprobanteEntrega({ orden, bateria, cliente, tecnico }) {
     <div className="card" style={{ background: 'var(--bg-3)' }}>
       <div className="row between wrap mb8" style={{ gap: 8 }}>
         <div className="card-title"><Icon name="truck" size={14} /> Comprobante de entrega</div>
-        <button className="btn primary sm" onClick={() => imprimirClase('print-doc')}>
+        <button className="btn primary sm" onClick={() => imprimirDocumento('print-doc')}>
           <Icon name="truck" size={13} /> Imprimir comprobante
         </button>
       </div>

@@ -24,11 +24,13 @@ export default function Contacto() {
   const [searchParams] = useSearchParams();
   const [enviando, setEnviando] = useState(false);
   const [entregado, setEntregado] = useState(null);
+  const [cotizacion, setCotizacion] = useState(null);
   const [form, setForm] = useState({ nombre: '', empresa: '', email: '', telefono: '', asunto: '', serie: '', mensaje: '', website: '' });
 
   useEffect(() => {
     const asunto = searchParams.get('asunto');
     const resumen = searchParams.get('resumen');
+    const codigo = searchParams.get('cotizacion');
     if (asunto || resumen) {
       setForm((f) => ({
         ...f,
@@ -36,7 +38,22 @@ export default function Contacto() {
         mensaje: resumen ? `${f.mensaje ? `${f.mensaje}\n\n` : ''}${resumen}` : f.mensaje,
       }));
     }
-  }, [searchParams]);
+    if (codigo) {
+      // Estimación del cotizador de visitas: se muestra el resumen y se adjunta
+      // el código, así el taller recibe el detalle completo con importes.
+      setForm((f) => ({ ...f, asunto: asunto || f.asunto || 'Visita técnica en planta' }));
+      api(`/public/cotizacion-visita/${encodeURIComponent(codigo)}`)
+        .then((c) => {
+          setCotizacion(c);
+          setForm((f) => ({
+            ...f,
+            asunto: f.asunto || 'Visita técnica en planta',
+            mensaje: f.mensaje || `Adjunto la estimación ${c.id} del cotizador de visitas (${c.km} km, ${c.moneda} ${c.total}). Quisiera coordinar la visita.`,
+          }));
+        })
+        .catch(() => toastShow('No pudimos recuperar la estimación, pero podés enviarnos la consulta igual.', 'warn'));
+    }
+  }, [searchParams, toastShow]);
 
   const onChange = (e) => setForm((f) => ({ ...f, [e.target.name]: e.target.value }));
   const esReparacion = form.asunto === 'Servicio de reparación';
@@ -64,6 +81,7 @@ export default function Contacto() {
           nombre: form.nombre, empresa: form.empresa, email: form.email,
           telefono: form.telefono, asunto: form.asunto,
           serie: form.serie.trim(), mensaje: form.mensaje, website: form.website,
+          cotizacion_codigo: cotizacion?.id || '',
         },
       });
       if (esReparacion && res?.codigo) setEntregado(res.codigo);
@@ -153,6 +171,18 @@ export default function Contacto() {
             )}
 
             <form ref={formRef} onSubmit={onSubmit}>
+              {cotizacion && (
+                <div className="banner-info" style={{ marginBottom: 16 }}>
+                  <Icon name="calculator" size={15} />
+                  <span>
+                    <b>Estimación {cotizacion.id} adjunta:</b> {cotizacion.km} km · {cotizacion.total != null ? `${cotizacion.moneda} ${cotizacion.total}` : 'a analizar'}
+                    {cotizacion.zona ? ` · ${cotizacion.zona}` : ''}
+                    <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+                      El taller recibe el detalle completo con importes. <Link to="/cotizador">Volver al cotizador</Link>
+                    </div>
+                  </span>
+                </div>
+              )}
               <div className="form-row">
                 <div className="field">
                   <label>Nombre *</label>
