@@ -3,6 +3,7 @@ import { useStore } from '../store/store';
 import { Icon, EstadoPill, OrdenCard, Modal, fmtDate, fmtARS, fmtFecha, nombreActor } from '../components/ui';
 import OrdenDetalle from '../components/OrdenDetalle';
 import CotizadorConfig from '../components/CotizadorConfig';
+import WhatsAppBandeja from '../components/WhatsAppBandeja';
 import { ORDEN_ESTADOS } from '../data/reglas';
 
 // Columnas del tablero: todos los estados del flujo (incluye "approved" y
@@ -631,6 +632,7 @@ export default function Hub() {
         <button className={`tab ${tab === 'garantias' ? 'active' : ''}`} onClick={() => setTab('garantias')}><Icon name="shield" size={13} /> Garantías</button>
         <button className={`tab ${tab === 'baja' ? 'active' : ''}`} onClick={() => setTab('baja')}><Icon name="recycl" size={13} /> Baja / reciclaje</button>
         <button className={`tab ${tab === 'cotizador' ? 'active' : ''}`} onClick={() => setTab('cotizador')}><Icon name="calculator" size={13} /> Cotizador</button>
+        <button className={`tab ${tab === 'whatsapp' ? 'active' : ''}`} onClick={() => setTab('whatsapp')}><Icon name="mail" size={13} /> WhatsApp</button>
       </div>
 
       {tab === 'kanban' && <Kanban onOpen={setSel} />}
@@ -642,6 +644,7 @@ export default function Hub() {
       {tab === 'garantias' && <Garantias />}
       {tab === 'baja' && <BajaYReciclaje onAbrirOrden={setSel} />}
       {tab === 'cotizador' && <CotizadorConfig />}
+      {tab === 'whatsapp' && <WhatsAppBandeja />}
 
       {nueva && (
         <div className="modal-back">

@@ -27,7 +27,9 @@ CREATE TABLE IF NOT EXISTS clientes (
   telefono TEXT DEFAULT '',
   contacto TEXT DEFAULT '',
   email TEXT DEFAULT '',
-  empresa TEXT DEFAULT ''
+  empresa TEXT DEFAULT '',
+  wa_optin BOOLEAN DEFAULT FALSE,
+  wa_optin_fecha TIMESTAMPTZ
 );
 
 CREATE TABLE IF NOT EXISTS baterias (
@@ -181,4 +183,31 @@ CREATE TABLE IF NOT EXISTS cotizador_config_historial (
   fecha TIMESTAMPTZ DEFAULT now(),
   config JSONB,
   usuario JSONB
+);
+
+-- WhatsApp: bandeja de conversaciones y mensajes (entrantes y salientes).
+CREATE TABLE IF NOT EXISTS wa_conversaciones (
+  id TEXT PRIMARY KEY,
+  telefono TEXT UNIQUE,
+  cliente_id TEXT,
+  nombre_perfil TEXT,
+  ultimo_texto TEXT,
+  ultima_fecha TIMESTAMPTZ,
+  no_leidos INTEGER DEFAULT 0,
+  estado TEXT DEFAULT 'abierta',
+  asignado_a TEXT
+);
+
+CREATE TABLE IF NOT EXISTS wa_mensajes (
+  id TEXT PRIMARY KEY,
+  conversacion_id TEXT,
+  wa_message_id TEXT,
+  direccion TEXT,
+  telefono TEXT,
+  tipo TEXT,
+  texto TEXT,
+  plantilla TEXT,
+  estado TEXT,
+  error TEXT,
+  fecha TIMESTAMPTZ DEFAULT now()
 );

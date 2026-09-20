@@ -570,6 +570,22 @@ select.input option { background: var(--bg-3); }
 .cz-summary::-webkit-details-marker { display: none; }
 .cz-summary::after { content: ' +'; color: var(--muted); }
 details[open] > .cz-summary::after { content: ' –'; }
+
+/* ---------- bandeja de WhatsApp ---------- */
+.wa-panel { display: grid; grid-template-columns: 320px minmax(0, 1fr); background: #fff; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; min-height: 460px; }
+.wa-lista { border-right: 1px solid var(--line); display: flex; flex-direction: column; max-height: 72vh; overflow-y: auto; }
+.wa-conv { text-align: left; border: 0; border-bottom: 1px solid var(--line-soft); background: #fff; padding: 10px 12px; cursor: pointer; width: 100%; }
+.wa-conv:hover { background: var(--bg-3); }
+.wa-conv.on { background: var(--amber-bg); }
+.wa-hilo { display: flex; flex-direction: column; min-width: 0; }
+.wa-mensajes { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 8px; max-height: 58vh; background: var(--bg-3); }
+.wa-msg { max-width: 78%; padding: 8px 11px; border-radius: 12px; font-size: 13px; background: #fff; border: 1px solid var(--line); align-self: flex-start; white-space: pre-wrap; }
+.wa-msg.out { align-self: flex-end; background: var(--amber-bg); border-color: rgba(217, 142, 0, .35); }
+.wa-meta { font-size: 10.5px; color: var(--muted); margin-top: 4px; }
+@media (max-width: 900px) {
+  .wa-panel { grid-template-columns: 1fr; }
+  .wa-lista { max-height: 240px; border-right: 0; border-bottom: 1px solid var(--line); }
+}
 /* Barra inferior con el total: solo en pantallas chicas (el resumen queda
    abajo de todo y el cliente tiene que poder pedir sin scrollear). */
 .cz-bar { display: none; }

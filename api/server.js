@@ -15,6 +15,7 @@ import { signToken, authRequired, requireRol, SECRET } from './middleware/auth.j
 import { canTransition, ORDEN_ESTADOS, ESTADO_LABEL, MIN_CAPACIDAD_PCT } from './reglas.js';
 import { obtenerDolar } from './dolar.js';
 import { calcularVisita, normalizarConfig, CONFIG_DEFAULT, textoFueraCobertura } from '../src/data/cotizadorVisita.js';
+import { enviarTexto, configPublicaWhatsApp, normalizarTelefono, verificarFirma, ESTADO_ENTREGA } from './whatsapp.js';
 import { generarCodigoUnico, digitar, formatearCodigo } from './codigo.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -29,7 +30,12 @@ app.set('trust proxy', 1);
 app.use(helmet({ referrerPolicy: { policy: 'no-referrer' } }));
 app.disable('x-powered-by');
 app.use(cors({ origin: ALLOWED_ORIGINS, credentials: true }));
-app.use(express.json({ limit: '2mb' }));
+// Se guarda el cuerpo crudo: la firma del webhook de WhatsApp se calcula sobre
+// los bytes exactos que mando Meta, no sobre el JSON re-serializado.
+app.use(express.json({
+  limit: '2mb',
+  verify: (req, res, buf) => { req.rawBody = buf; },
+}));
 
 // ---------- Rate limiting ----------
 // Login: contiene el brute-force de credenciales.
@@ -162,6 +168,35 @@ async function asegurarCodigos() {
     total NUMERIC,
     codigo TEXT
   )`);
+  // WhatsApp: bandeja de conversaciones y mensajes (entrantes y salientes).
+  await query('ALTER TABLE clientes ADD COLUMN IF NOT EXISTS wa_optin BOOLEAN DEFAULT FALSE');
+  await query('ALTER TABLE clientes ADD COLUMN IF NOT EXISTS wa_optin_fecha TIMESTAMPTZ');
+  await query(`CREATE TABLE IF NOT EXISTS wa_conversaciones (
+    id TEXT PRIMARY KEY,
+    telefono TEXT UNIQUE,
+    cliente_id TEXT,
+    nombre_perfil TEXT,
+    ultimo_texto TEXT,
+    ultima_fecha TIMESTAMPTZ,
+    no_leidos INTEGER DEFAULT 0,
+    estado TEXT DEFAULT 'abierta',
+    asignado_a TEXT
+  )`);
+  await query(`CREATE TABLE IF NOT EXISTS wa_mensajes (
+    id TEXT PRIMARY KEY,
+    conversacion_id TEXT,
+    wa_message_id TEXT,
+    direccion TEXT,
+    telefono TEXT,
+    tipo TEXT,
+    texto TEXT,
+    plantilla TEXT,
+    estado TEXT,
+    error TEXT,
+    fecha TIMESTAMPTZ DEFAULT now()
+  )`);
+  await query('CREATE INDEX IF NOT EXISTS idx_wa_mensajes_conv ON wa_mensajes (conversacion_id, fecha DESC)');
+  await query('CREATE INDEX IF NOT EXISTS idx_wa_mensajes_wamid ON wa_mensajes (wa_message_id)');
   // Configuración editable del cotizador (tarifas, franjas, descuentos, IVA) +
   // historial de cambios para saber quién tocó los precios y cuándo.
   await query(`CREATE TABLE IF NOT EXISTS cotizador_config (
@@ -187,7 +222,7 @@ async function asegurarCodigos() {
   try {
     await query('ALTER TABLE ordenes ADD CONSTRAINT uq_ordenes_codigo UNIQUE (codigo_seguimiento)');
   } catch { /* ya existe */ }
-  console.log('[migracion] esquema asegurado (codigos, medio de pago, historial de cotizaciones, movimientos de insumos, cotizador configurable)');
+  console.log('[migracion] esquema asegurado (codigos, medio de pago, historial de cotizaciones, movimientos de insumos, cotizador configurable, whatsapp)');
 }
 
 async function enviarMailContacto(d) {
@@ -1249,6 +1284,186 @@ app.post('/api/public/contacto', contactoLimiter, async (req, res) => {
 
   const mail = await enviarMailContacto({ nombre: nombreT, empresa: empresaT, email: emailT, telefono: limStr(telefono, 40), serie: serieTxt, asunto: asuntoT, mensaje: mensajeT, codigo: codigoTxt, cotizacionDetalle });
   return res.status(201).json({ ok: true, emailEnviado: mail.ok, codigo: codigoTxt, cotizacion: cotCodigo || null });
+});
+
+// ---------- WhatsApp (canal oficial de Meta) ----------
+// Cada telefono es una conversacion, vinculada al cliente cuando coincide con
+// su ficha. Los mensajes quedan guardados: la bandeja vive en el panel.
+
+// Vincula un telefono con la ficha del cliente (los datos viejos estan
+// cargados como "11 5555-0101", asi que se comparan normalizados).
+async function clientePorTelefono(telefono) {
+  const destino = normalizarTelefono(telefono);
+  if (!destino) return null;
+  const clientes = await query('SELECT id, nombre, telefono, email FROM clientes');
+  const sinNueve = destino.startsWith('549') ? `54${destino.slice(3)}` : null;
+  return clientes.find((c) => {
+    const d = String(c.telefono || '').replace(/\D/g, '');
+    if (!d) return false;
+    return normalizarTelefono(d) === destino || d === destino || (sinNueve && d === sinNueve);
+  }) || null;
+}
+
+async function conversacionDe(telefono, nombrePerfil = null) {
+  const destino = normalizarTelefono(telefono);
+  if (!destino) return null;
+  let conv = await one('SELECT * FROM wa_conversaciones WHERE telefono = $1', [destino]);
+  if (!conv) {
+    const cliente = await clientePorTelefono(destino);
+    const id = await nextId('wacv');
+    await query(
+      'INSERT INTO wa_conversaciones (id, telefono, cliente_id, nombre_perfil) VALUES ($1,$2,$3,$4)',
+      [id, destino, cliente?.id || null, nombrePerfil || cliente?.nombre || null]
+    );
+    conv = await one('SELECT * FROM wa_conversaciones WHERE id = $1', [id]);
+  } else if (!conv.cliente_id) {
+    const cliente = await clientePorTelefono(destino);
+    if (cliente) {
+      await query('UPDATE wa_conversaciones SET cliente_id = $2 WHERE id = $1', [conv.id, cliente.id]);
+      conv.cliente_id = cliente.id;
+    }
+  }
+  return conv;
+}
+
+async function guardarMensaje({ conversacion, direccion, tipo, texto, plantilla = null, waMessageId = null, estado = null, error = null, fecha = null }) {
+  const id = await nextId('wams');
+  await query(
+    `INSERT INTO wa_mensajes (id, conversacion_id, wa_message_id, direccion, telefono, tipo, texto, plantilla, estado, error, fecha)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, COALESCE($11::timestamptz, now()))`,
+    [id, conversacion.id, waMessageId, direccion, conversacion.telefono, tipo, texto, plantilla, estado, error, fecha]
+  );
+  if (direccion === 'in') {
+    await query(
+      "UPDATE wa_conversaciones SET ultimo_texto = $2, ultima_fecha = now(), no_leidos = COALESCE(no_leidos, 0) + 1, estado = 'abierta' WHERE id = $1",
+      [conversacion.id, texto || `[${tipo}]`]
+    );
+  } else {
+    await query('UPDATE wa_conversaciones SET ultimo_texto = $2, ultima_fecha = now() WHERE id = $1', [conversacion.id, texto || `[${tipo}]`]);
+  }
+  return id;
+}
+
+// Estado del canal para el panel: configurado o no, que falta y los numeros.
+app.get('/api/whatsapp/estado', authRequired, requireRol('admin'), async (req, res) => {
+  const cfg = configPublicaWhatsApp();
+  const [tot] = await query(`SELECT
+      count(*) FILTER (WHERE direccion = 'in')::int AS recibidos,
+      count(*) FILTER (WHERE direccion = 'out')::int AS enviados,
+      count(*) FILTER (WHERE direccion = 'out' AND estado = 'error')::int AS con_error,
+      count(*) FILTER (WHERE direccion = 'in' AND fecha > now() - interval '7 days')::int AS recibidos_7d
+    FROM wa_mensajes`);
+  const [conv] = await query('SELECT count(*)::int AS conversaciones, COALESCE(sum(no_leidos), 0)::int AS sin_leer FROM wa_conversaciones');
+  return res.json({ ...cfg, webhook: `${PUBLIC_URL}/api/whatsapp/webhook`, estadisticas: { ...tot, ...conv } });
+});
+
+app.get('/api/whatsapp/conversaciones', authRequired, requireRol('admin', 'tecnico'), async (req, res) => {
+  const convs = await query(`SELECT c.*, cl.nombre AS cliente_nombre, cl.email AS cliente_email
+    FROM wa_conversaciones c LEFT JOIN clientes cl ON cl.id = c.cliente_id
+    ORDER BY COALESCE(c.ultima_fecha, c.id) DESC LIMIT 100`);
+  return res.json(convs);
+});
+
+app.get('/api/whatsapp/conversaciones/:id', authRequired, requireRol('admin', 'tecnico'), async (req, res) => {
+  const conv = await one('SELECT * FROM wa_conversaciones WHERE id = $1', [req.params.id]);
+  if (!conv) return res.status(404).json({ error: 'Conversación no encontrada' });
+  const mensajes = await query('SELECT * FROM wa_mensajes WHERE conversacion_id = $1 ORDER BY fecha ASC LIMIT 300', [conv.id]);
+  await query('UPDATE wa_conversaciones SET no_leidos = 0 WHERE id = $1', [conv.id]);
+  const cliente = conv.cliente_id ? await one('SELECT * FROM clientes WHERE id = $1', [conv.cliente_id]) : null;
+  const ordenes = conv.cliente_id
+    ? await query('SELECT id, bateria_serie, estado, fecha_ingreso FROM ordenes WHERE cliente_id = $1 ORDER BY fecha_ingreso DESC LIMIT 5', [conv.cliente_id])
+    : [];
+  return res.json({ conversacion: { ...conv, no_leidos: 0 }, mensajes, cliente, ordenes });
+});
+
+// Mensaje libre: vale dentro de las 24 h desde el ultimo mensaje del cliente.
+app.post('/api/whatsapp/conversaciones/:id/responder', authRequired, requireRol('admin', 'tecnico'), async (req, res) => {
+  const conv = await one('SELECT * FROM wa_conversaciones WHERE id = $1', [req.params.id]);
+  if (!conv) return res.status(404).json({ error: 'Conversación no encontrada' });
+  const texto = limStr(req.body?.texto, 4000);
+  if (!texto) return res.status(400).json({ error: 'El mensaje está vacío' });
+  const envio = await enviarTexto({ to: conv.telefono, texto });
+  await guardarMensaje({
+    conversacion: conv, direccion: 'out', tipo: 'text', texto,
+    waMessageId: envio.id || null, estado: envio.ok ? 'enviado' : 'error', error: envio.ok ? null : envio.error,
+  });
+  if (!envio.ok) return res.status(400).json({ error: envio.error });
+  return res.json({ ok: true, id: envio.id });
+});
+
+// Enviar a un numero suelto (prueba del canal o aviso puntual).
+app.post('/api/whatsapp/enviar', authRequired, requireRol('admin', 'tecnico'), async (req, res) => {
+  const telefono = limStr(req.body?.telefono, 30);
+  const texto = limStr(req.body?.texto, 4000);
+  if (!telefono || !texto) return res.status(400).json({ error: 'Faltan el teléfono y el mensaje' });
+  const conv = await conversacionDe(telefono);
+  if (!conv) return res.status(400).json({ error: 'Teléfono inválido' });
+  const envio = await enviarTexto({ to: conv.telefono, texto });
+  await guardarMensaje({
+    conversacion: conv, direccion: 'out', tipo: 'text', texto,
+    waMessageId: envio.id || null, estado: envio.ok ? 'enviado' : 'error', error: envio.ok ? null : envio.error,
+  });
+  if (!envio.ok) return res.status(400).json({ error: envio.error });
+  return res.json({ ok: true, id: envio.id, conversacion_id: conv.id });
+});
+
+// Verificacion del webhook: Meta llama una vez al configurarlo y le devolvemos
+// el "challenge" para confirmar que la URL es nuestra.
+app.get('/api/whatsapp/webhook', (req, res) => {
+  const modo = req.query?.['hub.mode'];
+  const token = req.query?.['hub.verify_token'];
+  const challenge = req.query?.['hub.challenge'];
+  const esperado = process.env.WHATSAPP_VERIFY_TOKEN || '';
+  if (modo === 'subscribe' && esperado && token === esperado) return res.status(200).send(String(challenge || ''));
+  return res.sendStatus(403);
+});
+
+// Avisos de Meta: mensajes entrantes y estados de entrega.
+app.post('/api/whatsapp/webhook', async (req, res) => {
+  const firma = verificarFirma(req.rawBody, req.get('x-hub-signature-256'));
+  if (!firma.ok) {
+    console.warn('[whatsapp] aviso rechazado:', firma.error);
+    return res.status(403).json({ error: firma.error });
+  }
+  res.sendStatus(200); // Meta reintenta si no contestamos rapido
+  try {
+    const cambios = (req.body?.entry || []).flatMap((e) => e.changes || []);
+    for (const cambio of cambios) {
+      const v = cambio.value || {};
+      const perfil = v.contacts?.[0]?.profile?.name || null;
+      for (const m of v.messages || []) {
+        if (m.id) {
+          const ya = await one('SELECT id FROM wa_mensajes WHERE wa_message_id = $1', [m.id]);
+          if (ya) continue; // Meta puede repetir el mismo aviso
+        }
+        const conv = await conversacionDe(m.from, perfil);
+        if (!conv) continue;
+        const tipo = limStr(m.type, 20) || 'desconocido';
+        const texto = m.text?.body
+          || m.button?.text
+          || m.interactive?.list_reply?.title
+          || m.interactive?.button_reply?.title
+          || (m.image ? '[imagen]' : m.audio ? '[audio]' : m.document ? '[documento]' : m.video ? '[video]' : m.location ? '[ubicación]' : `[${tipo}]`);
+        const fecha = m.timestamp ? new Date(Number(m.timestamp) * 1000).toISOString() : null;
+        await guardarMensaje({ conversacion: conv, direccion: 'in', tipo, texto, waMessageId: m.id || null, estado: 'recibido', fecha });
+        // Escribirnos es el consentimiento implicito para poder responderle.
+        if (conv.cliente_id) {
+          const cli = await one('SELECT id, wa_optin FROM clientes WHERE id = $1', [conv.cliente_id]);
+          if (cli && !cli.wa_optin) await query('UPDATE clientes SET wa_optin = true, wa_optin_fecha = now() WHERE id = $1', [cli.id]);
+        }
+        await notificar(null, null, `WhatsApp de ${perfil || conv.telefono}: ${String(texto).slice(0, 120)}`, 'WhatsApp');
+      }
+      for (const s of v.statuses || []) {
+        if (!s.id) continue;
+        await query(
+          "UPDATE wa_mensajes SET estado = $2, error = CASE WHEN $2 = 'error' THEN COALESCE(error, 'Meta reportó un error de entrega') ELSE error END WHERE wa_message_id = $1",
+          [s.id, ESTADO_ENTREGA[s.status] || s.status]
+        );
+      }
+    }
+  } catch (e) {
+    console.error('[whatsapp] error procesando el aviso:', e.message);
+  }
 });
 
 // ---------- Fotos de diagnostico ----------

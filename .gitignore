@@ -28,6 +28,8 @@ local/
 backups/
 .env
 .env.*
+# ...pero la plantilla de variables SI se versiona (no tiene valores reales)
+!.env.example
 *.pem
 *.key
 id_ed25519*

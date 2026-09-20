@@ -165,6 +165,24 @@ imprimible de trazabilidad.
 ### `POST /reset`
 Limpia todas las tablas de demo y re-siembra desde `src/data/seed.js` (corre `node api/seed.js` como proceso hijo). → `{ ok: true }`. Cuidado: **destruye los datos actuales**; en producción solo debe usarse en entornos de demostración.
 
+## WhatsApp (canal oficial de Meta)
+
+| Método | Ruta | Notas |
+| --- | --- | --- |
+| `GET` | `/whatsapp/estado` | Admin. Si el canal está configurado, qué falta y las estadísticas (recibidos, enviados, con error, conversaciones, sin leer) + la URL del webhook. Nunca devuelve el token. |
+| `GET` | `/whatsapp/conversaciones` | Admin/técnico. Bandeja: conversaciones con último mensaje, no leídos y el cliente vinculado. |
+| `GET` | `/whatsapp/conversaciones/:id` | Admin/técnico. Hilo completo + ficha del cliente + sus últimas 5 órdenes. Marca la conversación como leída. |
+| `POST` | `/whatsapp/conversaciones/:id/responder` | Admin/técnico. Body `{ texto }`. Mensaje libre (vale dentro de las 24 h desde el último mensaje del cliente). |
+| `POST` | `/whatsapp/enviar` | Admin/técnico. Body `{ telefono, texto }`. Envía a un número suelto (pruebas del canal). |
+| `GET` | `/whatsapp/webhook` | Público. Verificación del webhook de Meta (`hub.verify_token` → `hub.challenge`). |
+| `POST` | `/whatsapp/webhook` | Público. Avisos de Meta: mensajes entrantes y estados de entrega. Valida la firma `X-Hub-Signature-256` con `WHATSAPP_APP_SECRET` antes de procesar. |
+
+Configuración: `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID`, `WHATSAPP_WABA_ID`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_APP_SECRET`
+y (opcional) `WHATSAPP_API_VERSION`. Se cargan con `bash scripts/whatsapp-env.sh` (los valores no pasan por el chat ni
+por el repositorio). Guía del trámite en Meta: `docs/WHATSAPP_META.md`; textos de plantillas: `docs/WHATSAPP_PLANTILLAS.md`.
+
+Sin claves cargadas el canal queda apagado y el resto de la API funciona igual.
+
 ## Fotos de diagnóstico (multer)
 
 ### `POST /diagnostico/:orden_id/fotos`

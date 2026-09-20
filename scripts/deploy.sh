@@ -40,7 +40,7 @@ rsync -az --delete \
   -e "ssh $SSH_ARGS" dist/ "root@$SSH_HOST:$REMOTE_DIR/"
 
 echo "== Deploy API =="
-rsync -az --delete --exclude node_modules --exclude .env "${EXCLUDE_DOCS[@]}" \
+rsync -az --delete --exclude node_modules --exclude .env --exclude .env.example "${EXCLUDE_DOCS[@]}" \
   -e "ssh $SSH_ARGS" api/ "root@$SSH_HOST:$REMOTE_DIR/api/"
 
 echo "== Seed data (src/data) =="

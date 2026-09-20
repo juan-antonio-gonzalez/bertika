@@ -137,6 +137,7 @@ Panel principal para administrar la operacion. Pestañas:
 | **Garantias** | Tabla de garantias vigentes y por vencer. |
 | **Baja / reciclaje** | Baterias dadas de baja con motivo y disposicion; trazabilidad para reciclaje responsable. |
 | **Cotizador** | Tarifas del cotizador de visitas: franjas de traslado, viaticos, precios por tipo de bateria, descuentos, extras, recargos, IVA, vigencia y limites. Vista previa en vivo y valores de fabrica. |
+| **WhatsApp** | Canal oficial de WhatsApp: estado de la conexion, envio de prueba y la bandeja de conversaciones (con la ficha del cliente y sus ultimas ordenes al lado). Guia del tramite en Meta: `docs/WHATSAPP_META.md`. |
 
 El admin tambien tiene `/reportes` (exporta CSV) y `/usuarios` (alta, edicion de
 rol/estado y reseteo de contrasenas de cualquier cuenta).
