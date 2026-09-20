@@ -504,7 +504,7 @@ select.input option { background: var(--bg-3); }
 
 /* ---------- cotizador de visita (pantalla completa, sin scroll) ---------- */
 .cz { height: 100dvh; display: flex; flex-direction: column; overflow: hidden; background: linear-gradient(180deg, #f7f9fc 0%, #edf1f8 100%); color: var(--text); }
-.cz-top { flex: 0 0 auto; height: 58px; display: flex; align-items: center; gap: 14px; padding: 0 20px; background: #fff; border-bottom: 1px solid var(--line); }
+.cz-top { flex: 0 0 auto; min-height: 58px; display: flex; align-items: center; gap: 14px; padding: 8px 20px; background: #fff; border-bottom: 1px solid var(--line); }
 .cz-brand { display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: .3px; color: #0a1740; font-size: 16px; }
 .cz-brand .logo { width: 32px; height: 32px; border-radius: 9px; background: linear-gradient(135deg, var(--amber), var(--orange)); display: grid; place-items: center; color: #fff; }
 .cz-top-title { font-size: 12.5px; color: var(--muted); border-left: 1px solid var(--line); padding-left: 14px; }
@@ -519,18 +519,19 @@ select.input option { background: var(--bg-3); }
 .cz-card-title .num { width: 20px; height: 20px; border-radius: 50%; background: var(--amber-bg); color: var(--amber-d); display: grid; place-items: center; font-size: 11px; flex: 0 0 auto; }
 .cz-card-title .right { margin-left: auto; }
 .cz-help { font-size: 11.5px; color: var(--muted); }
-.cz-km { display: flex; align-items: center; gap: 14px; }
-.cz-km input[type='range'] { flex: 1; accent-color: var(--amber); height: 22px; }
+.cz-km { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.cz-km input[type='range'] { flex: 1 1 170px; min-width: 0; accent-color: var(--amber); height: 26px; }
 .cz-zone { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; font-size: 12px; color: var(--muted); }
-.cz-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.cz-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
 .cz-row:last-child { margin-bottom: 0; }
+.cz-select { flex: 1 1 220px; min-width: 0; }
 .cz-stepper { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: #fff; flex: 0 0 auto; }
 .cz-stepper button { width: 28px; height: 34px; border: 0; background: #fff; color: var(--muted); font-size: 15px; font-weight: 800; cursor: pointer; }
 .cz-stepper button:hover { background: var(--bg-3); color: var(--text); }
 .cz-stepper input { width: 44px; height: 34px; padding: 0; border: 0; border-left: 1px solid var(--line); border-right: 1px solid var(--line); border-radius: 0; text-align: center; font-weight: 700; font-variant-numeric: tabular-nums; }
 .cz-stepper.sm button { width: 24px; height: 26px; font-size: 13px; }
 .cz-stepper.sm input { width: 34px; height: 26px; font-size: 12px; }
-.cz-chips { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.cz-chips { display: grid; grid-template-columns: repeat(auto-fit, minmax(215px, 1fr)); gap: 8px; }
 .cz-chip { display: flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 10px; padding: 6px 9px; background: #fff; font-size: 12.5px; min-height: 40px; }
 .cz-chip:hover { border-color: #c9d2e0; }
 .cz-chip.on { border-color: var(--amber); background: var(--amber-bg); }
@@ -539,8 +540,8 @@ select.input option { background: var(--bg-3); }
 .cz-chip.on .tick { background: var(--amber); border-color: var(--amber); color: #fff; }
 .cz-chip .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cz-chip .price { color: var(--muted); font-size: 11.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.cz-seg { display: inline-flex; background: var(--bg-3); border-radius: 10px; padding: 3px; gap: 3px; }
-.cz-seg button { border: 0; background: transparent; padding: 7px 12px; border-radius: 8px; font-size: 12.5px; font-weight: 600; color: var(--muted); cursor: pointer; white-space: nowrap; }
+.cz-seg { display: inline-flex; background: var(--bg-3); border-radius: 10px; padding: 3px; gap: 3px; flex-wrap: wrap; max-width: 100%; }
+.cz-seg button { border: 0; background: transparent; padding: 8px 12px; border-radius: 8px; font-size: 12.5px; font-weight: 600; color: var(--muted); cursor: pointer; white-space: nowrap; flex: 1 1 auto; }
 .cz-seg button.on { background: #fff; color: #0a1740; box-shadow: 0 1px 3px rgba(18, 42, 76, .12); }
 .cz-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .cz-field label { font-size: 11.5px; font-weight: 700; color: var(--muted); }
@@ -569,10 +570,55 @@ select.input option { background: var(--bg-3); }
 .cz-summary::-webkit-details-marker { display: none; }
 .cz-summary::after { content: ' +'; color: var(--muted); }
 details[open] > .cz-summary::after { content: ' –'; }
-@media (max-width: 980px) {
+/* Barra inferior con el total: solo en pantallas chicas (el resumen queda
+   abajo de todo y el cliente tiene que poder pedir sin scrollear). */
+.cz-bar { display: none; }
+
+/* ---------- cotizador responsive ---------- */
+/* Notebook chico / tablet horizontal / celular: una columna y scroll normal. */
+@media (max-width: 900px) {
   .cz { height: auto; min-height: 100dvh; overflow: visible; }
-  .cz-body { grid-template-columns: 1fr; overflow: visible; }
-  .cz-col { overflow: visible; }
+  .cz-body { grid-template-columns: 1fr; gap: 12px; padding: 14px 16px calc(86px + env(safe-area-inset-bottom)); }
+  .cz-col { overflow: visible; padding-right: 0; }
+  .cz-bar { display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); background: rgba(255, 255, 255, .97); border-top: 1px solid var(--line); box-shadow: 0 -6px 20px rgba(18, 42, 76, .09); backdrop-filter: blur(6px); }
+  .cz-bar .lbl { font-size: 10.5px; text-transform: uppercase; letter-spacing: .7px; color: var(--muted); }
+  .cz-bar .amt { font-size: 21px; font-weight: 800; color: #0a1740; font-variant-numeric: tabular-nums; }
+  .cz-bar .btn { flex: 0 0 auto; }
+}
+
+/* Celular */
+@media (max-width: 700px) {
+  .cz-top { min-height: 52px; gap: 10px; padding: 7px 12px; }
+  .cz-top-title { display: none; }
+  .cz-top-right { gap: 6px; }
+  .cz-brand { font-size: 15px; }
+  .cz-brand .logo { width: 28px; height: 28px; }
+  .cz-dolar { font-size: 11px; padding: 5px 9px; }
+  .cz-body { padding: 12px 12px calc(84px + env(safe-area-inset-bottom)); }
+  .cz-card { padding: 12px 13px; border-radius: 12px; }
+  .cz-total .amt { font-size: 26px; }
+  .cz-km input[type='range'] { flex: 1 1 100%; }
+  .cz-km .cz-stepper { width: 100%; justify-content: space-between; }
+  .cz-km .cz-stepper input { flex: 1; width: auto; }
+  .cz-stepper button { width: 44px; height: 42px; font-size: 18px; }
+  .cz-stepper input { width: 56px; height: 42px; font-size: 15px; }
+  .cz-stepper.sm button { width: 34px; height: 32px; font-size: 15px; }
+  .cz-stepper.sm input { width: 46px; height: 32px; }
+  .cz-select { flex: 1 1 100%; }
+  .cz-row > .btn.icon { margin-left: auto; }
+  .cz-zone { flex-wrap: wrap; }
+  .cz-seg { width: 100%; }
+  .cz-seg button { padding: 9px 10px; }
+  .cz-two { grid-template-columns: 1fr; }
+  .cz-chips { grid-template-columns: 1fr; }
+  .cz-chip { min-height: 44px; }
+  .cz-cta .btn { padding: 12px 14px; }
+  .doc { padding: 12px; }
+  .doc-firmas { gap: 18px; }
+}
+@media (max-width: 380px) {
+  .cz-back-txt { display: none; }
+  .cz-brand sup { display: none; }
 }
 
 /* ---------- documentos del taller (orden de trabajo / comprobante) ---------- */

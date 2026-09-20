@@ -262,6 +262,9 @@ Sin firma valida el endpoint responde 403.
 - **Todas las variables se editan desde el panel** (Hub → pestaña **Cotizador**): franjas de traslado,
   viaticos, precios por tipo, descuentos, extras, recargos, IVA, vigencia, cobertura y limites. Hay vista
   previa en vivo y "valores de fabrica"; cada cambio queda auditado con usuario y fecha.
+- **Responsive**: en notebook y tablet horizontal (desde 900 px) entra en dos columnas, sin scroll de pagina;
+  en celular y tablet vertical se apila en una columna con una **barra fija abajo** que muestra el total y el
+  boton **Solicitar**, asi no hay que scrollear para pedir la visita.
 - Los calculos estan cubiertos por **`npm test`** (zonas, viaticos, descuentos, extras por equipo, recargos, IVA,
   validacion de la configuracion y proveedor de dolar).
 

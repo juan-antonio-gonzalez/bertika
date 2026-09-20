@@ -261,7 +261,7 @@ export default function Cotizador() {
             <span className="dot" />
             {dolar?.disponible ? `Dólar oficial ${fmtARS.format(dolar.venta)}` : 'Dólar no disponible'}
           </span>
-          <Link to="/" className="btn sm ghost"><Icon name="home" size={13} /> Volver al sitio</Link>
+          <Link to="/" className="btn sm ghost"><Icon name="home" size={13} /> <span className="cz-back-txt">Volver al sitio</span></Link>
         </div>
       </header>
 
@@ -342,7 +342,7 @@ export default function Cotizador() {
             {renglones.map((ren, i) => (
               <div className="cz-row" key={i}>
                 <select
-                  className="input" style={{ flex: 1, minWidth: 0 }} aria-label={`Tipo de batería ${i + 1}`}
+                  className="input cz-select" aria-label={`Tipo de batería ${i + 1}`}
                   value={ren.tipoId} onChange={(e) => setRenglon(i, { tipoId: e.target.value })}
                 >
                   {config.tipos.map((t) => <option key={t.id} value={t.id}>{t.nombre} · {fmtUSD.format(t.precioUnidad)}</option>)}
@@ -554,6 +554,23 @@ export default function Cotizador() {
           </details>
         </div>
       </div>
+
+      {/* En celular/tablet el resumen queda abajo: esta barra fija permite ver
+          el total y solicitar sin scrollear. */}
+      {listo && !fuera && (
+        <div className="cz-bar">
+          <div>
+            <div className="lbl">
+              {esTaller ? 'Revisión en taller' : `Visita ${km} km`}
+              {dolar?.disponible && r.ars ? ` · ≈ ${fmtARS.format(r.ars)}` : ''}
+            </div>
+            <div className="amt">{fmtUSD.format(r.total)}</div>
+          </div>
+          <button className="btn primary" disabled={enviando} onClick={solicitar}>
+            <Icon name="clipboard" size={15} /> {enviando ? 'Guardando...' : 'Solicitar'}
+          </button>
+        </div>
+      )}
 
       {verDoc && (
         <Modal title="Estimación de visita" sub={`${km} km · ${r.totalUnidades} unidad(es)${codigo ? ` · ${codigo}` : ''}`} onClose={() => setVerDoc(false)}>
