@@ -133,7 +133,7 @@ export async function seedDatabase() {
     }
 
     // Contadores (para seguir generando ids tipo ord_100+, ev_100+, bat_100+)
-    const contadores = [['ord', 100], ['bat', 100], ['ev', 100], ['cli', 100], ['ins', 100], ['baja', 100], ['nt', 100], ['usr', 100], ['mov', 100], ['cot', 100], ['cv', 100]];
+    const contadores = [['ord', 100], ['bat', 100], ['ev', 100], ['cli', 100], ['ins', 100], ['baja', 100], ['nt', 100], ['usr', 100], ['mov', 100], ['cot', 100], ['cv', 100], ['cfg', 100], ['evt', 100]];
     for (const [nombre, valor] of contadores) {
       await ins('INSERT INTO contadores (nombre, valor) VALUES ($1,$2) ON CONFLICT (nombre) DO UPDATE SET valor = EXCLUDED.valor', [nombre, valor]);
     }

@@ -38,7 +38,10 @@ function DocumentoCotizacion({ cot, codigo, km, dolar, cliente, config }) {
 
       <div className="doc-seccion">
         <div className="doc-seccion-titulo">Visita</div>
-        <div className="doc-row"><span className="doc-k">Distancia</span><span className="doc-v">{km} km · {cot.zona?.nombre}</span></div>
+        <div className="doc-row"><span className="doc-k">Modalidad</span><span className="doc-v">{cot.modo === 'taller' ? 'Revisión en nuestro taller (sin traslado)' : 'Visita técnica en el sitio del cliente'}</span></div>
+        {cot.modo !== 'taller' && (
+          <div className="doc-row"><span className="doc-k">Distancia</span><span className="doc-v">{km} km · {cot.zona?.nombre}</span></div>
+        )}
         <div className="doc-row"><span className="doc-k">Traslado</span><span className="doc-v">{fmtUSD.format(cot.traslado)}</span></div>
         {cot.viaticos > 0 && (
           <div className="doc-row"><span className="doc-k">Viáticos ({cot.viaticosDias} día/s)</span><span className="doc-v">{fmtUSD.format(cot.viaticos)}</span></div>
@@ -89,6 +92,7 @@ function DocumentoCotizacion({ cot, codigo, km, dolar, cliente, config }) {
 export default function Cotizador() {
   const navigate = useNavigate();
   const toastShow = useStore((s) => s.toastShow);
+  const [modo, setModo] = useState('sitio');
   const [km, setKm] = useState(60);
   const [errorKm, setErrorKm] = useState('');
   const [config, setConfig] = useState(CONFIG_DEFAULT);
@@ -104,6 +108,27 @@ export default function Cotizador() {
   const [verDoc, setVerDoc] = useState(false);
   const [codigo, setCodigo] = useState('');
   const kmRef = useRef(null);
+
+  // Sesión anónima + eventos del embudo (abre / interactúa / solicita / ...).
+  // Sin datos personales: solo números de la estimación.
+  const sesion = useRef(null);
+  if (sesion.current === null) {
+    try {
+      const k = 'bertika-cotizador-sesion';
+      let v = sessionStorage.getItem(k);
+      if (!v) {
+        v = (globalThis.crypto?.randomUUID?.() || `s${Date.now()}${Math.random().toString(16).slice(2)}`).slice(0, 36);
+        sessionStorage.setItem(k, v);
+      }
+      sesion.current = v;
+    } catch {
+      sesion.current = 'anon';
+    }
+  }
+  const yaAviso = useRef({ abre: false, interactua: false });
+  const medir = (tipo, extra = {}) => {
+    api('/public/cotizador-evento', { method: 'POST', body: { tipo, sesion: sesion.current, modo, ...extra } }).catch(() => {});
+  };
 
   // Tarifas vigentes + cotización del dólar: las resuelve la API (proxy con
   // caché y respaldo). La config la edita el admin desde el panel.
@@ -126,13 +151,30 @@ export default function Cotizador() {
   }, []);
 
   const r = useMemo(
-    () => calcularVisita({ km: Number(km) || 0, renglones, extrasSel, urgencia, turno, dolar: dolar?.disponible ? dolar : null, config }),
-    [km, renglones, extrasSel, urgencia, turno, dolar, config],
+    () => calcularVisita({
+      km: modo === 'taller' ? 0 : Number(km) || 0,
+      renglones, extrasSel, urgencia, turno, modo,
+      dolar: dolar?.disponible ? dolar : null, config,
+    }),
+    [km, modo, renglones, extrasSel, urgencia, turno, dolar, config],
   );
 
-  const tieneKm = Number(km) > 0;
-  const fuera = tieneKm && r.fueraDeZona;
+  const esTaller = r.modo === 'taller';
+  const listo = esTaller || Number(km) > 0;
+  const fuera = !esTaller && Number(km) > 0 && r.fueraDeZona;
   const unidades = r.totalUnidades;
+
+  // Embudo: primera visita y primera interacción real (una sola vez por sesión).
+  useEffect(() => {
+    if (yaAviso.current.abre) return;
+    yaAviso.current.abre = true;
+    medir('abre');
+  }, []);
+  useEffect(() => {
+    if (yaAviso.current.interactua) return;
+    yaAviso.current.interactua = true;
+    medir('interactua', { km: modo === 'taller' ? 0 : Number(km) || 0, total: r.total ?? undefined });
+  }, [km, modo, renglones, extrasSel, urgencia, turno]);
 
   const setRenglon = (i, patch) => setRenglones((ls) => ls.map((x, j) => (j === i ? { ...x, ...patch } : x)));
   const cantRenglon = (i, delta) => setRenglones((ls) => ls.map((x, j) => (j === i
@@ -148,6 +190,7 @@ export default function Cotizador() {
   };
 
   const validarKm = (valor = km) => {
+    if (esTaller) return '';
     const n = Number(valor);
     if (!Number.isFinite(n) || n <= 0) return 'Ingresá la distancia aproximada para poder estimar.';
     if (n > config.maxKm) return textoFueraCobertura(config.maxKm);
@@ -155,6 +198,7 @@ export default function Cotizador() {
   };
 
   const limpiar = () => {
+    setModo('sitio');
     setKm(60);
     setErrorKm('');
     setRenglones([{ tipoId: config.tipos[0].id, cantidad: 1 }]);
@@ -180,7 +224,8 @@ export default function Cotizador() {
       const res = await api('/public/cotizacion-visita', {
         method: 'POST',
         body: {
-          km: Number(km),
+          km: esTaller ? 0 : Number(km),
+          modo,
           renglones: renglones.map((x) => ({ tipoId: x.tipoId, cantidad: Number(x.cantidad) || 0 })),
           extrasSel: extrasSel.map((x) => ({ id: x.id, cantidad: cantidadExtra(config.extras.find((e) => e.id === x.id)) })),
           urgencia, turno, ...cliente, fecha_preferida: fechaPref, website: '',
@@ -188,6 +233,7 @@ export default function Cotizador() {
       });
       setCodigo(res.codigo);
       if (res.codigo) {
+        medir('solicita', { km: esTaller ? 0 : Number(km), total: res.total, codigo: res.codigo });
         toastShow(`Estimación ${res.codigo} guardada por ${fmtUSD.format(res.total)}`, 'ok');
         navigate(`/contacto?asunto=${encodeURIComponent('Visita técnica en planta')}&cotizacion=${encodeURIComponent(res.codigo)}`);
         return;
@@ -200,7 +246,7 @@ export default function Cotizador() {
     navigate(`/contacto?asunto=${encodeURIComponent('Visita técnica en planta')}&resumen=${encodeURIComponent(r.resumen)}`);
   };
 
-  const waLink = `https://wa.me/${CONTACTO.waVentas}?text=${encodeURIComponent(`Hola, quiero consultar por una visita técnica.\n${r.resumenCorto}`)}`;
+  const waLink = `https://wa.me/${CONTACTO.waVentas}?text=${encodeURIComponent(`Hola, quiero consultar por ${esTaller ? 'la revisión de una batería en el taller' : 'una visita técnica'}.\n${r.resumenCorto}`)}`;
 
   return (
     <div className="cz">
@@ -222,6 +268,32 @@ export default function Cotizador() {
       <div className="cz-body">
         {/* ---------- Configuración ---------- */}
         <div className="cz-col">
+          {config.modoTaller.habilitado && (
+            <section className="cz-card">
+              <div className="cz-card-title"><Icon name="tools" size={13} /> ¿Cómo nos ocupamos de la batería?</div>
+              <div className="cz-seg" role="group" aria-label="Modalidad" style={{ width: '100%' }}>
+                <button
+                  type="button" className={modo === 'sitio' ? 'on' : ''} style={{ flex: 1 }}
+                  onClick={() => { setModo('sitio'); medir('modo', { modo: 'sitio' }); }}
+                >
+                  Vamos a tu planta
+                </button>
+                <button
+                  type="button" className={modo === 'taller' ? 'on' : ''} style={{ flex: 1 }}
+                  onClick={() => { setModo('taller'); setErrorKm(''); medir('modo', { modo: 'taller' }); }}
+                >
+                  La llevo al taller (−{Math.round(config.modoTaller.descuentoRevisionPct * 100)}%)
+                </button>
+              </div>
+              <p className="cz-help" style={{ marginTop: 8 }}>
+                {esTaller
+                  ? 'Traés la batería a nuestra planta: sin traslado ni viáticos, con bonificación sobre la revisión.'
+                  : 'Visitamos tu planta: el precio incluye traslado por distancia y viáticos si la visita es larga.'}
+              </p>
+            </section>
+          )}
+
+          {!esTaller && (
           <section className="cz-card">
             <div className="cz-card-title"><span className="num">1</span> Distancia desde nuestra planta</div>
             <div className="cz-km">
@@ -242,7 +314,7 @@ export default function Cotizador() {
               </div>
             </div>
             <div className="cz-zone">
-              {tieneKm && !fuera ? (
+              {Number(km) > 0 && !fuera ? (
                 <>
                   <span>
                     Zona <b>{r.zona.nombre}</b> · base {fmtUSD.format(r.zona.base)}
@@ -260,6 +332,7 @@ export default function Cotizador() {
               </div>
             )}
           </section>
+          )}
 
           <section className="cz-card">
             <div className="cz-card-title">
@@ -363,7 +436,7 @@ export default function Cotizador() {
               <span className="right cz-badge">{config.moneda}</span>
             </div>
 
-            {!tieneKm ? (
+            {!listo ? (
               <div className="cz-empty">Movés el control de distancia y acá aparece el precio.</div>
             ) : fuera ? (
               <>
@@ -378,10 +451,17 @@ export default function Cotizador() {
             ) : (
               <>
                 <div className="cz-lines">
-                  <div className="cz-line">
-                    <span className="k">Traslado · {km} km ({r.zona.nombre})</span>
-                    <span className="v">{fmtUSD.format(r.traslado)}</span>
-                  </div>
+                  {esTaller ? (
+                    <div className="cz-line">
+                      <span className="k">Revisión en nuestro taller (sin traslado){r.descuentoTaller > 0 ? ` · −${Math.round(config.modoTaller.descuentoRevisionPct * 100)}%` : ''}</span>
+                      <span className="v">{r.descuentoTaller > 0 ? `−${fmtUSD.format(r.descuentoTaller)}` : fmtUSD.format(0)}</span>
+                    </div>
+                  ) : (
+                    <div className="cz-line">
+                      <span className="k">Traslado · {km} km ({r.zona.nombre})</span>
+                      <span className="v">{fmtUSD.format(r.traslado)}</span>
+                    </div>
+                  )}
                   {r.viaticos > 0 && (
                     <div className="cz-line">
                       <span className="k">Viáticos · {r.viaticosDias} día/s</span>
@@ -445,8 +525,8 @@ export default function Cotizador() {
                     <Icon name="clipboard" size={16} /> {enviando ? 'Guardando estimación...' : 'Solicitar atención personalizada'}
                   </button>
                   <div className="cz-two">
-                    <a className="btn block" href={waLink} target="_blank" rel="noopener noreferrer"><Icon name="mail" size={14} /> Por WhatsApp</a>
-                    <button className="btn block" onClick={() => setVerDoc(true)}><Icon name="eye" size={14} /> Ver / imprimir</button>
+                    <a className="btn block" href={waLink} target="_blank" rel="noopener noreferrer" onClick={() => medir('whatsapp', { km: esTaller ? 0 : Number(km), total: r.total ?? undefined })}><Icon name="mail" size={14} /> Por WhatsApp</a>
+                    <button className="btn block" onClick={() => { setVerDoc(true); medir('imprime', { km: esTaller ? 0 : Number(km), total: r.total ?? undefined }); }}><Icon name="eye" size={14} /> Ver / imprimir</button>
                   </div>
                   <button className="btn sm ghost block center" onClick={limpiar}><Icon name="refresh" size={13} /> Empezar de nuevo</button>
                 </div>

@@ -149,6 +149,19 @@ async function asegurarCodigos() {
   await query('ALTER TABLE cotizaciones_visita ADD COLUMN IF NOT EXISTS config_actualizado TIMESTAMPTZ');
   await query('ALTER TABLE cotizaciones_visita ADD COLUMN IF NOT EXISTS viaticos NUMERIC');
   await query('ALTER TABLE cotizaciones_visita ADD COLUMN IF NOT EXISTS viaticos_dias INTEGER');
+  await query('ALTER TABLE cotizaciones_visita ADD COLUMN IF NOT EXISTS modo TEXT DEFAULT \'sitio\'');
+  // Embudo del cotizador: abre / interactua / solicita / whatsapp / imprime.
+  // Sin datos personales: sesion anonima + numeros de la estimacion.
+  await query(`CREATE TABLE IF NOT EXISTS cotizador_eventos (
+    id TEXT PRIMARY KEY,
+    fecha TIMESTAMPTZ DEFAULT now(),
+    tipo TEXT,
+    sesion TEXT,
+    modo TEXT,
+    km NUMERIC,
+    total NUMERIC,
+    codigo TEXT
+  )`);
   // Configuración editable del cotizador (tarifas, franjas, descuentos, IVA) +
   // historial de cambios para saber quién tocó los precios y cuándo.
   await query(`CREATE TABLE IF NOT EXISTS cotizador_config (
@@ -1050,6 +1063,59 @@ app.get('/api/cotizador/historial', authRequired, requireRol('admin'), async (re
   return res.json(await query('SELECT id, fecha, usuario FROM cotizador_config_historial ORDER BY fecha DESC LIMIT 50'));
 });
 
+// ---------- Embudo del cotizador (métricas para el admin) ----------
+const TIPOS_EVENTO = ['abre', 'interactua', 'solicita', 'whatsapp', 'imprime', 'modo'];
+
+app.post('/api/public/cotizador-evento', publicLimiter, async (req, res) => {
+  const { tipo, sesion, modo, km, total, codigo } = req.body || {};
+  if (!TIPOS_EVENTO.includes(tipo)) return res.status(400).json({ error: 'Evento inválido' });
+  await query(
+    'INSERT INTO cotizador_eventos (id, tipo, sesion, modo, km, total, codigo) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+    [
+      await nextId('evt'), tipo, limStr(sesion, 40),
+      modo === 'taller' ? 'taller' : 'sitio',
+      numEnRango(km, 0, 1000000) ?? null,
+      numEnRango(total, 0, 1e9) ?? null,
+      limStr(codigo, 20) || null,
+    ]
+  );
+  return res.status(201).json({ ok: true });
+});
+
+app.get('/api/cotizador/metricas', authRequired, requireRol('admin'), async (req, res) => {
+  const dias = Math.max(1, Math.min(365, Number(req.query?.dias) || 30));
+  const [funnel, cotizaciones, serie] = await Promise.all([
+    query(`SELECT tipo, count(*)::int AS eventos, count(DISTINCT sesion)::int AS sesiones
+             FROM cotizador_eventos WHERE fecha > now() - ($1 || ' days')::interval
+             GROUP BY tipo`, [dias]),
+    query(`SELECT count(*)::int AS total,
+                  count(*) FILTER (WHERE estado = 'solicitada')::int AS solicitadas,
+                  count(*) FILTER (WHERE modo = 'taller')::int AS en_taller,
+                  coalesce(round(avg(total)), 0)::int AS ticket_promedio
+             FROM cotizaciones_visita WHERE fecha > now() - ($1 || ' days')::interval`, [dias]),
+    query(`SELECT to_char(date_trunc('day', fecha), 'YYYY-MM-DD') AS dia, tipo, count(*)::int AS n
+             FROM cotizador_eventos
+            WHERE fecha > now() - ($1 || ' days')::interval AND tipo IN ('abre', 'solicita')
+            GROUP BY 1, 2 ORDER BY 1`, [dias]),
+  ]);
+  const porTipo = Object.fromEntries(funnel.map((f) => [f.tipo, f]));
+  const abren = porTipo.abre?.sesiones || 0;
+  const solicitan = porTipo.solicita?.sesiones || 0;
+  return res.json({
+    dias,
+    funnel: {
+      abre: porTipo.abre?.sesiones || 0,
+      interactua: porTipo.interactua?.sesiones || 0,
+      solicita: solicitan,
+      whatsapp: porTipo.whatsapp?.sesiones || 0,
+      imprime: porTipo.imprime?.sesiones || 0,
+      conversion: abren ? Math.round((solicitan / abren) * 100) : null,
+    },
+    cotizaciones: cotizaciones[0] || { total: 0, solicitadas: 0, en_taller: 0, ticket_promedio: 0 },
+    serie,
+  });
+});
+
 // Cotización del dólar oficial: la resuelve el servidor (proxy + cache) para que
 // el navegador no dependa de terceros ni pierda la cotización si uno falla.
 app.get('/api/public/dolar', publicLimiter, async (req, res) => {
@@ -1061,20 +1127,27 @@ app.get('/api/public/dolar', publicLimiter, async (req, res) => {
 // El servidor RECALCULA el total con el mismo módulo que usa la web: el precio
 // no depende de lo que mande el cliente.
 app.post('/api/public/cotizacion-visita', publicLimiter, async (req, res) => {
-  const { km, renglones, extrasSel, urgencia, turno, nombre, empresa, email, telefono, fecha_preferida, website } = req.body || {};
+  const { km, renglones, extrasSel, urgencia, turno, modo, nombre, empresa, email, telefono, fecha_preferida, website } = req.body || {};
   if (website) return res.status(201).json({ ok: true, codigo: '', descartado: true });
 
-  const kmNum = numEnRango(km, 0.1, 1000000);
-  if (kmNum === null) return res.status(400).json({ error: 'Ingresá la distancia aproximada en km (número mayor a 0)' });
   const { config, actualizado: configActualizada } = await configCotizador();
-  if (kmNum > config.maxKm) {
-    return res.status(400).json({ error: textoFueraCobertura(config.maxKm), fueraDeCobertura: true });
+  const modoT = modo === 'taller' && config.modoTaller.habilitado ? 'taller' : 'sitio';
+  const esTaller = modoT === 'taller';
+
+  // En visita al sitio la distancia es obligatoria y tiene tope de cobertura.
+  let kmNum = 0;
+  if (!esTaller) {
+    kmNum = numEnRango(km, 0.1, 1000000);
+    if (kmNum === null) return res.status(400).json({ error: 'Ingresá la distancia aproximada en km (número mayor a 0)' });
+    if (kmNum > config.maxKm) {
+      return res.status(400).json({ error: textoFueraCobertura(config.maxKm), fueraDeCobertura: true });
+    }
   }
   const emailT = email ? String(email).trim() : '';
   if (emailT && !validEmail(emailT)) return res.status(400).json({ error: 'El email no es válido' });
 
   const dolar = await obtenerDolar();
-  const cot = calcularVisita({ km: kmNum, renglones, extrasSel, urgencia, turno, dolar, config });
+  const cot = calcularVisita({ km: kmNum, renglones, extrasSel, urgencia, turno, modo: modoT, dolar, config });
   if (!cot.ok) return res.status(400).json({ error: cot.avisos[0]?.texto || textoFueraCobertura(config.maxKm), fueraDeCobertura: true });
 
   const nro = String((await nextId('cv')).split('_')[1] || '').padStart(6, '0');
@@ -1083,8 +1156,8 @@ app.post('/api/public/cotizacion-visita', publicLimiter, async (req, res) => {
   await query(
     `INSERT INTO cotizaciones_visita
       (id, km, zona, renglones, extras, urgencia, turno, subtotal, descuento, recargos, iva, total, moneda, dolar,
-       nombre, empresa, email, telefono, fecha_preferida, resumen, config_actualizado, viaticos, viaticos_dias)
-     VALUES ($1,$2,$3,$4::jsonb,$5::jsonb,$6,$7,$8,$9,$10,$11,$12,$20,$13::jsonb,$14,$15,$16,$17,$18,$19,$21,$22,$23)`,
+       nombre, empresa, email, telefono, fecha_preferida, resumen, config_actualizado, viaticos, viaticos_dias, modo)
+     VALUES ($1,$2,$3,$4::jsonb,$5::jsonb,$6,$7,$8,$9,$10,$11,$12,$20,$13::jsonb,$14,$15,$16,$17,$18,$19,$21,$22,$23,$24)`,
     [
       codigo, kmNum, cot.zona?.nombre || null,
       JSON.stringify(cot.detalle.map((d) => ({ tipo: d.tipo.id, nombre: d.tipo.nombre, cantidad: d.cantidad, precioUnidad: d.tipo.precioUnidad, subtotal: d.subtotal }))),
@@ -1092,7 +1165,7 @@ app.post('/api/public/cotizacion-visita', publicLimiter, async (req, res) => {
       cot.urgencia, cot.turno, cot.subtotal, cot.descuentoVol, cot.recargo, cot.iva, cot.total,
       JSON.stringify(dolar), limStr(nombre, 120), limStr(empresa, 120), emailT, limStr(telefono, 40),
       /^\d{4}-\d{2}-\d{2}$/.test(fechaPref) ? fechaPref : null, cot.resumen,
-      config.moneda, configActualizada, cot.viaticos, cot.viaticosDias,
+      config.moneda, configActualizada, cot.viaticos, cot.viaticosDias, cot.modo,
     ]
   );
   return res.status(201).json({

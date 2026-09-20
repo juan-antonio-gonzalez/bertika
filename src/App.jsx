@@ -1,30 +1,45 @@
-import { useEffect } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Toast, Shell } from './components/ui';
 import SiteHeader from './components/SiteHeader';
 import SiteFooter from './components/SiteFooter';
 import Chatbot from './components/Chatbot';
 import { useStore } from './store/store';
+
+// Code splitting: solo la landing viaja en el bundle inicial. Cada ruta se
+// descarga cuando se visita (el panel del Hub, el QR y el cotizador pesan y no
+// hacen falta para ver el sitio publico).
 import Landing from './pages/Landing';
-import Auth from './pages/Auth';
-import Home from './pages/Home';
-import Hub from './pages/Hub';
-import Tecnico from './pages/Tecnico';
-import Cliente from './pages/Cliente';
-import Tracker from './pages/Tracker';
-import Settings from './pages/Settings';
-import Productos from './pages/Productos';
-import Empresa from './pages/Empresa';
-import Servicios from './pages/Servicios';
-import Ecologica from './pages/Ecologica';
-import ComoLlegar from './pages/ComoLlegar';
-import Contacto from './pages/Contacto';
-import Seguimiento from './pages/Seguimiento';
-import Cotizador from './pages/Cotizador';
-import CotizacionPublica from './pages/CotizacionPublica';
-import Reportes from './pages/Reportes';
-import Usuarios from './pages/Usuarios';
+const Auth = lazy(() => import('./pages/Auth'));
+const Home = lazy(() => import('./pages/Home'));
+const Hub = lazy(() => import('./pages/Hub'));
+const Tecnico = lazy(() => import('./pages/Tecnico'));
+const Cliente = lazy(() => import('./pages/Cliente'));
+const Tracker = lazy(() => import('./pages/Tracker'));
+const Settings = lazy(() => import('./pages/Settings'));
+const Productos = lazy(() => import('./pages/Productos'));
+const Empresa = lazy(() => import('./pages/Empresa'));
+const Servicios = lazy(() => import('./pages/Servicios'));
+const Ecologica = lazy(() => import('./pages/Ecologica'));
+const ComoLlegar = lazy(() => import('./pages/ComoLlegar'));
+const Contacto = lazy(() => import('./pages/Contacto'));
+const Seguimiento = lazy(() => import('./pages/Seguimiento'));
+const Cotizador = lazy(() => import('./pages/Cotizador'));
+const CotizacionPublica = lazy(() => import('./pages/CotizacionPublica'));
+const Reportes = lazy(() => import('./pages/Reportes'));
+const Usuarios = lazy(() => import('./pages/Usuarios'));
 import WhatsAppFloat from './components/WhatsAppFloat';
+
+function CargandoRuta() {
+  return (
+    <div className="wrap page center" style={{ minHeight: '50vh', placeContent: 'center' }}>
+      <span className="logo" style={{ width: 40, height: 40, display: 'grid', placeItems: 'center' }}>
+        <span className="spinner" />
+      </span>
+      <p className="muted">Cargando...</p>
+    </div>
+  );
+}
 
 function Protected({ children }) {
   const user = useStore((s) => s.user);
@@ -91,6 +106,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <Toast />
+      <Suspense fallback={<CargandoRuta />}>
       <Routes>
         {/* Sitio público */}
         <Route path="/" element={<PublicLayout><Landing /></PublicLayout>} />
@@ -121,6 +137,7 @@ export default function App() {
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      </Suspense>
     </BrowserRouter>
   );
 }

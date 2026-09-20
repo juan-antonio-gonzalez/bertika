@@ -152,7 +152,20 @@ CREATE TABLE IF NOT EXISTS cotizaciones_visita (
   resumen TEXT,
   config_actualizado TIMESTAMPTZ,
   viaticos NUMERIC,
-  viaticos_dias INTEGER
+  viaticos_dias INTEGER,
+  modo TEXT DEFAULT 'sitio'
+);
+
+-- Embudo del cotizador (abre / interactua / solicita / whatsapp / imprime).
+CREATE TABLE IF NOT EXISTS cotizador_eventos (
+  id TEXT PRIMARY KEY,
+  fecha TIMESTAMPTZ DEFAULT now(),
+  tipo TEXT,
+  sesion TEXT,
+  modo TEXT,
+  km NUMERIC,
+  total NUMERIC,
+  codigo TEXT
 );
 
 -- Configuracion editable del cotizador de visitas + historial de cambios.

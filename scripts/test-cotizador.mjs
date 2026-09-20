@@ -263,6 +263,61 @@ test('fuera de cobertura no hay viáticos ni total', () => {
   assert.equal(r.total, null);
 });
 
+console.log('\nRevisión en nuestro taller (sin traslado, con bonificación)');
+test('en taller no hay traslado ni viáticos y la revisión se bonifica', () => {
+  const r = calcularVisita({ km: 500, renglones: [{ tipoId: 'plomo', cantidad: 2 }], modo: 'taller' });
+  assert.equal(r.modo, 'taller');
+  assert.equal(r.zona, null);
+  assert.equal(r.traslado, 0);
+  assert.equal(r.viaticos, 0);
+  assert.equal(r.revisionBruta, 1700);
+  assert.equal(r.descuentoTaller, Math.round(1700 * COTIZADOR_VISITA.modoTaller.descuentoRevisionPct));
+  assert.equal(r.revision, 1445);
+  assert.equal(r.subtotal, 1445);
+  assert.equal(r.total, 1445 + Math.round(1445 * COTIZADOR_VISITA.iva));
+  assert.match(r.resumen, /revisión en nuestro taller/i);
+});
+test('la bonificación de taller y el descuento por volumen se acumulan', () => {
+  const r = calcularVisita({ km: 10, renglones: [{ tipoId: 'plomo', cantidad: 10 }], modo: 'taller' });
+  assert.equal(r.revisionBruta, 8500);
+  assert.equal(r.descuentoTaller, 1275);
+  assert.equal(r.revision, 7225);
+  assert.equal(r.descuentoVol, Math.round(7225 * 0.1));
+});
+test('en taller una distancia enorme no cae en fuera de cobertura', () => {
+  const r = calcularVisita({ km: 5000, renglones: [{ tipoId: 'plomo', cantidad: 1 }], modo: 'taller' });
+  assert.equal(r.fueraDeZona, false);
+  assert.equal(r.ok, true);
+  assert.equal(r.traslado, 0);
+  assert.equal(r.avisos.some((a) => a.id === 'fuera_cobertura'), false);
+});
+test('si el admin deshabilita el modo taller, se cotiza como visita', () => {
+  const cfg = normalizarConfig({ ...COTIZADOR_VISITA, modoTaller: { habilitado: false, descuentoRevisionPct: 0.15 } });
+  const r = calcularVisita({ km: 100, renglones: [{ tipoId: 'plomo', cantidad: 1 }], modo: 'taller', config: cfg });
+  assert.equal(r.modo, 'sitio');
+  assert.equal(r.traslado, 420);
+});
+
+console.log('\nCosto interno y margen (solo para el admin)');
+test('el costo suma viaje ida y vuelta, días de técnico y viáticos reales', () => {
+  const r = calcularVisita({ km: 500, renglones: [{ tipoId: 'plomo', cantidad: 1 }] });
+  assert.equal(r.viaticosDias, 2);
+  assert.equal(r.diasTecnico, 3);
+  assert.equal(r.costoViaje, Math.round(500 * 2 * COTIZADOR_VISITA.costos.porKm));
+  assert.equal(r.costoDias, 3 * COTIZADOR_VISITA.costos.tecnicoPorDia);
+  assert.equal(r.costoViaticos, 2 * COTIZADOR_VISITA.costos.viaticoPorDia);
+  assert.equal(r.costoInterno, r.costoViaje + r.costoDias + r.costoViaticos);
+  assert.equal(r.margen, r.subtotal - r.costoInterno);
+  assert.equal(r.margenPct, Math.round((r.margen / r.subtotal) * 100));
+});
+test('en taller el costo interno no incluye viaje', () => {
+  const r = calcularVisita({ km: 400, renglones: [{ tipoId: 'plomo', cantidad: 1 }], modo: 'taller' });
+  assert.equal(r.costoViaje, 0);
+  assert.equal(r.costoViaticos, 0);
+  assert.equal(r.diasTecnico, 1);
+  assert.equal(r.costoInterno, COTIZADOR_VISITA.costos.tecnicoPorDia);
+});
+
 console.log('\nProveedor de dólar (proxy con caché y fallback)');
 const respuesta = (obj, ok = true) => ({ ok, json: async () => obj });
 const dolarapi = respuesta({ compra: 1485, venta: 1535, fechaActualizacion: '2026-09-18T18:55:00.000Z' });

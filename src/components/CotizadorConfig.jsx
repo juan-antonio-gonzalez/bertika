@@ -7,6 +7,25 @@ import { calcularVisita, normalizarConfig, CONFIG_DEFAULT, fmtUSD, MAX_KM } from
 const input = { width: '100%', minWidth: 70 };
 const num = (v) => Number(String(v ?? '').replace(',', '.')) || 0;
 
+const textoMargen = (pct) => {
+  if (pct == null) return 'Fuera de cobertura';
+  if (pct < 0) return 'A pérdida';
+  if (pct < 20) return 'Margen bajo';
+  if (pct < 40) return 'Margen ajustado';
+  return 'Margen sano';
+};
+
+// Serie diaria de eventos [{dia, tipo, n}] → [{dia, abre, solicita}]
+const agruparSerie = (serie) => {
+  const porDia = new Map();
+  for (const e of serie) {
+    const d = porDia.get(e.dia) || { dia: e.dia, abre: 0, solicita: 0 };
+    d[e.tipo] = e.n;
+    porDia.set(e.dia, d);
+  }
+  return [...porDia.values()];
+};
+
 // Editor de TODAS las variables del cotizador de visitas (solo admin).
 // Guarda en la base vía PUT /api/cotizador y el sitio público lo toma al instante.
 export default function CotizadorConfig() {
@@ -15,6 +34,17 @@ export default function CotizadorConfig() {
   const [info, setInfo] = useState(null);
   const [cargando, setCargando] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [metricas, setMetricas] = useState(null);
+  const [simKm, setSimKm] = useState(300);
+  const [simModo, setSimModo] = useState('sitio');
+
+  const cargarMetricas = async () => {
+    try {
+      setMetricas(await api('/cotizador/metricas'));
+    } catch (e) {
+      toastShow(e.message, 'error');
+    }
+  };
 
   const cargar = async () => {
     try {
@@ -27,7 +57,7 @@ export default function CotizadorConfig() {
       setCargando(false);
     }
   };
-  useEffect(() => { cargar(); }, []);
+  useEffect(() => { cargar(); cargarMetricas(); }, []);
 
   const set = (patch) => setCfg((c) => ({ ...c, ...patch }));
 
@@ -60,6 +90,23 @@ export default function CotizadorConfig() {
       return { valida: null, error: e.message, filas: [] };
     }
   }, [cfg]);
+
+  // Simulador interno: precio al cliente vs costo estimado, para decidir si
+  // conviene aceptar una visita larga. Usa la config que está editando.
+  const simulacion = useMemo(() => {
+    if (!preview.valida) return null;
+    try {
+      const tipo = preview.valida.tipos[0]?.id;
+      return calcularVisita({
+        km: simModo === 'taller' ? 0 : simKm,
+        renglones: tipo ? [{ tipoId: tipo, cantidad: 1 }] : [],
+        modo: simModo,
+        config: preview.valida,
+      });
+    } catch {
+      return null;
+    }
+  }, [preview.valida, simKm, simModo]);
 
   const guardar = async () => {
     if (preview.error) return toastShow(preview.error, 'error');
@@ -237,6 +284,98 @@ export default function CotizadorConfig() {
             <div className="field"><label>Moneda</label><input className="input" value={cfg.moneda} onChange={(e) => set({ moneda: e.target.value })} /></div>
           </div>
         </div>
+      </div>
+
+      {/* Revisión en nuestro taller */}
+      <div className="card">
+        <div className="card-title"><Icon name="tools" size={14} /> Revisión en nuestro taller</div>
+        <p className="muted" style={{ fontSize: 12, margin: '4px 0 10px' }}>
+          Modalidad en la que el cliente trae la batería: no se cobra traslado ni viáticos y se bonifica la revisión.
+        </p>
+        <div className="grid2">
+          <label className="row" style={{ gap: 8, fontSize: 13 }}>
+            <input
+              type="checkbox" checked={Boolean(cfg.modoTaller.habilitado)}
+              onChange={(e) => set({ modoTaller: { ...cfg.modoTaller, habilitado: e.target.checked } })}
+            />
+            Ofrecer esta modalidad en el cotizador
+          </label>
+          <div className="field">
+            <label>Bonificación sobre la revisión (%)</label>
+            <input
+              className="input" type="number" min="0" max="100" value={Math.round(cfg.modoTaller.descuentoRevisionPct * 100)}
+              onChange={(e) => set({ modoTaller: { ...cfg.modoTaller, descuentoRevisionPct: num(e.target.value) / 100 } })}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Costos internos + simulador */}
+      <div className="card">
+        <div className="card-title"><Icon name="dollar" size={14} /> Costos internos y margen (no se muestran al cliente)</div>
+        <p className="muted" style={{ fontSize: 12, margin: '4px 0 10px' }}>
+          Sirven para decidir si conviene una visita lejana. El costo estima el viaje de ida y vuelta, los días de técnico y los viáticos reales.
+        </p>
+        <div className="grid3">
+          <div className="field"><label>USD por km (combustible, desgaste)</label><input className="input" type="number" min="0" step="0.1" value={cfg.costos.porKm} onChange={(e) => set({ costos: { ...cfg.costos, porKm: num(e.target.value) } })} /></div>
+          <div className="field"><label>USD por día de técnico</label><input className="input" type="number" min="0" value={cfg.costos.tecnicoPorDia} onChange={(e) => set({ costos: { ...cfg.costos, tecnicoPorDia: num(e.target.value) } })} /></div>
+          <div className="field"><label>USD viático real por día</label><input className="input" type="number" min="0" value={cfg.costos.viaticoPorDia} onChange={(e) => set({ costos: { ...cfg.costos, viaticoPorDia: num(e.target.value) } })} /></div>
+        </div>
+        <div className="row wrap mt16" style={{ gap: 10, alignItems: 'flex-end' }}>
+          <div className="field" style={{ maxWidth: 140 }}><label>Simular km</label><input className="input" type="number" min="0" value={simKm} onChange={(e) => setSimKm(num(e.target.value))} /></div>
+          <div className="cz-seg" role="group" aria-label="Modalidad a simular">
+            <button type="button" className={simModo === 'sitio' ? 'on' : ''} onClick={() => setSimModo('sitio')}>Visita</button>
+            <button type="button" className={simModo === 'taller' ? 'on' : ''} onClick={() => setSimModo('taller')}>En taller</button>
+          </div>
+        </div>
+        {simulacion && (
+          <div className="grid4 mt16">
+            <div className="kpi"><div className="kpi-label">Precio al cliente (sin IVA)</div><div className="kpi-value">{fmtUSD.format(simulacion.subtotal)}</div><div className="kpi-sub">{simulacion.diasTecnico} día(s) de técnico</div></div>
+            <div className="kpi"><div className="kpi-label">Costo estimado</div><div className="kpi-value">{fmtUSD.format(simulacion.costoInterno)}</div><div className="kpi-sub">viaje {fmtUSD.format(simulacion.costoViaje)} + días {fmtUSD.format(simulacion.costoDias)}</div></div>
+            <div className={`kpi ${simulacion.margen != null && simulacion.margen < 0 ? 'danger' : ''}`}>
+              <div className="kpi-label">Margen bruto</div>
+              <div className="kpi-value">{simulacion.margen == null ? '—' : fmtUSD.format(simulacion.margen)}</div>
+              <div className="kpi-sub">{simulacion.margenPct == null ? 'fuera de cobertura' : `${simulacion.margenPct}% del precio`}</div>
+            </div>
+            <div className={`kpi ${simulacion.margenPct != null && simulacion.margenPct < 30 ? 'alert' : ''}`}>
+              <div className="kpi-label">Diagnóstico</div>
+              <div className="kpi-value" style={{ fontSize: 18 }}>{textoMargen(simulacion.margenPct)}</div>
+              <div className="kpi-sub">sobre el precio sin IVA</div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Embudo */}
+      <div className="card pad0">
+        <div className="row between" style={{ padding: '12px 14px' }}>
+          <div className="card-title"><Icon name="gauge" size={14} /> Embudo del cotizador (últimos {metricas?.dias || 30} días)</div>
+          <button className="btn sm" onClick={cargarMetricas}><Icon name="refresh" size={13} /> Actualizar</button>
+        </div>
+        {!metricas ? (
+          <p className="muted" style={{ padding: '0 14px 14px', fontSize: 12.5 }}>Cargando métricas...</p>
+        ) : (
+          <>
+            <div className="grid4" style={{ padding: '0 14px 14px' }}>
+              <div className="kpi"><div className="kpi-label">Abrieron el cotizador</div><div className="kpi-value">{metricas.funnel.abre}</div><div className="kpi-sub">{metricas.funnel.interactua} lo usaron (movieron algo)</div></div>
+              <div className="kpi"><div className="kpi-label">Pidieron atención</div><div className="kpi-value green">{metricas.funnel.solicita}</div><div className="kpi-sub">{metricas.funnel.whatsapp} por WhatsApp · {metricas.funnel.imprime} imprimieron</div></div>
+              <div className="kpi"><div className="kpi-label">Conversión</div><div className="kpi-value">{metricas.funnel.conversion == null ? '—' : `${metricas.funnel.conversion}%`}</div><div className="kpi-sub">de los que abrieron</div></div>
+              <div className="kpi"><div className="kpi-label">Ticket promedio</div><div className="kpi-value">{fmtUSD.format(metricas.cotizaciones.ticket_promedio || 0)}</div><div className="kpi-sub">{metricas.cotizaciones.solicitadas} de {metricas.cotizaciones.total} estimaciones solicitaron · {metricas.cotizaciones.en_taller} en taller</div></div>
+            </div>
+            {metricas.serie?.length > 0 && (
+              <div style={{ overflowX: 'auto' }}>
+                <table className="tbl">
+                  <thead><tr><th>Día</th><th className="num">Abrieron</th><th className="num">Solicitaron</th></tr></thead>
+                  <tbody>
+                    {agruparSerie(metricas.serie).slice(-10).map((d) => (
+                      <tr key={d.dia}><td className="mono">{d.dia}</td><td className="num">{d.abre || 0}</td><td className="num">{d.solicita || 0}</td></tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
+        )}
       </div>
 
       {/* Vista previa */}

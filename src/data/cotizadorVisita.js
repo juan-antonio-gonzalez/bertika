@@ -59,6 +59,14 @@ export const COTIZADOR_VISITA = {
   // `diaCadaKm` km adicionales (con tope en `maxDias`). porDia = 0 los desactiva.
   viaticos: { desdeKm: 300, porDia: 150, diaCadaKm: 200, maxDias: 5 },
 
+  // Revisión en nuestro taller (el cliente trae la batería): sin traslado ni
+  // viáticos y con un descuento sobre la revisión, que se muestra aparte.
+  modoTaller: { habilitado: true, descuentoRevisionPct: 0.15 },
+
+  // Costos internos para el análisis del admin (NUNCA se muestran al cliente):
+  // sirven para ver el margen de una visita antes de aceptarla.
+  costos: { porKm: 0.9, tecnicoPorDia: 120, viaticoPorDia: 90 },
+
   // Recargos (fracción, se suman y se aplican al subtotal).
   urgencia: { normal: 0, express: 0.25 },
   turno: { comercial: 0, finde: 0.30 },
@@ -174,6 +182,19 @@ export function normalizarConfig(parcial = {}) {
     maxDias: Math.max(1, Math.min(30, Math.round(num(v.maxDias, base.viaticos.maxDias)))),
   };
 
+  const mt = parcial.modoTaller || {};
+  const modoTaller = {
+    habilitado: Boolean(mt.habilitado ?? base.modoTaller.habilitado),
+    descuentoRevisionPct: acotar(mt.descuentoRevisionPct ?? base.modoTaller.descuentoRevisionPct, 0, 1),
+  };
+
+  const co = parcial.costos || {};
+  const costos = {
+    porKm: Math.max(0, num(co.porKm, base.costos.porKm)),
+    tecnicoPorDia: Math.max(0, r2(co.tecnicoPorDia ?? base.costos.tecnicoPorDia)),
+    viaticoPorDia: Math.max(0, r2(co.viaticoPorDia ?? base.costos.viaticoPorDia)),
+  };
+
   return {
     moneda: texto(parcial.moneda, base.moneda).toUpperCase().slice(0, 8),
     iva,
@@ -184,6 +205,8 @@ export function normalizarConfig(parcial = {}) {
     descuentos,
     extras,
     viaticos,
+    modoTaller,
+    costos,
     urgencia,
     turno,
     maxUnidadesPorRenglon: Math.max(1, Math.min(10000, Math.round(num(parcial.maxUnidadesPorRenglon, base.maxUnidadesPorRenglon)))),
@@ -247,11 +270,12 @@ export function normalizarExtras(extrasSel = [], unidadesSugeridas = 0, config =
 // config: configuración ya normalizada (por defecto, la de fábrica).
 export function calcularVisita({
   km = 0, renglones = [], extrasSel = [], urgencia = 'normal', turno = 'comercial',
-  dolar = null, config = CONFIG_DEFAULT,
+  modo = 'sitio', dolar = null, config = CONFIG_DEFAULT,
 } = {}) {
   const kmNum = Number(km) || 0;
-  const zona = zonaParaKm(kmNum, config);
-  const fueraDeZona = zona === null;
+  const esTaller = modo === 'taller' && config.modoTaller.habilitado;
+  const zona = esTaller ? null : zonaParaKm(kmNum, config);
+  const fueraDeZona = !esTaller && zona === null;
 
   const renglonesValidos = normalizarRenglones(renglones, config);
   const totalUnidades = renglonesValidos.reduce((s, r) => s + r.cantidad, 0);
@@ -260,17 +284,20 @@ export function calcularVisita({
   const detExtras = normalizarExtras(extrasSel, totalUnidades, config);
   const extras = r2(detExtras.reduce((s, e) => s + e.subtotal, 0));
 
-  const revision = r2(detalle.reduce((s, d) => s + d.subtotal, 0));
+  // En taller el cliente trae la batería: se bonifica la revisión (no hay viaje).
+  const revisionBruta = r2(detalle.reduce((s, d) => s + d.subtotal, 0));
+  const descuentoTaller = esTaller ? r2(revisionBruta * config.modoTaller.descuentoRevisionPct) : 0;
+  const revision = revisionBruta - descuentoTaller;
   const descPct = descuentoPct(totalUnidades, config);
   const descuentoVol = r2(revision * descPct);
 
-  // Traslado: base de la franja + los km que exceden lo cubierto por esa base.
+  // Traslado (solo en visita al sitio): base de la franja + km que la exceden.
   const cubreKm = zona ? zona.cubreKm : 0;
   const kmExcedente = zona ? Math.max(0, kmNum - cubreKm) : 0;
-  const traslado = kmNum > 0 && zona ? r2(zona.base + kmExcedente * zona.kmAdicional) : 0;
+  const traslado = !esTaller && kmNum > 0 && zona ? r2(zona.base + kmExcedente * zona.kmAdicional) : 0;
 
   // Viáticos: a partir de `desdeKm`, un día de viaje y uno más cada `diaCadaKm`.
-  const viaticosActivos = !fueraDeZona && config.viaticos.porDia > 0 && kmNum >= config.viaticos.desdeKm;
+  const viaticosActivos = !esTaller && !fueraDeZona && config.viaticos.porDia > 0 && kmNum >= config.viaticos.desdeKm;
   const viaticosDias = viaticosActivos
     ? Math.min(config.viaticos.maxDias, 1 + Math.floor((kmNum - config.viaticos.desdeKm) / config.viaticos.diaCadaKm))
     : 0;
@@ -285,9 +312,18 @@ export function calcularVisita({
   // Equivalente informativo en pesos (no interviene en el cálculo en USD).
   const ars = !fueraDeZona && dolar?.venta ? r2(total * dolar.venta) : null;
 
+  // Costos internos (solo para el análisis del admin: nunca se muestran al cliente).
+  const diasTecnico = esTaller ? 1 : 1 + viaticosDias;
+  const costoViaje = esTaller ? 0 : r2(kmNum * 2 * config.costos.porKm);
+  const costoDias = r2(diasTecnico * config.costos.tecnicoPorDia);
+  const costoViaticos = r2(viaticosDias * config.costos.viaticoPorDia);
+  const costoInterno = r2(costoViaje + costoDias + costoViaticos);
+  const margen = fueraDeZona ? null : r2(subtotal - costoInterno);
+  const margenPct = fueraDeZona || !subtotal ? null : Math.round((margen / subtotal) * 100);
+
   const avisos = [];
   if (fueraDeZona) avisos.push({ id: 'fuera_cobertura', texto: textoFueraCobertura(config.maxKm) });
-  else if (kmNum > 100) avisos.push({ id: 'larga_distancia', texto: AVISO_LARGA_DISTANCIA });
+  else if (!esTaller && kmNum > 100) avisos.push({ id: 'larga_distancia', texto: AVISO_LARGA_DISTANCIA });
   if (detExtras.length) avisos.push({ id: 'extras', texto: AVISO_EXTRAS });
 
   const etiquetaUrgencia = urgencia === 'express' ? `Express 48 h (+${Math.round(config.urgencia.express * 100)}%)` : 'Normal';
@@ -298,10 +334,15 @@ export function calcularVisita({
     filas.push(`Distancia declarada: ${kmNum} km (fuera de la cobertura de ${config.maxKm} km)`);
     filas.push(textoFueraCobertura(config.maxKm));
   } else {
-    filas.push(`Distancia: ${kmNum} km · ${zona.nombre} · traslado ${fmtUSD.format(traslado)}`);
-    if (kmExcedente > 0) filas.push(`  (${zona.base} base hasta ${zona.cubreKm} km + ${kmExcedente} km × ${zona.kmAdicional})`);
-    if (viaticos > 0) {
-      filas.push(`Viáticos: ${viaticosDias} día(s) × ${fmtUSD.format(config.viaticos.porDia)} = ${fmtUSD.format(viaticos)} (desde ${config.viaticos.desdeKm} km)`);
+    filas.push(esTaller
+      ? `Modalidad: revisión en nuestro taller (el cliente trae la batería, sin traslado)${descuentoTaller > 0 ? ` · bonificación ${Math.round(config.modoTaller.descuentoRevisionPct * 100)}% sobre la revisión` : ''}`
+      : 'Modalidad: visita técnica en el sitio del cliente');
+    if (!esTaller) {
+      filas.push(`Distancia: ${kmNum} km · ${zona.nombre} · traslado ${fmtUSD.format(traslado)}`);
+      if (kmExcedente > 0) filas.push(`  (${zona.base} base hasta ${zona.cubreKm} km + ${kmExcedente} km × ${zona.kmAdicional})`);
+      if (viaticos > 0) {
+        filas.push(`Viáticos: ${viaticosDias} día(s) × ${fmtUSD.format(config.viaticos.porDia)} = ${fmtUSD.format(viaticos)} (desde ${config.viaticos.desdeKm} km)`);
+      }
     }
     if (detalle.length) {
       filas.push(`Baterías a revisar (${totalUnidades} unidad/es): ${fmtUSD.format(revision)}`);
@@ -309,8 +350,9 @@ export function calcularVisita({
         filas.push(`  · ${d.tipo.nombre} × ${d.cantidad} = ${fmtUSD.format(d.subtotal)} (${fmtUSD.format(d.tipo.precioUnidad)} c/u)`);
       }
     } else {
-      filas.push('Baterías a revisar: sin unidades cargadas (solo traslado)');
+      filas.push(esTaller ? 'Baterías a revisar: sin unidades cargadas' : 'Baterías a revisar: sin unidades cargadas (solo traslado)');
     }
+    if (descuentoTaller > 0) filas.push(`Bonificación por traer la batería al taller (−${Math.round(config.modoTaller.descuentoRevisionPct * 100)}%): −${fmtUSD.format(descuentoTaller)}`);
     if (descuentoVol > 0) filas.push(`Descuento por volumen (−${Math.round(descPct * 100)}%): −${fmtUSD.format(descuentoVol)}`);
     if (detExtras.length) {
       filas.push('Servicios adicionales (sujetos a análisis comercial):');
@@ -327,17 +369,20 @@ export function calcularVisita({
       filas.push(`Equivalente informativo: ${fmtARS.format(ars)} (dólar ${dolar.casa || 'oficial'} venta ${fmtARS.format(dolar.venta)}${cuando ? ` · ${cuando}` : ''}${dolar.fuente ? ` · ${dolar.fuente}` : ''})`);
     }
     filas.push(`Vigencia de la estimación: ${config.vigenciaDias} días.`);
-    filas.push('El importe es solo por el servicio de revisión y diagnóstico en el sitio del cliente. No incluye reparación, repuestos ni recambio de celdas.');
+    filas.push(esTaller
+      ? 'El importe es solo por el servicio de revisión y diagnóstico en nuestro taller. No incluye reparación, repuestos ni recambio de celdas.'
+      : 'El importe es solo por el servicio de revisión y diagnóstico en el sitio del cliente. No incluye reparación, repuestos ni recambio de celdas.');
   }
 
   const resumen = filas.join('\n');
   const resumenCorto = fueraDeZona
     ? `Visita técnica a ${kmNum} km (fuera de cobertura): requiere análisis de un vendedor.`
-    : `Visita técnica a ${kmNum} km · ${totalUnidades} unidad(es)${detExtras.length ? ` + ${detExtras.length} extra(s)` : ''} · ${etiquetaUrgencia}/${etiquetaTurno} · TOTAL ESTIMADO ${fmtUSD.format(total)}${ars ? ` (≈ ${fmtARS.format(ars)})` : ''}`;
+    : `${esTaller ? 'Revisión en taller' : `Visita técnica a ${kmNum} km`} · ${totalUnidades} unidad(es)${detExtras.length ? ` + ${detExtras.length} extra(s)` : ''} · ${etiquetaUrgencia}/${etiquetaTurno} · TOTAL ESTIMADO ${fmtUSD.format(total)}${ars ? ` (≈ ${fmtARS.format(ars)})` : ''}`;
 
   return {
     ok: !fueraDeZona,
     fueraDeZona,
+    modo: esTaller ? 'taller' : 'sitio',
     zona,
     cubreKm,
     kmExcedente,
@@ -345,6 +390,8 @@ export function calcularVisita({
     viaticos,
     viaticosDias,
     revision,
+    revisionBruta,
+    descuentoTaller,
     totalUnidades,
     detalle,
     descPct,
@@ -360,6 +407,14 @@ export function calcularVisita({
     moneda: config.moneda,
     urgencia,
     turno,
+    // Análisis interno (el frontend público no lo muestra).
+    costoInterno,
+    costoViaje,
+    costoDias,
+    costoViaticos,
+    diasTecnico,
+    margen,
+    margenPct,
     avisos,
     resumen,
     resumenCorto,
