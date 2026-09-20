@@ -168,8 +168,8 @@ rol/estado y reseteo de contrasenas de cualquier cuenta).
 ## 5. Vista operativa del tecnico (`/tecnico`)
 
 Muestra las ordenes activas asignadas al tecnico (mas las recibidas sin asignar).
-Con el boton **Diagnosticar / Detalle** se abre la orden con 3 pestañas: **Orden**,
-**Trabajo** y **Eventos**.
+Con el boton **Diagnosticar / Detalle** se abre la orden con 4 pestañas: **Orden**,
+**Trabajo**, **Eventos** y **Etiqueta**.
 
 Trabajo dentro de cada etapa:
 
@@ -183,6 +183,7 @@ Trabajo dentro de cada etapa:
 
 - La pestaña **Eventos** muestra el historial completo (fecha y responsable) como trazabilidad.
 - La pestaña **Orden** muestra lecturas del diagnostico, cotizacion, prueba final, garantia e historial de la serie.
+- La pestaña **Etiqueta** arma la etiqueta de la bateria con un **QR que apunta al seguimiento publico** (`/tracker/<orden>`); **Imprimir etiqueta** la manda a la impresora sola, sin el resto de la interfaz.
 
 ---
 
@@ -214,9 +215,11 @@ Ideal para compartir por WhatsApp.
 (se formatea solo, `XXXX-XXXX-XXXX-XXXX`) o el **numero de serie** de la bateria.
 
 **Cotizacion publica:** `/cotizacion/:orden_id?t=<firma>` permite al cliente
-aprobar o rechazar sin cuenta. El parametro `t` es una firma HMAC que se obtiene
-con `POST /api/ordenes/:id/compartir` (staff con acceso a la orden); sin firma el
-endpoint responde 403.
+aprobar o rechazar sin cuenta. El parametro `t` es una firma HMAC: en la
+plataforma el boton **Compartir seguimiento y cotizacion** (pestaña *Acciones
+admin*) o **Compartir cotizacion con el cliente** (vista del tecnico, orden
+cotizada) pide ambos enlaces al servidor y los envia por WhatsApp o los copia.
+Sin firma valida el endpoint responde 403.
 
 ---
 

@@ -50,6 +50,7 @@ Body: `{ tecnico_id }`. Asigna técnico y registra evento.
 ### `POST /ordenes/:id/diagnostico`
 Body: `{ voltaje, resistencia, pruebaCarga, notas?, servicioTipo?, fotos?: string[] }` (`fotos` = base64, máx. ~2 MB total).
 Guarda el diagnóstico, avanza a `diagnosing` y genera cotización (estado `quoted`).
+Solo se admite en órdenes en `received` o `diagnosing`: si la orden ya avanzó responde `400` (reenviar el diagnóstico no debe retroceder el estado).
 
 ### `POST /ordenes/:id/cotizacion` — para ajustar/regenerar
 Body: `{ monto, servicios: [{nombre, monto}], insumos: [{nombre, cantidad, precio}] }` → estado `quoted`, `estado_cotizacion: 'pending'`.
@@ -68,8 +69,11 @@ Body: `{ monto_cobrado?, garantia_meses?, garantia_ciclos? }`. Registra cobro, g
 Body: `{ motivo? }`. Orden → `cancelled`, batería → `dada_de_baja`, inserta fila en `bajas`.
 
 ### `POST /ordenes/:id/transition`
-Body: `{ target, detalle? }`. Transición genérica validada por `canTransition()` en `api/reglas.js`:
+Body: `{ target, detalle? }`. Transición genérica validada por `canTransition()` (`src/data/reglas.js`, reexportada por `api/reglas.js`):
 `received→diagnosing`, `received→cancelled`, `diagnosing→quoted|cancelled`, `quoted→approved|cancelled`, `approved→in_repair|cancelled`, `in_repair→testing|cancelled`, `testing→ready|in_repair`, `ready→delivered`.
+
+### `POST /ordenes/:id/compartir`
+Staff con acceso a la orden. Devuelve `{ cotizacion, tracker }`: el enlace público del tracker y el de la cotización con la firma HMAC (`?t=`). Es lo que usa el botón **Compartir** de la plataforma (admin y técnico).
 
 ## Insumos (admin para escritura)
 
