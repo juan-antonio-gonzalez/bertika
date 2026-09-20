@@ -100,7 +100,8 @@ export default function App() {
         <Route path="/politica-ecologica" element={<PublicLayout><Ecologica /></PublicLayout>} />
         <Route path="/como-llegar" element={<PublicLayout><ComoLlegar /></PublicLayout>} />
         <Route path="/contacto" element={<PublicLayout><Contacto /></PublicLayout>} />
-        <Route path="/cotizador" element={<PublicLayout><Cotizador /></PublicLayout>} />
+        {/* Pantalla completa propia: entra sin scroll, sin el header/footer del sitio */}
+        <Route path="/cotizador" element={<Cotizador />} />
         <Route path="/seguimiento" element={<PublicLayout><Seguimiento /></PublicLayout>} />
         <Route path="/cotizacion/:orden_id" element={<PublicLayout><CotizacionPublica /></PublicLayout>} />
         <Route path="/plataforma" element={<PublicLayout><Plataforma /></PublicLayout>} />

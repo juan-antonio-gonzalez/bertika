@@ -502,6 +502,79 @@ select.input option { background: var(--bg-3); }
   body.print-label .print-label > div { width: 620px !important; max-width: 100%; }
 }
 
+/* ---------- cotizador de visita (pantalla completa, sin scroll) ---------- */
+.cz { height: 100dvh; display: flex; flex-direction: column; overflow: hidden; background: linear-gradient(180deg, #f7f9fc 0%, #edf1f8 100%); color: var(--text); }
+.cz-top { flex: 0 0 auto; height: 58px; display: flex; align-items: center; gap: 14px; padding: 0 20px; background: #fff; border-bottom: 1px solid var(--line); }
+.cz-brand { display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: .3px; color: #0a1740; font-size: 16px; }
+.cz-brand .logo { width: 32px; height: 32px; border-radius: 9px; background: linear-gradient(135deg, var(--amber), var(--orange)); display: grid; place-items: center; color: #fff; }
+.cz-top-title { font-size: 12.5px; color: var(--muted); border-left: 1px solid var(--line); padding-left: 14px; }
+.cz-top-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.cz-dolar { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; background: var(--green-bg); color: var(--green); border-radius: 999px; padding: 6px 11px; font-weight: 700; white-space: nowrap; }
+.cz-dolar .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.cz-dolar.off { background: var(--bg-3); color: var(--muted); }
+.cz-body { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(340px, .85fr); gap: 18px; padding: 18px 20px 20px; }
+.cz-col { min-height: 0; display: flex; flex-direction: column; gap: 14px; overflow: auto; padding-right: 4px; }
+.cz-card { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; box-shadow: 0 1px 2px rgba(18, 42, 76, .04); }
+.cz-card-title { display: flex; align-items: center; gap: 8px; font-size: 11.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .6px; color: #0a1740; margin-bottom: 10px; }
+.cz-card-title .num { width: 20px; height: 20px; border-radius: 50%; background: var(--amber-bg); color: var(--amber-d); display: grid; place-items: center; font-size: 11px; flex: 0 0 auto; }
+.cz-card-title .right { margin-left: auto; }
+.cz-help { font-size: 11.5px; color: var(--muted); }
+.cz-km { display: flex; align-items: center; gap: 14px; }
+.cz-km input[type='range'] { flex: 1; accent-color: var(--amber); height: 22px; }
+.cz-zone { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; font-size: 12px; color: var(--muted); }
+.cz-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.cz-row:last-child { margin-bottom: 0; }
+.cz-stepper { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: #fff; flex: 0 0 auto; }
+.cz-stepper button { width: 28px; height: 34px; border: 0; background: #fff; color: var(--muted); font-size: 15px; font-weight: 800; cursor: pointer; }
+.cz-stepper button:hover { background: var(--bg-3); color: var(--text); }
+.cz-stepper input { width: 44px; height: 34px; padding: 0; border: 0; border-left: 1px solid var(--line); border-right: 1px solid var(--line); border-radius: 0; text-align: center; font-weight: 700; font-variant-numeric: tabular-nums; }
+.cz-stepper.sm button { width: 24px; height: 26px; font-size: 13px; }
+.cz-stepper.sm input { width: 34px; height: 26px; font-size: 12px; }
+.cz-chips { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.cz-chip { display: flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 10px; padding: 6px 9px; background: #fff; font-size: 12.5px; min-height: 40px; }
+.cz-chip:hover { border-color: #c9d2e0; }
+.cz-chip.on { border-color: var(--amber); background: var(--amber-bg); }
+.cz-chip-main { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; border: 0; background: transparent; padding: 0; font: inherit; color: inherit; cursor: pointer; text-align: left; }
+.cz-chip .tick { width: 16px; height: 16px; border-radius: 5px; border: 1.5px solid #c6cedb; display: grid; place-items: center; font-size: 10px; color: transparent; flex: 0 0 auto; background: #fff; }
+.cz-chip.on .tick { background: var(--amber); border-color: var(--amber); color: #fff; }
+.cz-chip .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cz-chip .price { color: var(--muted); font-size: 11.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cz-seg { display: inline-flex; background: var(--bg-3); border-radius: 10px; padding: 3px; gap: 3px; }
+.cz-seg button { border: 0; background: transparent; padding: 7px 12px; border-radius: 8px; font-size: 12.5px; font-weight: 600; color: var(--muted); cursor: pointer; white-space: nowrap; }
+.cz-seg button.on { background: #fff; color: #0a1740; box-shadow: 0 1px 3px rgba(18, 42, 76, .12); }
+.cz-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.cz-field label { font-size: 11.5px; font-weight: 700; color: var(--muted); }
+.cz-two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.cz-lines { display: flex; flex-direction: column; }
+.cz-line { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 5px 0; font-size: 12.5px; border-bottom: 1px dashed var(--line-soft); }
+.cz-line:last-child { border-bottom: 0; }
+.cz-line .k { color: var(--muted); }
+.cz-line .v { font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
+.cz-line.big { border-top: 1px solid var(--line); margin-top: 4px; padding-top: 8px; font-weight: 700; }
+.cz-total { background: linear-gradient(135deg, #0a1740, #16295f); color: #fff; border-radius: 14px; padding: 14px 16px; margin-top: 12px; }
+.cz-total .lbl { font-size: 10.5px; text-transform: uppercase; letter-spacing: .9px; opacity: .75; }
+.cz-total .amt { font-size: 30px; font-weight: 800; letter-spacing: -.5px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.cz-total .ars { font-size: 12.5px; opacity: .88; margin-top: 3px; }
+.cz-cta { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.cz-alert { border-radius: 12px; padding: 10px 12px; font-size: 12.5px; font-weight: 600; display: flex; gap: 8px; align-items: flex-start; }
+.cz-alert.info { background: var(--blue-bg); color: var(--blue); }
+.cz-alert.warn { background: var(--orange-bg); color: var(--orange); }
+.cz-alert.danger { background: var(--red-bg); color: var(--red); }
+.cz-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; font-weight: 700; padding: 3px 8px; border-radius: 999px; background: var(--bg-3); color: var(--muted); text-transform: none; letter-spacing: 0; }
+.cz-badge.green { background: var(--green-bg); color: var(--green); }
+.cz-badge.amber { background: var(--amber-bg); color: var(--amber-d); }
+.cz-empty { padding: 40px 10px; text-align: center; color: var(--muted); font-size: 13px; }
+.cz-note { font-size: 11px; color: var(--muted); margin: 10px 0 0; }
+.cz-summary { cursor: pointer; font-size: 12.5px; font-weight: 700; color: #0a1740; list-style: none; }
+.cz-summary::-webkit-details-marker { display: none; }
+.cz-summary::after { content: ' +'; color: var(--muted); }
+details[open] > .cz-summary::after { content: ' –'; }
+@media (max-width: 980px) {
+  .cz { height: auto; min-height: 100dvh; overflow: visible; }
+  .cz-body { grid-template-columns: 1fr; overflow: visible; }
+  .cz-col { overflow: visible; }
+}
+
 /* ---------- documentos del taller (orden de trabajo / comprobante) ---------- */
 /* En pantalla se muestran como una hoja blanca dentro del modal; al imprimir
    salen solos, ocupando la hoja completa. */
