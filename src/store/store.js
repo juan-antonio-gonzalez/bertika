@@ -40,6 +40,7 @@ export const useStore = create()((set, get) => ({
   data: emptyData(),
   user: null,
   ready: false,
+  lastSync: null,
   toast: null,
 
   async boot() {
@@ -48,7 +49,7 @@ export const useStore = create()((set, get) => ({
     try {
       const me = await api('/auth/me');
       const estado = await api('/estado');
-      set({ ready: true, user: normalizarUser(me, estado), data: estado });
+      set({ ready: true, user: normalizarUser(me, estado), data: estado, lastSync: new Date().toISOString() });
     } catch {
       setToken(null);
       set({ ready: true, user: null, data: emptyData() });
@@ -59,7 +60,7 @@ export const useStore = create()((set, get) => ({
     const { token, user } = await api('/auth/login', { method: 'POST', body: { email, password } });
     setToken(token);
     const estado = await api('/estado');
-    set({ user: normalizarUser(user, estado), data: estado });
+    set({ user: normalizarUser(user, estado), data: estado, lastSync: new Date().toISOString() });
     return get().user;
   },
 
@@ -73,6 +74,7 @@ export const useStore = create()((set, get) => ({
     const estado = await api('/estado');
     set((s) => ({
       data: estado,
+      lastSync: new Date().toISOString(),
       user: s.user ? normalizarUser({ ...s.user, id: s.user.uid }, estado) : null,
     }));
     return estado;
@@ -154,10 +156,6 @@ export const useStore = create()((set, get) => ({
   },
 
   // ---------- Diagnostico ----------
-  async startDiagnosis(ordenId) {
-    return get().transition(ordenId, 'diagnosing', 'Diagnostico iniciado por el tecnico.');
-  },
-
   async saveDiagnosis(ordenId, { voltaje, resistencia, pruebaCarga, notas, servicioTipo }) {
     try {
       await api(`/ordenes/${ordenId}/diagnostico`, {

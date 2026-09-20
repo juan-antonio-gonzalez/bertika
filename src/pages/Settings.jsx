@@ -9,6 +9,7 @@ export default function Settings() {
   const data = useStore((s) => s.data);
   const logout = useStore((s) => s.logout);
   const toastShow = useStore((s) => s.toastShow);
+  const lastSync = useStore((s) => s.lastSync);
   const navigate = useNavigate();
   const [actual, setActual] = useState('');
   const [pass, setPass] = useState('');
@@ -104,7 +105,7 @@ export default function Settings() {
               <span className="row between"><span className="muted">Ordenes activas</span><b>{data.ordenes.filter((o) => o.estado !== 'delivered' && o.estado !== 'cancelled').length}</b></span>
               <span className="row between"><span className="muted">Clientes</span><b>{data.clientes.length}</b></span>
               <span className="row between"><span className="muted">Baterías registradas</span><b>{data.baterias.length}</b></span>
-              <span className="row between"><span className="muted">Última sincronización</span><b>{fmtFecha(new Date().toISOString())}</b></span>
+              <span className="row between"><span className="muted">Última sincronización</span><b>{lastSync ? fmtFecha(lastSync) : '—'}</b></span>
             </div>
             <div className="row mt16">
               <button className="btn" onClick={() => { logout(); navigate('/'); }}><Icon name="logout" size={14} /> Salir / cambiar de usuario</button>

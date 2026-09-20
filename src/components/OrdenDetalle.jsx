@@ -3,6 +3,7 @@ import { useStore } from '../store/store';
 import { api } from '../store/api';
 import { Modal, EstadoPill, Timeline, Icon, fmtDate, fmtARS, appIconName, fmtFecha } from './ui';
 import { CONTACTO, OFICIAL } from '../data/siteData';
+import EtiquetaBateria from './EtiquetaBateria';
 
 const INS_CAT = ['Celdas', 'Electrolito', 'Bornes y Conectores', 'Cargadores', 'Cables', 'EPP y Seguridad'];
 
@@ -237,6 +238,9 @@ export default function OrdenDetalle({ orden, role, onClose, onEntregado, onBaja
         <button className={`tab ${sec === 'info' ? 'active' : ''}`} onClick={() => setSec('info')}>Orden</button>
         <button className={`tab ${sec === 'trabajo' ? 'active' : ''}`} onClick={() => setSec('trabajo')}>Trabajo</button>
         <button className={`tab ${sec === 'eventos' ? 'active' : ''}`} onClick={() => setSec('eventos')}>Eventos</button>
+        {role !== 'cliente' && (
+          <button className={`tab ${sec === 'etiqueta' ? 'active' : ''}`} onClick={() => setSec('etiqueta')}>Etiqueta</button>
+        )}
         {actionsAvailable && !esTec && orden.estado !== 'quoted' && (
           <button className={`tab ${sec === 'acciones' ? 'active' : ''}`} onClick={() => setSec('acciones')}>Acciones admin</button>
         )}
@@ -447,6 +451,8 @@ export default function OrdenDetalle({ orden, role, onClose, onEntregado, onBaja
       )}
 
       {sec === 'eventos' && <Timeline eventos={orden.eventos} />}
+
+      {sec === 'etiqueta' && <EtiquetaBateria orden={orden} bateria={bateria} cliente={cliente} />}
 
       {confirm?.type === 'baja' && (
         <Modal title="Dar de baja la bateria" sub="Trazabilidad obligatoria para disposicion responsable" onClose={() => setConfirm(null)}>

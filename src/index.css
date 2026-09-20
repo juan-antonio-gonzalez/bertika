@@ -487,8 +487,17 @@ select.input option { background: var(--bg-3); }
 
 /* ---------- etiqueta para impresion ---------- */
 .print-label { display: none; }
+.qr-empty { display: grid; place-items: center; background: #fff; color: #9aa3af; font-size: 11px; border: 1px dashed #cfd6df; border-radius: 6px; }
 @media print {
   body { background: #fff !important; }
-  .print-label { display: block; margin: 0; padding: 0; }
-  .print-label > div { width: 620px !important; max-width: 100%; }
+
+  /* Boton "Imprimir etiqueta": se oculta el resto de la app y el marco del
+     modal, y solo sale la etiqueta en la esquina de la hoja. */
+  body.print-label * { visibility: hidden !important; }
+  body.print-label .print-label,
+  body.print-label .print-label * { visibility: visible !important; }
+  body.print-label .print-label { display: block; margin: 0; padding: 0; }
+  body.print-label .modal-back { position: static; display: block; background: none; padding: 0; }
+  body.print-label .modal { width: auto; max-height: none; overflow: visible; background: none; border: 0; box-shadow: none; padding: 0; }
+  body.print-label .print-label > div { width: 620px !important; max-width: 100%; }
 }

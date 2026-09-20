@@ -17,6 +17,7 @@ import {
   seedOrdenes,
   seedOrdenHistorica,
   seedOrdenEntregadaReciente,
+  seedBajas,
 } from '../src/data/seed.js';
 
 const SCHEMA_SQL = readFileSync(new URL('./schema.sql', import.meta.url), 'utf8')
@@ -97,11 +98,13 @@ export async function seedDatabase() {
       );
     }
 
-    // Baja inicial
-    await ins(
-      'INSERT INTO bajas (id, bateria_id, serie, fecha, motivo, disposicion, reciclada) VALUES ($1,$2,$3,$4,$5,$6,$7)',
-      ['baja_01', 'bat_09', 'BAT-MTC-103', new Date(Date.now() - 26 * 86400000).toISOString(), 'Celdas irreparables / capacidad bajo 40%', 'Reciclaje de plomo-acido autorizado', false]
-    );
+    // Bajas iniciales (fuente unica: seedBajas)
+    for (const b of seedBajas) {
+      await ins(
+        'INSERT INTO bajas (id, bateria_id, serie, fecha, motivo, disposicion, reciclada) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+        [b.id, b.bateria_id, b.serie, b.fecha, b.motivo, b.disposicion, b.reciclada ?? false]
+      );
+    }
 
     // Usuarios de acceso. Las contraseñas NO viven en el codigo: se leen del
     // entorno (variables DEMO_*) o — si no estan definidas — se generan al azar

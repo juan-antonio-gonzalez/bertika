@@ -328,7 +328,7 @@ function Flotillas() {
             </div>
             <div className="mt16" style={{ overflowX: 'auto' }}>
               <table className="tbl">
-                <thead><tr><th>Equipo / Bateria</th><th>Serie</th><th>Especificacion</th><th>Estado actual</th><th>Vida util</th></tr></thead>
+                <thead><tr><th>Equipo / Bateria</th><th>Serie</th><th>Especificacion</th><th>Estado actual</th><th>Vida util</th><th>Alerta</th></tr></thead>
                 <tbody>
                   {bats.map((b) => {
                     const act = ordenActual(b.numero_serie);
@@ -344,7 +344,9 @@ function Flotillas() {
                             : b.estado_vida === 'en_garantia' ? <span className="badge green">En garantia</span>
                             : <span className="badge amber">Activa</span>}
                         </td>
-                        {bajaCap && <td><span className="badge red">Capacidad baja</span></td>}
+                        <td>
+                          {bajaCap ? <span className="badge red">Capacidad baja</span> : <span className="muted">—</span>}
+                        </td>
                       </tr>
                     );
                   })}

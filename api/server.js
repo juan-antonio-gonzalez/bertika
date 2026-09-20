@@ -12,7 +12,7 @@ import rateLimit from 'express-rate-limit';
 import { query, one, tx } from './db.js';
 import { nextId } from './ids.js';
 import { signToken, authRequired, requireRol, SECRET } from './middleware/auth.js';
-import { canTransition, ORDEN_ESTADOS } from './reglas.js';
+import { canTransition, ORDEN_ESTADOS, ESTADO_LABEL } from './reglas.js';
 import { generarCodigoUnico, digitar, formatearCodigo } from './codigo.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -478,16 +478,23 @@ app.post('/api/ordenes/:id/diagnostico', authRequired, async (req, res) => {
     const o = (await client.query('SELECT * FROM ordenes WHERE id = $1', [req.params.id])).rows[0];
     if (!o) throw { status: 404, message: 'Orden no encontrada' };
     if (!puedeEscribirOrden(req, o)) throw { status: 403, message: 'Sin permisos para esta orden' };
+    // Salvaguarda de integridad: el diagnostico solo se registra en una orden
+    // que todavia no fue cotizada. Reenviarlo en una orden ya avanzada antes
+    // retrocedia el estado a 'quoted' (se fabricaba el estado en transition()).
+    if (!['received', 'diagnosing'].includes(o.estado)) {
+      throw { status: 400, message: `La orden esta en "${ESTADO_LABEL[o.estado] || o.estado}": el diagnostico solo se registra en recibida o en diagnostico` };
+    }
     await client.query(
-      `UPDATE ordenes SET diagnostico = $2::jsonb, estado = CASE WHEN estado = 'received' THEN 'diagnosing' ELSE estado END WHERE id = $1`,
+      'UPDATE ordenes SET diagnostico = $2::jsonb WHERE id = $1',
       [o.id, JSON.stringify({ voltaje_medido: limStr(voltaje, 12), resistencia_interna: limStr(resistencia, 12), prueba_carga: ['passed', 'failed'].includes(pruebaCarga) ? pruebaCarga : 'pending', notas: notasT, servicioTipo: servicioT, fotos: arrBounded(fotos, 6) ? fotos.slice(0, 6) : [] })]
     );
-    const updated = (await client.query('SELECT * FROM ordenes WHERE id = $1', [o.id])).rows[0];
     await pushEvento(client, o.id, 'diagnostico', detalle);
-    if (updated.estado === 'received') {
-      await transition(client, updated, 'diagnosing', 'Diagnostico iniciado por el tecnico.');
+    if (o.estado === 'received') {
+      await transition(client, o, 'diagnosing', 'Diagnostico iniciado por el tecnico.');
     }
-    await transition(client, { ...updated, estado: 'diagnosing' }, 'quoted', `Diagnostico completado. Cotizacion generada por ${servicioT || 'el servicio'}.`);
+    // Tras lo anterior la orden esta en 'diagnosing' (en la base y en o.estado
+    // si ya lo estaba), que es el unico origen valido hacia 'quoted'.
+    await transition(client, { ...o, estado: 'diagnosing' }, 'quoted', `Diagnostico completado. Cotizacion generada por ${servicioT || 'el servicio'}.`);
   });
   await notificar(null, req.params.id, `Orden ${req.params.id}: diagnostico registrado y cotizacion generada. El cliente debe aprobarla.`, 'Email');
   return res.json({ ok: true });

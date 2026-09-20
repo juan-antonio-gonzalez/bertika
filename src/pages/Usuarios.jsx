@@ -7,6 +7,7 @@ const ROL_LABEL = { admin: 'Administrador', tecnico: 'Técnico', cliente: 'Clien
 
 function FormUsuariosModal({ mode, user, tecnicos, clientes, busy, onGuardar, onClose }) {
   const uid = useStore((s) => s.user?.uid);
+  const toastShow = useStore((s) => s.toastShow);
   const esEdicion = mode === 'editar';
   const edicionPropia = esEdicion && user.id === uid;
   const [email, setEmail] = useState(esEdicion ? user.email : '');
@@ -19,7 +20,11 @@ function FormUsuariosModal({ mode, user, tecnicos, clientes, busy, onGuardar, on
   const submit = (e) => {
     e.preventDefault();
     if (!esEdicion && (!email.trim() || password.length < 8)) {
-      alert('Email y contraseña (mínimo 8 caracteres) son obligatorios.');
+      toastShow('Email y contraseña (mínimo 8 caracteres) son obligatorios.', 'warn');
+      return;
+    }
+    if (password && password.length < 8) {
+      toastShow('La contraseña debe tener al menos 8 caracteres.', 'warn');
       return;
     }
     const body = { email: email.trim() };
@@ -90,9 +95,11 @@ export default function Usuarios() {
   const currentUid = useStore((s) => s.user?.uid);
   const tecnicos = useStore((s) => s.data.tecnicos);
   const clientes = useStore((s) => s.data.clientes);
+  const toastShow = useStore((s) => s.toastShow);
   const [lista, setLista] = useState(null);
   const [modal, setModal] = useState(null); // { mode: 'crear' } | { mode: 'editar', user }
   const [busy, setBusy] = useState(false);
+  const [aBorrar, setABorrar] = useState(null);
 
   const cargar = async () => {
     try {
@@ -121,13 +128,15 @@ export default function Usuarios() {
     try {
       if (modal.mode === 'crear') {
         await api('/usuarios', { method: 'POST', body: payload });
+        toastShow('Usuario creado', 'ok');
       } else {
         await api(`/usuarios/${modal.user.id}`, { method: 'PATCH', body: payload });
+        toastShow('Cambios guardados', 'ok');
       }
       setModal(null);
       await cargar();
     } catch (e) {
-      alert(e.message);
+      toastShow(e.message, 'error');
     } finally {
       setBusy(false);
     }
@@ -138,19 +147,20 @@ export default function Usuarios() {
     try {
       await api(`/usuarios/${u.id}`, { method: 'PATCH', body: { activo: !u.activo } });
       await cargar();
+      toastShow(u.activo ? 'Acceso desactivado' : 'Acceso activado', 'ok');
     } catch (e) {
-      alert(e.message);
+      toastShow(e.message, 'error');
     }
   };
 
   const borrar = async (u) => {
-    if (u.id === currentUid) return;
-    if (!confirm(`¿Eliminar el acceso de ${u.email}? Se borra solo el login, no al cliente/técnico.`)) return;
     try {
       await api(`/usuarios/${u.id}`, { method: 'DELETE' });
+      setABorrar(null);
       await cargar();
+      toastShow(`Acceso de ${u.email} eliminado`, 'ok');
     } catch (e) {
-      alert(e.message);
+      toastShow(e.message, 'error');
     }
   };
 
@@ -194,13 +204,28 @@ export default function Usuarios() {
                   <button className="btn sm" onClick={() => toggleActivo(u)} disabled={u.id === currentUid}>
                     <Icon name={u.activo ? 'x' : 'check'} size={13} /> {u.activo ? 'Desactivar' : 'Activar'}
                   </button>
-                  <button className="btn sm danger" onClick={() => borrar(u)} disabled={u.id === currentUid}><Icon name="x" size={13} /> Eliminar</button>
+                  <button className="btn sm danger" onClick={() => setABorrar(u)} disabled={u.id === currentUid}><Icon name="x" size={13} /> Eliminar</button>
                 </div>
               </div>
             </div>
           ))
         )}
       </div>
+
+      {aBorrar && (
+        <Modal title="Eliminar acceso" sub={aBorrar.email} onClose={() => setABorrar(null)}>
+          <div className="col">
+            <p className="muted" style={{ margin: 0 }}>
+              Se elimina solo el acceso a la plataforma; el cliente o técnico vinculado no se borra.
+              Esta acción no se puede deshacer.
+            </p>
+            <div className="grid2">
+              <button className="btn danger" onClick={() => borrar(aBorrar)}><Icon name="x" size={14} /> Eliminar acceso</button>
+              <button className="btn" onClick={() => setABorrar(null)}>Cancelar</button>
+            </div>
+          </div>
+        </Modal>
+      )}
 
       {modal && (
         <FormUsuariosModal
