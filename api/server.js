@@ -174,7 +174,7 @@ async function asegurarCodigos() {
   try {
     await query('ALTER TABLE ordenes ADD CONSTRAINT uq_ordenes_codigo UNIQUE (codigo_seguimiento)');
   } catch { /* ya existe */ }
-  console.log('[migracion] esquema asegurado (codigos, medio de pago, historial de cotizaciones, movimientos de insumos)');
+  console.log('[migracion] esquema asegurado (codigos, medio de pago, historial de cotizaciones, movimientos de insumos, cotizador configurable)');
 }
 
 async function enviarMailContacto(d) {
