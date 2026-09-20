@@ -93,8 +93,14 @@ Reglas importantes:
   haya aprobado la cotizacion (unica excepcion: volver de una prueba final fallida).
 - **Prueba final fallida**: la bateria **regresa a reparacion** automaticamente.
   NO se puede entregar sin pasar la prueba de carga.
+- **Criterio de aprobacion de la prueba final**: la capacidad medida debe alcanzar el
+  **80% de la capacidad nominal** de la bateria (`MIN_CAPACIDAD_PCT` en `src/data/reglas.js`).
+  Por debajo de ese minimo la orden **no se puede aprobar** (ni desde la UI ni por API):
+  se registra como fallida y vuelve a reparacion.
 - **Garantia** se otorga al momento de **entregar** (meses y ciclos).
 - Las baterias **no reparables** se pueden **dar de baja** con trazabilidad para reciclaje.
+- **Auditoria**: cada evento guarda quien lo hizo (usuario, rol y persona vinculada) y
+  cada cotizacion queda versionada con su autor y su monto.
 
 Estas reglas viven en un solo archivo (`src/data/reglas.js`) y las usan **el
 frontend y la API**, asi que una transicion permitida en la UI siempre lo es en
@@ -122,9 +128,9 @@ Panel principal para administrar la operacion. Pestañas:
 | Pestaña | Funcion |
 | --- | --- |
 | **Kanban** | Tablero con **una columna por estado** (Recibidas, Diagnostico, Cotizadas, Aprobadas, En reparacion, Prueba final, Listas, Entregadas, Canceladas). KPIs arriba y boton **+ Crear orden de trabajo**. |
-| **Dashboard** | Indicadores globales del taller. |
+| **Dashboard** | Indicadores del taller: baterias activas, cierres e ingresos del dia, stock critico, reprocesos, garantias por vencer, **tiempo medio de reparacion**, **tasa de reproceso** y **entregas en fecha**. |
 | **Historial por serie** | Busca todas las ordenes de una bateria por su numero de serie. |
-| **Inventario** | Stock de insumos con valorizacion; **agregar stock** a cada insumo. El stock se descuenta en tiempo real cuando un tecnico registra un insumo. |
+| **Inventario** | Stock de insumos con valorizacion; **agregar stock** a cada insumo. El stock se descuenta en tiempo real cuando un tecnico registra un insumo. Cada insumo tiene **Movimientos** (auditoria completa: alta, ingreso, consumo, devolucion, ajuste, con autor y motivo) y **Ajustar** (recuento fisico: fija el stock real y exige un motivo). |
 | **Tecnicos** | Catalogo de tecnicos, especialidad, certificaciones y carga de trabajo. |
 | **Flotillas** | Baterias activas de clientes corporativos + estado de garantia. |
 | **Garantias** | Tabla de garantias vigentes y por vencer. |
@@ -153,8 +159,10 @@ rol/estado y reseteo de contrasenas de cualquier cuenta).
 
 1. Localiza las ordenes **Listas** (pasaron prueba final).
 2. Abre la orden → pestaña **Acciones admin** → **Entregar y cobrar**.
-3. Confirma **monto cobrado**, **meses de garantia** y **ciclos** → **Confirmar entrega y cobro**.
+3. Confirma **monto cobrado**, **meses de garantia**, **ciclos** y **medio de cobro** → **Confirmar entrega y cobro**.
 4. La bateria pasa a estado **Entregada** y el cliente la ve como **En garantia**.
+5. En la pestaña **Documentos** queda el **comprobante de entrega** listo para imprimir y firmar,
+   con el detalle economico, el medio de cobro y la vigencia de la garantia.
 
 ### Dar de baja (no reparable)
 
@@ -167,23 +175,32 @@ rol/estado y reseteo de contrasenas de cualquier cuenta).
 
 ## 5. Vista operativa del tecnico (`/tecnico`)
 
-Muestra las ordenes activas asignadas al tecnico (mas las recibidas sin asignar).
-Con el boton **Diagnosticar / Detalle** se abre la orden con 4 pestañas: **Orden**,
-**Trabajo**, **Eventos** y **Etiqueta**.
+Tres pestañas de trabajo: **Activas** (lo asignado a vos), **Sin asignar** (lo que entro
+al taller y todavia no tiene tecnico: podes diagnosticarlo; para repararlo el admin debe
+asignartelo) y **Completadas**. Arriba hay un **buscador** por serie, equipo, cliente,
+falla o N° de orden, y cada tarjeta muestra **hace cuanto esta en el estado actual**
+(verde hasta 2 dias, ambar 3-6, rojo 7 o mas); la lista se ordena por antiguedad, lo mas
+viejo primero.
+
+Con el boton **Diagnosticar / Detalle** se abre la orden con estas pestañas: **Orden**,
+**Trabajo**, **Eventos**, **Documentos** y **Etiqueta**.
 
 Trabajo dentro de cada etapa:
 
 | Estado de la orden | Que hace el tecnico |
 | --- | --- |
-| **Recibida / Diagnosticando** | Llena voltaje (V), resistencia interna (mOhm), **prueba de carga** (aprobada/fallida), tipo de servicio a cotizar y notas tecnicas → **Guardar diagnostico y generar cotizacion**. |
-| **Cotizada** | Puede ajustar la cotizacion (servicios, insumos, otros) mientras el cliente no haya respondido. |
+| **Recibida / Diagnosticando** | Llena voltaje (V) y resistencia interna (mΩ) — validadas en rango, con aviso si el voltaje supera ampliamente el nominal —, **prueba de carga** (aprobada/fallida), tipo de servicio a cotizar, notas tecnicas y hasta 6 **fotos del estado de ingreso** → **Guardar diagnostico y generar cotizacion**. |
+| **Cotizada** | Puede ajustar la cotizacion (servicios, insumos, otros) mientras el cliente no haya respondido; el total se muestra desglosado en **mano de obra / materiales / otros**. |
 | **Aprobada** | **Iniciar reparacion**. |
-| **En reparacion** | Registra **insumos/celdas** usados (filtra por categoria, el stock se descuenta). Al terminar, **Iniciar prueba final de carga**. |
-| **Prueba final** | Registra **capacidad medida (Ah)** y resultado **Aprobada/Fallida**. Si falla, la orden regresa a reparacion automaticamente. |
+| **En reparacion** | Registra **insumos/celdas** usados (buscador, filtro por categoria, stock y precio a la vista; el stock se descuenta). Puede **devolver al stock** un insumo cargado por error. Abajo se ve el **costo de materiales** y una alerta si ya supera lo cotizado. Al terminar, **Iniciar prueba final de carga**. |
+| **Prueba final** | Registra **capacidad medida (Ah)** y resultado **Aprobada/Fallida**, con el **% de la capacidad nominal** en vivo: por debajo del 80% no permite aprobar. Si falla, la orden regresa a reparacion automaticamente. |
 
-- La pestaña **Eventos** muestra el historial completo (fecha y responsable) como trazabilidad.
-- La pestaña **Orden** muestra lecturas del diagnostico, cotizacion, prueba final, garantia e historial de la serie.
+- La pestaña **Eventos** muestra el historial completo con **fecha y responsable** de cada paso.
+- La pestaña **Orden** muestra lecturas del diagnostico (con la **evidencia fotografica**), cotizacion, prueba final, garantia, historial de la serie y la **auditoria de versiones de la cotizacion** (quien, cuando y por cuanto).
+- La pestaña **Documentos** emite la **orden de trabajo** (recepcion, falla, diagnostico, presupuesto y firmas) y el **comprobante de entrega y garantia**, ambos listos para imprimir solos.
 - La pestaña **Etiqueta** arma la etiqueta de la bateria con un **QR que apunta al seguimiento publico** (`/tracker/<orden>`); **Imprimir etiqueta** la manda a la impresora sola, sin el resto de la interfaz.
+- Si la bateria ya tuvo una orden con **garantia vigente**, al abrir la orden aparece un aviso de **posible reproceso en garantia** (no se cobra).
+- En la tarjeta del cliente hay un boton **Avisar al cliente** que abre WhatsApp con el mensaje y el enlace del tracker.
 
 ---
 

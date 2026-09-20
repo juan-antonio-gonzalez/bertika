@@ -46,7 +46,7 @@ export default function Tracker() {
           <span className="logo"><Icon name="bolt" size={16} /></span>
           Bertika
         </div>
-        <p className="muted" style={{ margin: 0 }}>Seguimiento publico · sin necesidad de cuenta</p>
+        <p className="muted" style={{ margin: 0 }}>Seguimiento público · sin necesidad de cuenta</p>
       </div>
 
       <div className="card mt16" style={{ maxWidth: 860, margin: '0 auto' }}>

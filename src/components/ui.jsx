@@ -178,15 +178,21 @@ export function Shell() {
 
 /* ---------------- Modal ---------------- */
 export function Modal({ title, sub, onClose, children }) {
+  // Cerrar con Esc y anunciar el dialogo a lectores de pantalla.
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose?.(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
   return (
     <div className="modal-back" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+      <div className="modal" role="dialog" aria-modal="true" aria-label={title} onClick={(e) => e.stopPropagation()}>
         <div className="row between mb16">
           <div>
             <h3>{title}</h3>
             {sub && <div className="sub">{sub}</div>}
           </div>
-          <button className="btn icon sm" onClick={onClose}><Icon name="x" size={14} /></button>
+          <button className="btn icon sm" aria-label="Cerrar" onClick={onClose}><Icon name="x" size={14} /></button>
         </div>
         {children}
       </div>
@@ -214,7 +220,7 @@ export function OrdenCard({ orden, onOpen }) {
       <div className="meta">
         <span>{bateria ? `${bateria.tipo} ${bateria.voltaje} ${bateria.capacidad}Ah` : ''}</span>
         <span>{cliente?.nombre || '—'}</span>
-        {tecnico && <span>Tecnico: {tecnico.nombre}</span>}
+        {tecnico && <span>Técnico: {tecnico.nombre}</span>}
         <span>Ingreso: {fmtDate(orden.fecha_ingreso)}</span>
       </div>
       <div className="foot">
@@ -257,8 +263,61 @@ export function fmtARS(n) {
   return (Number(n) || 0).toLocaleString('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 });
 }
 
+/* ---------------- Taller: antigüedad y contacto ---------------- */
+
+// Dias que la orden lleva en su estado actual (desde el ultimo evento registrado).
+export function diasEnEstado(orden) {
+  const evs = orden?.eventos || [];
+  const desde = evs.length ? evs[evs.length - 1]?.fecha : orden?.fecha_ingreso;
+  if (!desde) return null;
+  const dias = Math.floor((Date.now() - new Date(desde).getTime()) / 86400000);
+  return dias >= 0 ? dias : 0;
+}
+
+// Semaforo del piso: hasta 2 dias normal, 3-6 para atencion, 7+ demorada.
+export function tonoAntiguedad(dias) {
+  if (dias == null) return 'gray';
+  if (dias >= 7) return 'red';
+  if (dias >= 3) return 'orange';
+  return 'green';
+}
+
+export function etiquetaAntiguedad(dias) {
+  if (dias == null) return '';
+  if (dias === 0) return 'hoy';
+  return dias === 1 ? 'hace 1 día' : `hace ${dias} días`;
+}
+
+// Numero para wa.me: agrega 54 9 cuando el telefono viene sin codigo de pais.
+export function waNumero(tel) {
+  const d = String(tel || '').replace(/\D/g, '');
+  if (!d) return '';
+  if (d.startsWith('54')) return d;
+  if (d.length === 10) return `549${d}`;
+  return d;
+}
+
+// Numeros escritos a mano ("12,4") a numero usable, o null si esta fuera de rango.
+export function numeroEnRango(valor, min, max) {
+  const n = Number(String(valor ?? '').trim().replace(',', '.'));
+  return Number.isFinite(n) && n >= min && n <= max ? n : null;
+}
+
 /* ---------------- Timeline ---------------- */
+// Nombre visible del autor de un evento ("Sistema" si lo genero el backend).
+export function nombreActor(usuario, data) {
+  if (!usuario) return 'Sistema';
+  if (usuario.ref) {
+    const t = data?.tecnicos?.find((x) => x.id === usuario.ref);
+    if (t) return t.nombre;
+    const c = data?.clientes?.find((x) => x.id === usuario.ref);
+    if (c) return c.nombre;
+  }
+  return usuario.email || usuario.rol || 'Sistema';
+}
+
 export function Timeline({ eventos }) {
+  const data = useStore((s) => s.data);
   if (!eventos) return null;
   const tipos = {
     ingreso: ['battery', 'amber'], diagnostico: ['volt', 'blue'], cotizacion: ['clipboard', 'amber'],
@@ -266,6 +325,7 @@ export function Timeline({ eventos }) {
     prueba_iniciada: ['gauge', 'blue'], prueba_aprobada: ['check', 'green'], prueba_fallida: ['x', 'red'],
     reparacion_completada: ['check', 'green'], entregada: ['truck', 'green'], cancelada: ['x', 'red'],
     asignacion: ['users', 'blue'], baja: ['recycl', 'red'],
+    insumo_revertido: ['recycl', 'orange'],
   };
   return (
     <div className="col" style={{ gap: 0 }}>
@@ -276,7 +336,9 @@ export function Timeline({ eventos }) {
             <span className="chip" style={{ color: `var(--${color})`, fontSize: 12 }}><Icon name={ic} size={13} /></span>
             <div className="grow">
               <div style={{ fontSize: 13 }}>{ev.detalle}</div>
-              <div className="muted" style={{ fontSize: 11.5, marginTop: 2 }}>{fmtFecha(ev.fecha)}</div>
+              <div className="muted" style={{ fontSize: 11.5, marginTop: 2 }}>
+                {fmtFecha(ev.fecha)} · <Icon name="user" size={10} /> {nombreActor(ev.usuario, data)}
+              </div>
             </div>
           </div>
         );

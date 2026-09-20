@@ -12,7 +12,7 @@ import rateLimit from 'express-rate-limit';
 import { query, one, tx } from './db.js';
 import { nextId } from './ids.js';
 import { signToken, authRequired, requireRol, SECRET } from './middleware/auth.js';
-import { canTransition, ORDEN_ESTADOS, ESTADO_LABEL } from './reglas.js';
+import { canTransition, ORDEN_ESTADOS, ESTADO_LABEL, MIN_CAPACIDAD_PCT } from './reglas.js';
 import { generarCodigoUnico, digitar, formatearCodigo } from './codigo.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -70,6 +70,11 @@ const limStr = (v, max = 200) => (typeof v === 'string' ? v.trim().slice(0, max)
 const validEmail = (e) => typeof e === 'string' && e.length <= 254 && EMAIL_RE.test(e);
 const validPassword = (p) => typeof p === 'string' && p.length >= 8 && p.length <= 72;
 const arrBounded = (v, max = 50) => Array.isArray(v) && v.length <= max;
+// Numero escrito a mano ("12,4") dentro de un rango fisico, o null si no sirve.
+const numEnRango = (v, min, max) => {
+  const n = Number(String(v ?? '').trim().replace(',', '.'));
+  return Number.isFinite(n) && n >= min && n <= max ? n : null;
+};
 
 // ---------- Correo (consultas del sitio -> ventas) ----------
 const MAIL_TO = process.env.MAIL_TO || 'ventas@bertika.com';
@@ -86,9 +91,32 @@ const mailer = (process.env.MAIL_HOST && process.env.MAIL_USER && process.env.MA
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-// Migracion leve al arrancar: columna codigo_seguimiento + relleno de ordenes viejas.
+// Migraciones leves al arrancar (idempotentes): no requieren correr un script
+// aparte ni recrear la base. Cada bloque es seguro de repetir.
 async function asegurarCodigos() {
   await query('ALTER TABLE ordenes ADD COLUMN IF NOT EXISTS codigo_seguimiento TEXT');
+  await query('ALTER TABLE ordenes ADD COLUMN IF NOT EXISTS medio_pago TEXT');
+  // Trazabilidad: versiones de cotizacion (quien cotizo que y cuando).
+  await query(`CREATE TABLE IF NOT EXISTS cotizaciones_historial (
+    id TEXT PRIMARY KEY,
+    orden_id TEXT,
+    fecha TIMESTAMPTZ DEFAULT now(),
+    monto NUMERIC,
+    detalle JSONB,
+    usuario JSONB
+  )`);
+  // Trazabilidad de inventario: todo movimiento de stock con su motivo y autor.
+  await query(`CREATE TABLE IF NOT EXISTS insumos_movimientos (
+    id TEXT PRIMARY KEY,
+    insumo_id TEXT,
+    tipo TEXT,
+    cantidad NUMERIC,
+    stock_resultante INTEGER,
+    motivo TEXT,
+    orden_id TEXT,
+    usuario JSONB,
+    fecha TIMESTAMPTZ DEFAULT now()
+  )`);
   const faltantes = await query("SELECT id FROM ordenes WHERE codigo_seguimiento IS NULL OR codigo_seguimiento = ''");
   for (const o of faltantes) {
     const c = await generarCodigoUnico(async (cod) => {
@@ -100,7 +128,7 @@ async function asegurarCodigos() {
   try {
     await query('ALTER TABLE ordenes ADD CONSTRAINT uq_ordenes_codigo UNIQUE (codigo_seguimiento)');
   } catch { /* ya existe */ }
-  console.log('[migracion] codigos de seguimiento asegurados');
+  console.log('[migracion] esquema asegurado (codigos, medio de pago, historial de cotizaciones, movimientos de insumos)');
 }
 
 async function enviarMailContacto(d) {
@@ -173,14 +201,31 @@ function validarSigCot(ordenId, t) {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-async function pushEvento(client, ordenId, tipo, detalle) {
+// Actor de una accion: quien la ejecuta. null = automatico/web (sin sesion).
+// Se guarda en el evento para poder auditar quien hizo cada paso del taller.
+const actorDe = (req) => (req?.user
+  ? { id: req.user.sub, email: req.user.email, rol: req.user.rol, ref: req.user.tecnico_id || req.user.cliente_id || null }
+  : null);
+
+async function pushEvento(client, ordenId, tipo, detalle, actor = null) {
   const evId = await nextId('ev');
-  const ev = { id: evId, tipo, detalle, fecha: nowIso() };
+  const ev = { id: evId, tipo, detalle, fecha: nowIso(), usuario: actor };
   await client.query(
     `UPDATE ordenes SET eventos = eventos || $2::jsonb WHERE id = $1`,
     [ordenId, JSON.stringify([ev])]
   );
   return ev;
+}
+
+// Movimiento de stock de un insumo (alta, ingreso, consumo, reversion, ajuste).
+async function movimientoInsumo(client, { insumoId, tipo, cantidad, stockResultante, motivo, ordenId = null, actor = null }) {
+  const id = await nextId('mov');
+  const sql = `INSERT INTO insumos_movimientos (id, insumo_id, tipo, cantidad, stock_resultante, motivo, orden_id, usuario)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb)`;
+  const params = [id, insumoId, tipo, Number(cantidad) || 0, stockResultante, limStr(motivo, 200), ordenId, JSON.stringify(actor)];
+  if (client && typeof client.query === 'function') await client.query(sql, params);
+  else await query(sql, params);
+  return id;
 }
 
 async function notificar(client, ordenId, mensaje, canal = 'WhatsApp') {
@@ -196,21 +241,21 @@ async function notificar(client, ordenId, mensaje, canal = 'WhatsApp') {
 }
 
 const eventoArgs = {
-  diagnosing: ['diagnostico', 'Diagnostico iniciado'],
-  quoted: ['cotizacion', 'Cotizacion generada'],
-  approved: ['aprobada', 'Cotizacion aprobada por el cliente'],
-  in_repair: ['reparacion', 'Reparacion iniciada'],
+  diagnosing: ['diagnostico', 'Diagnóstico iniciado'],
+  quoted: ['cotizacion', 'Cotización generada'],
+  approved: ['aprobada', 'Cotización aprobada por el cliente'],
+  in_repair: ['reparacion', 'Reparación iniciada'],
   testing: ['prueba_iniciada', 'Prueba final iniciada'],
-  ready: ['reparacion_completada', 'Reparacion completada'],
-  delivered: ['entregada', 'Bateria entregada'],
+  ready: ['reparacion_completada', 'Reparación completada'],
+  delivered: ['entregada', 'Batería entregada'],
   cancelled: ['cancelada', 'Orden cancelada'],
 };
 
-async function transition(cliente, orden, target, detalle) {
+async function transition(cliente, orden, target, detalle, actor = null) {
   const check = canTransition(orden, target);
   if (!check.ok) throw { status: 400, message: check.err };
   const [tipo, def] = eventoArgs[target] || [target, `Estado cambiado a ${target}`];
-  await pushEvento(cliente, orden.id, tipo, detalle || def);
+  await pushEvento(cliente, orden.id, tipo, detalle || def, actor);
   const sets = { estado: target };
   if (target === 'quoted') sets.estado_cotizacion = 'pending';
   if (target === 'approved') sets.estado_cotizacion = 'approved';
@@ -220,9 +265,9 @@ async function transition(cliente, orden, target, detalle) {
     [orden.id, sets.estado, sets.estado_cotizacion ?? null, sets.fecha_entrega ?? null]
   );
   // notificaciones simuladas
-  if (target === 'ready') await notificar(cliente, orden.id, `Orden ${orden.id}: reparacion completada, bateria lista para retirar.`, 'WhatsApp');
-  if (target === 'delivered') await notificar(cliente, orden.id, `Orden ${orden.id}: bateria entregada y cobrada. Garantia activada.`, 'WhatsApp');
-  if (target === 'approved') await notificar(cliente, orden.id, `Orden ${orden.id}: cotizacion aprobada. Comienza la reparacion.`, 'Email');
+  if (target === 'ready') await notificar(cliente, orden.id, `Orden ${orden.id}: reparación completada, batería lista para retirar.`, 'WhatsApp');
+  if (target === 'delivered') await notificar(cliente, orden.id, `Orden ${orden.id}: batería entregada y cobrada. Garantía activada.`, 'WhatsApp');
+  if (target === 'approved') await notificar(cliente, orden.id, `Orden ${orden.id}: cotización aprobada. Comienza la reparación.`, 'Email');
 }
 
 // ---------- Auth ----------
@@ -397,7 +442,7 @@ app.post('/api/ordenes/:id/cotizacion/aprobar', publicLimiter, async (req, res) 
     if (!orden) throw { status: 404, message: 'Orden no encontrada' };
     if (!(await puedeDecidirCotizacion(req, orden))) throw { status: 403, message: 'Sin permisos para esta cotizacion' };
     if (orden.estado !== 'quoted') throw { status: 400, message: 'La orden no esta en estado cotizada' };
-    await transition(client, orden, 'approved');
+    await transition(client, orden, 'approved', 'Cotización aprobada por el cliente.', actorDe(req));
   });
   return res.json({ ok: true });
 });
@@ -409,7 +454,7 @@ app.post('/api/ordenes/:id/cotizacion/rechazar', publicLimiter, async (req, res)
     if (!orden) throw { status: 404, message: 'Orden no encontrada' };
     if (!(await puedeDecidirCotizacion(req, orden))) throw { status: 403, message: 'Sin permisos para esta cotizacion' };
     if (orden.estado !== 'quoted') throw { status: 400, message: 'La orden no esta en estado cotizada' };
-    await transition(client, orden, 'cancelled', 'Cotizacion rechazada por el cliente. Orden cancelada.');
+    await transition(client, orden, 'cancelled', 'Cotización rechazada por el cliente. Orden cancelada.', actorDe(req));
   });
   return res.json({ ok: true });
 });
@@ -445,12 +490,12 @@ app.post('/api/ordenes', authRequired, requireRol('admin'), async (req, res) => 
       [
         ordId, codigo, serieT, clienteT, tecnico_id ? limStr(tecnico_id, 32) : null, fallaT,
         nowIso(), new Date(Date.now() + 24 * 3600000).toISOString(),
-        JSON.stringify([{ id: evId, tipo: 'ingreso', detalle: `Bateria ${serieT} ingresada al taller. Falla reportada: ${fallaT}`, fecha: nowIso() }]),
+        JSON.stringify([{ id: evId, tipo: 'ingreso', detalle: `Batería ${serieT} ingresada al taller. Falla reportada: ${fallaT}`, fecha: nowIso(), usuario: actorDe(req) }]),
       ]
     );
     return ordId;
   });
-  await notificar(null, ordId, `Orden ${ordId}: bateria ingresada al taller.`, 'Email');
+  await notificar(null, ordId, `Orden ${ordId}: batería ingresada al taller.`, 'Email');
   return res.status(201).json({ id: ordId });
 });
 
@@ -463,7 +508,7 @@ app.patch('/api/ordenes/:id/tecnico', authRequired, requireRol('admin'), async (
     const t = (await client.query('SELECT * FROM tecnicos WHERE id = $1', [tecnico_id])).rows[0];
     if (!t) throw { status: 404, message: 'Tecnico no encontrado' };
     await client.query('UPDATE ordenes SET tecnico_id = $2 WHERE id = $1', [o.id, tecnico_id]);
-    await pushEvento(client, o.id, 'asignacion', `Tecnico asignado: ${t.nombre}`);
+    await pushEvento(client, o.id, 'asignacion', `Técnico asignado: ${t.nombre}`, actorDe(req));
     return { tecnico: t, orden: o };
   });
   return res.json({ ok: true, tecnico: od.tecnico });
@@ -473,7 +518,13 @@ app.post('/api/ordenes/:id/diagnostico', authRequired, async (req, res) => {
   const { voltaje, resistencia, pruebaCarga, notas, servicioTipo, fotos } = req.body || {};
   const notasT = limStr(notas, 1000);
   const servicioT = limStr(servicioTipo, 80);
-  const detalle = `Diagnostico registrado: ${limStr(voltaje, 12)}V, RI ${limStr(resistencia, 12)} mOhm. Prueba: ${pruebaCarga === 'passed' ? 'aprobada' : 'fallida'}.${notasT ? ` ${notasT}` : ''}`;
+  // Lecturas obligatorias y dentro de un rango fisico razonable.
+  const vNum = numEnRango(voltaje, 0.1, 1000);
+  const riNum = numEnRango(resistencia, 0.01, 100000);
+  if (vNum === null || riNum === null) {
+    return res.status(400).json({ error: 'Voltaje (0,1 a 1000 V) y resistencia interna (0,01 a 100.000 mOhm) deben ser numeros validos' });
+  }
+  const detalle = `Diagnóstico registrado: ${vNum} V, RI ${riNum} mΩ. Prueba de carga: ${pruebaCarga === 'passed' ? 'aprobada' : 'fallida'}.${notasT ? ` ${notasT}` : ''}`;
   await tx(async (client) => {
     const o = (await client.query('SELECT * FROM ordenes WHERE id = $1', [req.params.id])).rows[0];
     if (!o) throw { status: 404, message: 'Orden no encontrada' };
@@ -482,21 +533,21 @@ app.post('/api/ordenes/:id/diagnostico', authRequired, async (req, res) => {
     // que todavia no fue cotizada. Reenviarlo en una orden ya avanzada antes
     // retrocedia el estado a 'quoted' (se fabricaba el estado en transition()).
     if (!['received', 'diagnosing'].includes(o.estado)) {
-      throw { status: 400, message: `La orden esta en "${ESTADO_LABEL[o.estado] || o.estado}": el diagnostico solo se registra en recibida o en diagnostico` };
+      throw { status: 400, message: `La orden está en "${ESTADO_LABEL[o.estado] || o.estado}": el diagnóstico solo se registra en recibida o en diagnóstico` };
     }
     await client.query(
       'UPDATE ordenes SET diagnostico = $2::jsonb WHERE id = $1',
-      [o.id, JSON.stringify({ voltaje_medido: limStr(voltaje, 12), resistencia_interna: limStr(resistencia, 12), prueba_carga: ['passed', 'failed'].includes(pruebaCarga) ? pruebaCarga : 'pending', notas: notasT, servicioTipo: servicioT, fotos: arrBounded(fotos, 6) ? fotos.slice(0, 6) : [] })]
+      [o.id, JSON.stringify({ voltaje_medido: vNum, resistencia_interna: riNum, prueba_carga: ['passed', 'failed'].includes(pruebaCarga) ? pruebaCarga : 'pending', notas: notasT, servicioTipo: servicioT, fotos: arrBounded(fotos, 6) ? fotos.slice(0, 6) : [] })]
     );
-    await pushEvento(client, o.id, 'diagnostico', detalle);
+    await pushEvento(client, o.id, 'diagnostico', detalle, actorDe(req));
     if (o.estado === 'received') {
-      await transition(client, o, 'diagnosing', 'Diagnostico iniciado por el tecnico.');
+      await transition(client, o, 'diagnosing', 'Diagnóstico iniciado por el técnico.', actorDe(req));
     }
     // Tras lo anterior la orden esta en 'diagnosing' (en la base y en o.estado
     // si ya lo estaba), que es el unico origen valido hacia 'quoted'.
-    await transition(client, { ...o, estado: 'diagnosing' }, 'quoted', `Diagnostico completado. Cotizacion generada por ${servicioT || 'el servicio'}.`);
+    await transition(client, { ...o, estado: 'diagnosing' }, 'quoted', `Diagnóstico completado. Cotización generada por ${servicioT || 'el servicio'}.`, actorDe(req));
   });
-  await notificar(null, req.params.id, `Orden ${req.params.id}: diagnostico registrado y cotizacion generada. El cliente debe aprobarla.`, 'Email');
+  await notificar(null, req.params.id, `Orden ${req.params.id}: diagnóstico registrado y cotización generada. El cliente debe aprobarla.`, 'Email');
   return res.json({ ok: true });
 });
 
@@ -509,19 +560,33 @@ app.post('/api/ordenes/:id/cotizacion', authRequired, async (req, res) => {
   const orden = await one('SELECT * FROM ordenes WHERE id = $1', [req.params.id]);
   if (!orden) return res.status(404).json({ error: 'Orden no encontrada' });
   if (!puedeEscribirOrden(req, orden)) return res.status(403).json({ error: 'Sin permisos para esta orden' });
+  const detalleCot = {
+    monto: montoN,
+    servicios_costos: (servicios || []).slice(0, 50).map((s) => ({ nombre: limStr(s.nombre, 120) || 'Servicio', monto: Math.max(0, Math.min(Number(s.monto) || 0, 1e9)) })),
+    insumos: (insumos || []).slice(0, 50).map((i) => ({ nombre: limStr(i.nombre, 120) || 'Insumo', cantidad: Math.max(0, Math.min(Number(i.cantidad) || 1, 1e4)), precio: Math.max(0, Math.min(Number(i.precio) || 0, 1e9)) })),
+  };
   await query(
     `UPDATE ordenes SET cotizacion = $2::jsonb, estado = 'quoted', estado_cotizacion = 'pending' WHERE id = $1`,
-    [orden.id, JSON.stringify({
-      monto: montoN,
-      servicios_costos: (servicios || []).slice(0, 50).map((s) => ({ nombre: limStr(s.nombre, 120) || 'Servicio', monto: Math.max(0, Math.min(Number(s.monto) || 0, 1e9)) })),
-      insumos: (insumos || []).slice(0, 50).map((i) => ({ nombre: limStr(i.nombre, 120) || 'Insumo', cantidad: Math.max(0, Math.min(Number(i.cantidad) || 1, 1e4)), precio: Math.max(0, Math.min(Number(i.precio) || 0, 1e9)) })),
-    })]
+    [orden.id, JSON.stringify(detalleCot)]
+  );
+  // Versionado: cada cotizacion guardada queda en el historial con su autor.
+  await query(
+    'INSERT INTO cotizaciones_historial (id, orden_id, monto, detalle, usuario) VALUES ($1,$2,$3,$4::jsonb,$5::jsonb)',
+    [await nextId('cot'), orden.id, montoN, JSON.stringify(detalleCot), JSON.stringify(actorDe(req))]
   );
   await tx(async (client) => {
     const o = (await client.query('SELECT * FROM ordenes WHERE id = $1', [req.params.id])).rows[0];
-    await pushEvento(client, o.id, 'cotizacion', `Cotizacion generada por ${fmtARS.format(montoN)}.`);
+    await pushEvento(client, o.id, 'cotizacion', `Cotización generada por ${fmtARS.format(montoN)}.`, actorDe(req));
   });
   return res.json({ ok: true });
+});
+
+// Versiones anteriores de la cotizacion (auditoria de que se cotizo y cuando).
+app.get('/api/ordenes/:id/cotizaciones', authRequired, async (req, res) => {
+  const o = await one('SELECT * FROM ordenes WHERE id = $1', [req.params.id]);
+  if (!o) return res.status(404).json({ error: 'Orden no encontrada' });
+  if (!puedeLeerOrden(req, o)) return res.status(403).json({ error: 'Sin permisos para esta orden' });
+  return res.json(await query('SELECT * FROM cotizaciones_historial WHERE orden_id = $1 ORDER BY fecha DESC', [req.params.id]));
 });
 
 app.post('/api/ordenes/:id/insumos', authRequired, async (req, res) => {
@@ -540,53 +605,106 @@ app.post('/api/ordenes/:id/insumos', authRequired, async (req, res) => {
       `UPDATE ordenes SET insumos_utilizados = insumos_utilizados || $2::jsonb WHERE id = $1`,
       [o.id, JSON.stringify([{ insumo_id: i.id, nombre: i.nombre, cantidad: cant, precio: i.precio }])]
     );
-    await pushEvento(client, o.id, 'insumo', `Insumo utilizado: ${i.nombre} x${cant}`);
+    await pushEvento(client, o.id, 'insumo', `Insumo utilizado: ${i.nombre} x${cant}`, actorDe(req));
     const critico = i.stock - cant < 3;
+    await movimientoInsumo(client, {
+      insumoId: i.id, tipo: 'consumo', cantidad: cant, stockResultante: i.stock - cant,
+      motivo: `Consumo en orden ${o.id}`, ordenId: o.id, actor: actorDe(req),
+    });
     return { critico, stockNuevo: i.stock - cant, nombre: i.nombre };
   });
   return res.json({ ok: true, critico: resultado ? resultado.critico : false });
 });
 
+// Correccion del piso: devuelve al stock un insumo cargado por error y lo quita
+// de la orden (con evento de auditoria). Solo staff con acceso a la orden.
+app.delete('/api/ordenes/:id/insumos/:indice', authRequired, async (req, res) => {
+  const indice = Number(req.params.indice);
+  const revertido = await tx(async (client) => {
+    const o = (await client.query('SELECT * FROM ordenes WHERE id = $1', [req.params.id])).rows[0];
+    if (!o) throw { status: 404, message: 'Orden no encontrada' };
+    if (!puedeEscribirOrden(req, o)) throw { status: 403, message: 'Sin permisos para esta orden' };
+    const usados = Array.isArray(o.insumos_utilizados) ? o.insumos_utilizados : [];
+    if (!Number.isInteger(indice) || indice < 0 || indice >= usados.length) {
+      throw { status: 400, message: 'El insumo indicado no existe en esta orden' };
+    }
+    const item = usados[indice];
+    let stockNuevo = null;
+    if (item.insumo_id) {
+      const ri = (await client.query('UPDATE insumos SET stock = stock + $2 WHERE id = $1 RETURNING stock', [item.insumo_id, Number(item.cantidad) || 0])).rows[0];
+      stockNuevo = ri?.stock ?? null;
+    }
+    await client.query(
+      'UPDATE ordenes SET insumos_utilizados = $2::jsonb WHERE id = $1',
+      [o.id, JSON.stringify(usados.filter((_, i) => i !== indice))]
+    );
+    await pushEvento(client, o.id, 'insumo_revertido', `Insumo devuelto al stock: ${item.nombre} x${item.cantidad}.`, actorDe(req));
+    if (item.insumo_id) {
+      await movimientoInsumo(client, {
+        insumoId: item.insumo_id, tipo: 'reversion', cantidad: Number(item.cantidad) || 0, stockResultante: stockNuevo,
+        motivo: `Corrección de carga en orden ${o.id}`, ordenId: o.id, actor: actorDe(req),
+      });
+    }
+    return item;
+  });
+  return res.json({ ok: true, revertido });
+});
+
 app.post('/api/ordenes/:id/prueba-final', authRequired, async (req, res) => {
   const { capacidad, resultado, obs } = req.body || {};
+  // La capacidad medida es obligatoria: es el respaldo de la aprobacion.
+  const capNum = numEnRango(capacidad, 0.1, 1000000);
+  if (capNum === null) {
+    return res.status(400).json({ error: 'La capacidad medida (Ah) es obligatoria y debe ser un numero mayor a 0' });
+  }
+  const passed = resultado === 'passed';
   await tx(async (client) => {
     const o = (await client.query('SELECT * FROM ordenes WHERE id = $1', [req.params.id])).rows[0];
     if (!o) throw { status: 404, message: 'Orden no encontrada' };
     if (!puedeEscribirOrden(req, o)) throw { status: 403, message: 'Sin permisos para esta orden' };
     if (o.estado !== 'testing') throw { status: 400, message: 'La orden debe estar en prueba final' };
-    const passed = resultado === 'passed';
+    // Criterio de aceptacion: no se aprueba por debajo del minimo de capacidad.
+    const b = (await client.query('SELECT capacidad FROM baterias WHERE numero_serie = $1', [o.bateria_serie])).rows[0];
+    const nominal = Number(b?.capacidad) || 0;
+    if (passed && nominal > 0 && capNum < nominal * (MIN_CAPACIDAD_PCT / 100)) {
+      const pct = Math.round((capNum / nominal) * 100);
+      throw { status: 400, message: `No se puede aprobar: ${capNum} Ah es el ${pct}% de la capacidad nominal (${nominal} Ah). El minimo de aceptacion es ${MIN_CAPACIDAD_PCT}%: registrala como fallida.` };
+    }
     await client.query(
       `UPDATE ordenes SET prueba_final = $2::jsonb WHERE id = $1`,
-      [o.id, JSON.stringify({ estado: passed ? 'passed' : 'failed', capacidad_medida: Number(capacidad) || null, obs: obs || '' })]
+      [o.id, JSON.stringify({ estado: passed ? 'passed' : 'failed', capacidad_medida: capNum, obs: limStr(obs, 1000) })]
     );
     const evTipo = passed ? 'prueba_aprobada' : 'prueba_fallida';
     const evDet = passed
-      ? `Prueba final APROBADA. Capacidad medida: ${capacidad}Ah.${obs ? ` ${obs}` : ''}`
-      : `Prueba final FALLIDA. Capacidad medida: ${capacidad}Ah. Regreso a reparacion: ${obs || 'se requiere reproceso'}`;
-    await pushEvento(client, o.id, evTipo, evDet);
+      ? `Prueba final APROBADA. Capacidad medida: ${capNum} Ah.${obs ? ` ${obs}` : ''}`
+      : `Prueba final FALLIDA. Capacidad medida: ${capNum} Ah. Regresa a reparación: ${obs || 'se requiere reproceso'}`;
+    await pushEvento(client, o.id, evTipo, evDet, actorDe(req));
     await client.query('UPDATE ordenes SET estado = $2 WHERE id = $1', [o.id, passed ? 'ready' : 'in_repair']);
   });
   return res.json({ ok: true });
 });
 
 app.post('/api/ordenes/:id/entregar', authRequired, requireRol('admin'), async (req, res) => {
-  const { monto_cobrado, garantia_meses, garantia_ciclos } = req.body || {};
+  const { monto_cobrado, garantia_meses, garantia_ciclos, medio_pago } = req.body || {};
+  const medioT = limStr(medio_pago, 40);
   await tx(async (client) => {
     const o = (await client.query('SELECT * FROM ordenes WHERE id = $1', [req.params.id])).rows[0];
     if (!o) throw { status: 404, message: 'Orden no encontrada' };
-    if (o.estado !== 'ready') throw { status: 400, message: 'Solo ordenes listas pueden entregarse' };
+    if (o.estado !== 'ready') throw { status: 400, message: 'Solo órdenes listas pueden entregarse' };
     const monto = monto_cobrado != null && monto_cobrado !== '' ? Number(monto_cobrado) : o.cotizacion?.monto || 0;
     const gMeses = Number(garantia_meses) || 6;
     const gCiclos = Number(garantia_ciclos) || 100;
     const vence = new Date(Date.now() + gMeses * 30.44 * 86400000).toISOString();
     await client.query(
-      `UPDATE ordenes SET estado = 'delivered', monto_cobrado = $2, fecha_entrega = $3, garantia = $4::jsonb WHERE id = $1`,
-      [o.id, monto, nowIso(), JSON.stringify({ meses: gMeses, ciclos: gCiclos, vence })]
+      `UPDATE ordenes SET estado = 'delivered', monto_cobrado = $2, fecha_entrega = $3, garantia = $4::jsonb, medio_pago = $5 WHERE id = $1`,
+      [o.id, monto, nowIso(), JSON.stringify({ meses: gMeses, ciclos: gCiclos, vence }), medioT || null]
     );
     await client.query('UPDATE baterias SET estado_vida = $2 WHERE numero_serie = $1', [o.bateria_serie, 'en_garantia']);
-    await pushEvento(client, o.id, 'entregada', `Bateria entregada al cliente. ${fmtARS.format(monto)} cobrados. Garantia ${gMeses} meses / ${gCiclos} ciclos.`);
+    await pushEvento(client, o.id, 'entregada',
+      `Batería entregada al cliente. ${fmtARS.format(monto)} cobrados${medioT ? ` (${medioT})` : ''}. Garantía ${gMeses} meses / ${gCiclos} ciclos.`,
+      actorDe(req));
   });
-  await notificar(null, req.params.id, `Orden ${req.params.id}: bateria entregada y cobrada. Garantia activada.`, 'WhatsApp');
+  await notificar(null, req.params.id, `Orden ${req.params.id}: batería entregada y cobrada. Garantía activada.`, 'WhatsApp');
   return res.json({ ok: true });
 });
 
@@ -603,7 +721,7 @@ app.post('/api/ordenes/:id/baja', authRequired, requireRol('admin'), async (req,
       `INSERT INTO bajas (id, bateria_id, serie, fecha, motivo, disposicion, reciclada) VALUES ($1,$2,$3,$4,$5,'Pendiente de disposicion responsable',false)`,
       [bajaId, b ? b.id : o.bateria_serie, o.bateria_serie, nowIso(), motivo || 'No reparable / fuera de vida util']
     );
-    await pushEvento(client, o.id, 'baja', `Bateria ${o.bateria_serie} dada de baja: ${motivo || 'no reparable'}. Trazabilidad activa para reciclaje.`);
+    await pushEvento(client, o.id, 'baja', `Batería ${o.bateria_serie} dada de baja: ${motivo || 'no reparable'}. Trazabilidad activa para reciclaje.`, actorDe(req));
     return { id: bajaId, serie: o.bateria_serie };
   });
   return res.json({ ok: true, baja });
@@ -617,7 +735,7 @@ app.post('/api/ordenes/:id/transition', authRequired, async (req, res) => {
     const o = (await client.query('SELECT * FROM ordenes WHERE id = $1', [req.params.id])).rows[0];
     if (!o) throw { status: 404, message: 'Orden no encontrada' };
     if (!puedeEscribirOrden(req, o)) throw { status: 403, message: 'Sin permisos para esta orden' };
-    await transition(client, o, target, detalle);
+    await transition(client, o, target, detalle, actorDe(req));
   });
   return res.json({ ok: true });
 });
@@ -640,19 +758,50 @@ app.post('/api/insumos', authRequired, requireRol('admin'), async (req, res) => 
   const nombreT = limStr(nombre, 120);
   if (!nombreT) return res.status(400).json({ error: 'Falta nombre' });
   const id = await nextId('ins');
+  const stockInicial = Math.max(0, Math.min(Number(stock) || 0, 1000000));
   await query('INSERT INTO insumos (id, nombre, categoria, stock, precio) VALUES ($1,$2,$3,$4,$5)', [
-    id, nombreT, limStr(categoria, 60), Math.max(0, Math.min(Number(stock) || 0, 1000000)), Math.max(0, Math.min(Number(precio) || 0, 1e9)),
+    id, nombreT, limStr(categoria, 60), stockInicial, Math.max(0, Math.min(Number(precio) || 0, 1e9)),
   ]);
+  await movimientoInsumo(null, { insumoId: id, tipo: 'alta', cantidad: stockInicial, stockResultante: stockInicial, motivo: 'Alta de insumo', actor: actorDe(req) });
   return res.status(201).json({ id });
 });
 
 app.patch('/api/insumos/:id/stock', authRequired, requireRol('admin'), async (req, res) => {
-  const { cantidad } = req.body || {};
+  const { cantidad, motivo } = req.body || {};
   const cant = Number(cantidad) || 0;
   if (cant <= 0) return res.status(400).json({ error: 'Cantidad invalida' });
   const r = await query('UPDATE insumos SET stock = stock + $2 WHERE id = $1 RETURNING *', [req.params.id, cant]);
   if (!r.length) return res.status(404).json({ error: 'Insumo no encontrado' });
+  await movimientoInsumo(null, {
+    insumoId: r[0].id, tipo: 'ingreso', cantidad: cant, stockResultante: r[0].stock,
+    motivo: limStr(motivo, 200) || 'Ingreso de stock', actor: actorDe(req),
+  });
   return res.json({ ok: true, stock: r[0].stock });
+});
+
+// Ajuste por recuento fisico: fija el stock real y registra la diferencia con motivo.
+app.post('/api/insumos/:id/ajuste', authRequired, requireRol('admin'), async (req, res) => {
+  const { stock_contado, motivo } = req.body || {};
+  const contado = numEnRango(stock_contado, 0, 1000000);
+  const motivoT = limStr(motivo, 200);
+  if (contado === null) return res.status(400).json({ error: 'El stock contado debe ser un numero entre 0 y 1.000.000' });
+  if (!motivoT) return res.status(400).json({ error: 'El motivo del ajuste es obligatorio (queda en la trazabilidad)' });
+  const previo = await one('SELECT * FROM insumos WHERE id = $1', [req.params.id]);
+  if (!previo) return res.status(404).json({ error: 'Insumo no encontrado' });
+  const nuevo = Math.round(contado);
+  await query('UPDATE insumos SET stock = $2 WHERE id = $1', [previo.id, nuevo]);
+  await movimientoInsumo(null, {
+    insumoId: previo.id, tipo: 'ajuste', cantidad: nuevo - previo.stock, stockResultante: nuevo,
+    motivo: motivoT, actor: actorDe(req),
+  });
+  return res.json({ ok: true, stock: nuevo, diferencia: nuevo - previo.stock });
+});
+
+app.get('/api/insumos/:id/movimientos', authRequired, requireRol('admin', 'tecnico'), async (req, res) => {
+  const i = await one('SELECT id, nombre, stock FROM insumos WHERE id = $1', [req.params.id]);
+  if (!i) return res.status(404).json({ error: 'Insumo no encontrado' });
+  const movimientos = await query('SELECT * FROM insumos_movimientos WHERE insumo_id = $1 ORDER BY fecha DESC LIMIT 200', [req.params.id]);
+  return res.json({ insumo: i, movimientos });
 });
 
 // ---------- Clientes ----------
@@ -837,7 +986,7 @@ app.post('/api/public/contacto', contactoLimiter, async (req, res) => {
         [
           ordId, codigo, serieTxt, c.id, mensajeT,
           nowIso(), new Date(Date.now() + 24 * 3600000).toISOString(),
-          JSON.stringify([{ id: evId, tipo: 'ingreso', detalle: `Bateria ${serieTxt} ingresada al taller (por web). Falla reportada: ${mensajeT}`, fecha: nowIso() }]),
+          JSON.stringify([{ id: evId, tipo: 'ingreso', detalle: `Batería ${serieTxt} ingresada al taller (por web). Falla reportada: ${mensajeT}`, fecha: nowIso(), usuario: null }]),
         ]
       );
     });

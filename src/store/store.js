@@ -149,7 +149,7 @@ export const useStore = create()((set, get) => ({
           : bateria.aplicacion === 'Autoelevador' ? ['Plomo-Acido', 'Litio / Ion-Litio', 'Industrial Pesado'].includes(tecnico.especialidad)
             : ['Plomo-Acido', 'Industrial Pesado'].includes(tecnico.especialidad)
         : true;
-      get().toastShow(match ? `Tecnico asignado: ${tecnico?.nombre}` : `Asignado a ${tecnico?.nombre}. Advertencia: especialidad no coincide con la aplicacion.`, match ? 'ok' : 'warn');
+      get().toastShow(match ? `Técnico asignado: ${tecnico?.nombre}` : `Asignado a ${tecnico?.nombre}. Advertencia: la especialidad no coincide con la aplicación.`, match ? 'ok' : 'warn');
     } catch (e) {
       get().toastShow(e.message, 'error');
     }
@@ -163,7 +163,7 @@ export const useStore = create()((set, get) => ({
         body: { voltaje, resistencia, pruebaCarga, notas, servicioTipo },
       });
       await get().sync();
-      get().toastShow('Diagnostico registrado y cotizacion generada', 'ok');
+      get().toastShow('Diagnóstico registrado y cotización generada', 'ok');
     } catch (e) {
       get().toastShow(e.message, 'error');
     }
@@ -174,7 +174,7 @@ export const useStore = create()((set, get) => ({
     try {
       await api(`/ordenes/${ordenId}/cotizacion`, { method: 'POST', body: { monto, servicios, insumos } });
       await get().sync();
-      get().toastShow(`Cotizacion generada por ${fmtARS.format(Number(monto) || 0)}`, 'ok');
+      get().toastShow(`Cotización generada por ${fmtARS.format(Number(monto) || 0)}`, 'ok');
     } catch (e) {
       get().toastShow(e.message, 'error');
     }
@@ -184,7 +184,7 @@ export const useStore = create()((set, get) => ({
     try {
       await api(`/ordenes/${ordenId}/cotizacion/aprobar`, { method: 'POST' });
       await get().sync();
-      get().toastShow('Cotizacion aprobada', 'ok');
+      get().toastShow('Cotización aprobada', 'ok');
     } catch (e) {
       get().toastShow(e.message, 'error');
     }
@@ -194,7 +194,7 @@ export const useStore = create()((set, get) => ({
     try {
       await api(`/ordenes/${ordenId}/cotizacion/rechazar`, { method: 'POST' });
       await get().sync();
-      get().toastShow('Cotizacion rechazada. Orden cancelada.', 'error');
+      get().toastShow('Cotización rechazada. Orden cancelada.', 'error');
     } catch (e) {
       get().toastShow(e.message, 'error');
     }
@@ -214,9 +214,20 @@ export const useStore = create()((set, get) => ({
       await get().sync();
       const insumo = get().data.insumos.find((i) => i.id === insumoId);
       get().toastShow(
-        critico ? `Stock critico de ${insumo?.nombre}: ${insumo?.stock} restantes` : `Registrado: ${insumo?.nombre} x${cantidad}`,
+        critico ? `Stock crítico de ${insumo?.nombre}: ${insumo?.stock} restantes` : `Registrado: ${insumo?.nombre} x${cantidad}`,
         critico ? 'warn' : 'ok'
       );
+    } catch (e) {
+      get().toastShow(e.message, 'error');
+    }
+  },
+
+  // Correccion del piso: devuelve al stock un insumo cargado por error.
+  async revertirInsumo(ordenId, indice) {
+    try {
+      const { revertido } = await api(`/ordenes/${ordenId}/insumos/${indice}`, { method: 'DELETE' });
+      await get().sync();
+      get().toastShow(`Devuelto al stock: ${revertido?.nombre} x${revertido?.cantidad}`, 'ok');
     } catch (e) {
       get().toastShow(e.message, 'error');
     }
@@ -235,17 +246,17 @@ export const useStore = create()((set, get) => ({
     try {
       await api(`/ordenes/${ordenId}/prueba-final`, { method: 'POST', body: { capacidad, resultado, obs } });
       await get().sync();
-      get().toastShow(resultado === 'passed' ? 'Prueba aprobada. Orden lista para entrega.' : 'Prueba fallida. La bateria regresa a reparacion.', resultado === 'passed' ? 'ok' : 'error');
+      get().toastShow(resultado === 'passed' ? 'Prueba aprobada. Orden lista para entrega.' : 'Prueba fallida. La batería regresa a reparación.', resultado === 'passed' ? 'ok' : 'error');
     } catch (e) {
       get().toastShow(e.message, 'error');
     }
   },
 
   // ---------- Entrega / cierre ----------
-  async deliverOrder(ordenId, montoCobrado, garantiaMeses, garantiaCiclos) {
+  async deliverOrder(ordenId, montoCobrado, garantiaMeses, garantiaCiclos, medioPago) {
     const orden = get().findOrden(ordenId);
     if (!orden || orden.estado !== 'ready') {
-      return get().toastShow('Solo ordenes listas pueden entregarse', 'error');
+      return get().toastShow('Sólo órdenes listas pueden entregarse', 'error');
     }
     try {
       await api(`/ordenes/${ordenId}/entregar`, {
@@ -254,6 +265,7 @@ export const useStore = create()((set, get) => ({
           monto_cobrado: montoCobrado,
           garantia_meses: Number(garantiaMeses) || 6,
           garantia_ciclos: Number(garantiaCiclos) || 100,
+          medio_pago: medioPago || '',
         },
       });
       await get().sync();
@@ -263,17 +275,36 @@ export const useStore = create()((set, get) => ({
     }
   },
 
-  // ---------- Carga de stock ----------
-  async agregarStock(insumoId, cantidad) {
+  // ---------- Carga / ajuste de stock ----------
+  async agregarStock(insumoId, cantidad, motivo = 'Ingreso de stock') {
     const cant = Number(cantidad) || 0;
-    if (cant <= 0) return get().toastShow('Cantidad invalida', 'error');
+    if (cant <= 0) return get().toastShow('Cantidad inválida', 'error');
     try {
-      await api(`/insumos/${insumoId}/stock`, { method: 'PATCH', body: { cantidad: cant } });
+      await api(`/insumos/${insumoId}/stock`, { method: 'PATCH', body: { cantidad: cant, motivo } });
       await get().sync();
       get().toastShow(`+${cant} unidades al inventario`, 'ok');
     } catch (e) {
       get().toastShow(e.message, 'error');
     }
+  },
+
+  // Recuento fisico: fija el stock real y deja el motivo en la trazabilidad.
+  async ajustarStock(insumoId, stockContado, motivo) {
+    try {
+      const r = await api(`/insumos/${insumoId}/ajuste`, { method: 'POST', body: { stock_contado: stockContado, motivo } });
+      await get().sync();
+      get().toastShow(`Stock ajustado a ${r.stock} (${r.diferencia >= 0 ? '+' : ''}${r.diferencia})`, 'ok');
+    } catch (e) {
+      get().toastShow(e.message, 'error');
+    }
+  },
+
+  async movimientosInsumo(insumoId) {
+    return api(`/insumos/${insumoId}/movimientos`);
+  },
+
+  async versionesCotizacion(ordenId) {
+    return api(`/ordenes/${ordenId}/cotizaciones`);
   },
 
   // ---------- Altas (admin) ----------
@@ -291,7 +322,7 @@ export const useStore = create()((set, get) => ({
     try {
       await api('/tecnicos', { method: 'POST', body: { nombre, especialidad, certificaciones } });
       await get().sync();
-      get().toastShow('Tecnico creado', 'ok');
+      get().toastShow('Técnico creado', 'ok');
     } catch (e) {
       get().toastShow(e.message, 'error');
     }
@@ -312,7 +343,7 @@ export const useStore = create()((set, get) => ({
     try {
       await api(`/ordenes/${ordenId}/baja`, { method: 'POST', body: { motivo } });
       await get().sync();
-      get().toastShow('Bateria dada de baja. Registrada para disposicion responsable.', 'warn');
+      get().toastShow('Batería dada de baja. Registrada para disposición responsable.', 'warn');
     } catch (e) {
       get().toastShow(e.message, 'error');
     }

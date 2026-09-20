@@ -12,5 +12,6 @@ export {
   ESTADO_LABEL,
   TRANSITIONS,
   FLOW_CHAIN,
+  MIN_CAPACIDAD_PCT,
   canTransition,
 } from '../src/data/reglas.js';

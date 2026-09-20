@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useStore } from '../store/store';
-import { Icon, EstadoPill, OrdenCard, fmtDate, fmtARS, fmtFecha } from '../components/ui';
+import { Icon, EstadoPill, OrdenCard, Modal, fmtDate, fmtARS, fmtFecha, nombreActor } from '../components/ui';
 import OrdenDetalle from '../components/OrdenDetalle';
 import { ORDEN_ESTADOS } from '../data/reglas';
 
@@ -22,7 +22,7 @@ const ESTADO_COLOR = {
 
 const ESTADO_LB = {
   received: 'Recibidas', diagnosing: 'Diagnostico', quoted: 'Cotizadas', approved: 'Aprobadas',
-  in_repair: 'En reparacion', testing: 'Prueba final', ready: 'Listas', delivered: 'Entregadas',
+  in_repair: 'En reparación', testing: 'Prueba final', ready: 'Listas', delivered: 'Entregadas',
   cancelled: 'Canceladas',
 };
 
@@ -62,7 +62,7 @@ function AltasForm({ onClose }) {
           <div className="field"><label>Nombre</label><input className="input" value={cliente.nombre} onChange={(e) => setCliente({ ...cliente, nombre: e.target.value })} placeholder="Nombre del cliente" /></div>
           <div className="field"><label>Empresa / flotilla</label><input className="input" value={cliente.empresa} onChange={(e) => setCliente({ ...cliente, empresa: e.target.value })} placeholder="ej. Transportes La Union" /></div>
           <div className="field"><label>Email</label><input className="input" type="email" value={cliente.email} onChange={(e) => setCliente({ ...cliente, email: e.target.value })} placeholder="cliente@empresa.com" /></div>
-          <div className="field"><label>Telefono</label><input className="input" value={cliente.telefono} onChange={(e) => setCliente({ ...cliente, telefono: e.target.value })} placeholder="(55) 0000-0000" /></div>
+          <div className="field"><label>Teléfono</label><input className="input" value={cliente.telefono} onChange={(e) => setCliente({ ...cliente, telefono: e.target.value })} placeholder="(55) 0000-0000" /></div>
         </div>
       )}
 
@@ -77,7 +77,7 @@ function AltasForm({ onClose }) {
       {tipo === 'insumo' && (
         <div className="col">
           <div className="field"><label>Nombre</label><input className="input" value={insumo.nombre} onChange={(e) => setInsumo({ ...insumo, nombre: e.target.value })} placeholder="ej. Acido sulfurico" /></div>
-          <div className="field"><label>Categoria</label><input className="input" value={insumo.categoria} onChange={(e) => setInsumo({ ...insumo, categoria: e.target.value })} placeholder="ej. Insumo / Repuesto" /></div>
+          <div className="field"><label>Categoría</label><input className="input" value={insumo.categoria} onChange={(e) => setInsumo({ ...insumo, categoria: e.target.value })} placeholder="ej. Insumo / Repuesto" /></div>
           <div className="row">
             <div className="field"><label>Stock inicial</label><input className="input" type="number" value={insumo.stock} onChange={(e) => setInsumo({ ...insumo, stock: e.target.value })} placeholder="0" /></div>
             <div className="field"><label>Precio unitario (ARS)</label><input className="input" type="number" value={insumo.precio} onChange={(e) => setInsumo({ ...insumo, precio: e.target.value })} placeholder="0" /></div>
@@ -102,7 +102,7 @@ function Kanban({ onOpen }) {
             <span className="count">{list.length}</span>
           </div>
           <div className="kcol-body">
-            {list.length === 0 && <p className="muted center" style={{ padding: 14, fontSize: 12 }}>Sin ordenes</p>}
+            {list.length === 0 && <p className="muted center" style={{ padding: 14, fontSize: 12 }}>Sin órdenes</p>}
             {list.map((o) => <OrdenCard key={o.id} orden={o} onOpen={onOpen} />)}
           </div>
         </div>
@@ -133,21 +133,47 @@ function Dashboard() {
   const bateriasActivas = data.baterias.filter((b) => b.estado_vida !== 'dada_de_baja');
   const garantiaTip = data.baterias.filter((b) => b.estado_vida === 'en_garantia').length;
 
+  // --- Indicadores de gestión del taller ---
+  const entregadas = data.ordenes.filter((o) => o.estado === 'delivered' && o.fecha_ingreso && o.fecha_entrega);
+  const tiempos = entregadas.map((o) => (new Date(o.fecha_entrega) - new Date(o.fecha_ingreso)) / 86400000);
+  const tiempoMedio = tiempos.length ? tiempos.reduce((a, d) => a + d, 0) / tiempos.length : null;
+  const conPrueba = data.ordenes.filter((o) => o.prueba_final && o.prueba_final.estado !== 'pending');
+  const reprocesos = data.ordenes.filter((o) => (o.eventos || []).some((e) => e.tipo === 'prueba_fallida'));
+  const tasaReproceso = conPrueba.length ? Math.round((reprocesos.length / conPrueba.length) * 100) : null;
+  const conHoraEstimada = entregadas.filter((o) => o.hora_entrega);
+  const enFecha = conHoraEstimada.filter((o) => new Date(o.fecha_entrega) <= new Date(o.hora_entrega));
+  const cumplimiento = conHoraEstimada.length ? Math.round((enFecha.length / conHoraEstimada.length) * 100) : null;
+
   return (
     <div className="col">
       <div className="grid4">
-        <div className="kpi"><div className="kpi-label">Baterias activas en taller</div><div className="kpi-value">{activas.length}</div><div className="kpi-sub">{bateriasActivas.length} registradas en total</div></div>
-        <div className="kpi"><div className="kpi-label">Ordenes cerradas hoy</div><div className="kpi-value green">{cerradasHoy.length}</div><div className="kpi-sub">{pasadasHoy.length} entrega(s) pendiente(s) del dia</div></div>
-        <div className="kpi"><div className="kpi-label">Ingresos del dia</div><div className="kpi-value">{fmtARS(ingresosHoy)}</div><div className="kpi-sub">facturados hoy</div></div>
-        <div className={`kpi ${stockCritico.length ? 'alert' : ''}`}><div className="kpi-label">Stock bajo (critico &lt; 3)</div><div className="kpi-value">{stockCritico.length}</div><div className="kpi-sub">cargadores y celdas con atencion</div></div>
-        <div className={`kpi ${reproceso.length ? 'danger' : ''}`}><div className="kpi-label">Prueba fallida (reproceso)</div><div className="kpi-value">{reproceso.length}</div><div className="kpi-sub">regresadas a reparacion</div></div>
-        <div className="kpi"><div className="kpi-label">Garantias por vencer (30 dias)</div><div className="kpi-value">{gPorVencer.length}</div><div className="kpi-sub">{garantiaTip} baterias bajo garantia activa</div></div>
-        <div className="kpi"><div className="kpi-label">Baterias dadas de baja</div><div className="kpi-value">{data.bajas.length}</div><div className="kpi-sub">trazabilidad de reciclaje</div></div>
-        <div className="kpi"><div className="kpi-label">Tecnicos activos</div><div className="kpi-value">{data.tecnicos.filter((t) => t.activo).length}</div><div className="kpi-sub">especialidades dedicadas</div></div>
+        <div className="kpi"><div className="kpi-label">Baterías activas en taller</div><div className="kpi-value">{activas.length}</div><div className="kpi-sub">{bateriasActivas.length} registradas en total</div></div>
+        <div className="kpi"><div className="kpi-label">Órdenes cerradas hoy</div><div className="kpi-value green">{cerradasHoy.length}</div><div className="kpi-sub">{pasadasHoy.length} entrega(s) pendiente(s) del día</div></div>
+        <div className="kpi"><div className="kpi-label">Ingresos del día</div><div className="kpi-value">{fmtARS(ingresosHoy)}</div><div className="kpi-sub">facturados hoy</div></div>
+        <div className={`kpi ${stockCritico.length ? 'alert' : ''}`}><div className="kpi-label">Stock bajo (crítico &lt; 3)</div><div className="kpi-value">{stockCritico.length}</div><div className="kpi-sub">cargadores y celdas con atención</div></div>
+        <div className={`kpi ${reproceso.length ? 'danger' : ''}`}><div className="kpi-label">Prueba fallida (reproceso)</div><div className="kpi-value">{reproceso.length}</div><div className="kpi-sub">regresadas a reparación</div></div>
+        <div className="kpi"><div className="kpi-label">Garantías por vencer (30 días)</div><div className="kpi-value">{gPorVencer.length}</div><div className="kpi-sub">{garantiaTip} baterías bajo garantía activa</div></div>
+        <div className="kpi"><div className="kpi-label">Baterías dadas de baja</div><div className="kpi-value">{data.bajas.length}</div><div className="kpi-sub">trazabilidad de reciclaje</div></div>
+        <div className="kpi">
+          <div className="kpi-label">Tiempo medio de reparación</div>
+          <div className="kpi-value">{tiempoMedio == null ? '—' : `${tiempoMedio.toFixed(1)} d`}</div>
+          <div className="kpi-sub">{entregadas.length} órdenes entregadas</div>
+        </div>
+        <div className={`kpi ${tasaReproceso != null && tasaReproceso >= 20 ? 'danger' : ''}`}>
+          <div className="kpi-label">Tasa de reproceso</div>
+          <div className="kpi-value">{tasaReproceso == null ? '—' : `${tasaReproceso}%`}</div>
+          <div className="kpi-sub">{reprocesos.length} de {conPrueba.length} pruebas con falla</div>
+        </div>
+        <div className={`kpi ${cumplimiento != null && cumplimiento < 80 ? 'alert' : ''}`}>
+          <div className="kpi-label">Entregas en fecha</div>
+          <div className="kpi-value">{cumplimiento == null ? '—' : `${cumplimiento}%`}</div>
+          <div className="kpi-sub">{enFecha.length} de {conHoraEstimada.length} con hora estimada</div>
+        </div>
+        <div className="kpi"><div className="kpi-label">Técnicos activos</div><div className="kpi-value">{data.tecnicos.filter((t) => t.activo).length}</div><div className="kpi-sub">especialidades dedicadas</div></div>
       </div>
 
       {stockCritico.length > 0 && (
-        <div className="banner-warn"><Icon name="warn" size={15} /> Stock critico: {stockCritico.map((i) => `${i.nombre} (${i.stock})`).join(' · ')}</div>
+        <div className="banner-warn"><Icon name="warn" size={15} /> Stock crítico: {stockCritico.map((i) => `${i.nombre} (${i.stock})`).join(' · ')}</div>
       )}
       {pasadasHoy.length > 0 && (
         <div className="banner-green"><Icon name="clock" size={15} /> Entregas programadas para hoy: {pasadasHoy.map((o) => o.bateria_serie).join(' · ')}</div>
@@ -236,15 +262,47 @@ function NewOrdenForm({ onClose }) {
 function Inventario() {
   const data = useStore((s) => s.data);
   const agregarStock = useStore((s) => s.agregarStock);
+  const ajustarStock = useStore((s) => s.ajustarStock);
+  const movimientosInsumo = useStore((s) => s.movimientosInsumo);
+  const toastShow = useStore((s) => s.toastShow);
   const [extra, setExtra] = useState({});
+  const [mov, setMov] = useState(null);       // { insumo, movimientos } | null
+  const [ajuste, setAjuste] = useState(null); // { insumo, stock, motivo } | null
+  const [busy, setBusy] = useState(false);
+
+  const verMovimientos = async (insumo) => {
+    try {
+      const r = await movimientosInsumo(insumo.id);
+      setMov(r);
+    } catch (e) {
+      toastShow(e.message, 'error');
+    }
+  };
+
+  const guardarAjuste = async () => {
+    if (!ajuste?.motivo?.trim()) return toastShow('El motivo del ajuste es obligatorio', 'warn');
+    if (ajuste.stock === '' || ajuste.stock == null) return toastShow('Ingresá el stock contado', 'warn');
+    setBusy(true);
+    try {
+      await ajustarStock(ajuste.insumo.id, ajuste.stock, ajuste.motivo);
+      setAjuste(null);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const tipoMov = {
+    alta: 'Alta', ingreso: 'Ingreso', consumo: 'Consumo', reversion: 'Devolución', ajuste: 'Ajuste',
+  };
+
   return (
     <div className="col">
-      <p className="muted" style={{ marginTop: 0 }}>El stock se descuenta en tiempo real cada vez que un tecnico registra un insumo en una orden.</p>
+      <p className="muted" style={{ marginTop: 0 }}>El stock se descuenta en tiempo real cada vez que un técnico registra un insumo en una orden. Todo movimiento queda auditado con su autor y motivo.</p>
       <div className="card pad0">
         <div style={{ overflowX: 'auto' }}>
           <table className="tbl">
             <thead>
-              <tr><th>Insumo</th><th>Categoria</th><th className="num">Stock</th><th className="num">P. unit.</th><th className="num">Valor en inventario</th><th style={{ width: 170 }}>Agregar stock</th></tr>
+              <tr><th>Insumo</th><th>Categoría</th><th className="num">Stock</th><th className="num">P. unit.</th><th className="num">Valor en inventario</th><th style={{ width: 170 }}>Agregar stock</th><th style={{ width: 170 }}>Trazabilidad</th></tr>
             </thead>
             <tbody>
               {data.insumos.map((i) => {
@@ -262,6 +320,12 @@ function Inventario() {
                         <button className="btn sm primary" onClick={() => { agregarStock(i.id, extra[i.id]); setExtra({ ...extra, [i.id]: '' }); }}><Icon name="plus" size={13} /> Cargar</button>
                       </div>
                     </td>
+                    <td>
+                      <div className="row">
+                        <button className="btn sm" onClick={() => verMovimientos(i)}><Icon name="clock" size={13} /> Movimientos</button>
+                        <button className="btn sm" onClick={() => setAjuste({ insumo: i, stock: i.stock, motivo: '' })}><Icon name="refresh" size={13} /> Ajustar</button>
+                      </div>
+                    </td>
                   </tr>
                 );
               })}
@@ -269,6 +333,46 @@ function Inventario() {
           </table>
         </div>
       </div>
+
+      {mov && (
+        <Modal title={`Movimientos de stock`} sub={`${mov.insumo.nombre} · stock actual ${mov.insumo.stock}`} onClose={() => setMov(null)}>
+          <div className="col">
+            {mov.movimientos.length === 0 && <p className="muted" style={{ margin: 0 }}>Sin movimientos registrados todavía.</p>}
+            {mov.movimientos.map((m) => (
+              <div key={m.id} className="row between" style={{ fontSize: 12.5, borderBottom: '1px solid var(--line-soft)', paddingBottom: 6 }}>
+                <span className="row" style={{ gap: 8 }}>
+                  <span className={`badge ${m.tipo === 'consumo' ? 'orange' : m.tipo === 'ajuste' ? 'amber' : m.tipo === 'reversion' ? 'blue' : 'green'}`}>{tipoMov[m.tipo] || m.tipo}</span>
+                  <span>{Number(m.cantidad) > 0 && m.tipo !== 'ajuste' ? '+' : ''}{m.cantidad}</span>
+                  <span className="muted">→ {m.stock_resultante}</span>
+                </span>
+                <span className="col" style={{ alignItems: 'flex-end', gap: 0 }}>
+                  <span className="muted">{fmtFecha(m.fecha)}</span>
+                  <span className="muted" style={{ fontSize: 11.5 }}>{nombreActor(m.usuario, data)} · {m.motivo || 'sin motivo'}</span>
+                </span>
+              </div>
+            ))}
+          </div>
+        </Modal>
+      )}
+
+      {ajuste && (
+        <Modal title="Ajuste por recuento físico" sub={ajuste.insumo.nombre} onClose={() => setAjuste(null)}>
+          <div className="col">
+            <div className="banner-info"><Icon name="info" size={15} /> El stock del sistema es {ajuste.insumo.stock}. El ajuste queda auditado con tu usuario y el motivo.</div>
+            <div className="field">
+              <label>Stock contado (unidades)</label>
+              <input className="input" type="number" min={0} value={ajuste.stock} onChange={(e) => setAjuste({ ...ajuste, stock: e.target.value })} />
+            </div>
+            <div className="field">
+              <label>Motivo del ajuste *</label>
+              <input className="input" value={ajuste.motivo} onChange={(e) => setAjuste({ ...ajuste, motivo: e.target.value })} placeholder="ej. recuento mensual, merma, rotura" />
+            </div>
+            <button className="btn primary block" disabled={busy || !ajuste.motivo.trim()} onClick={guardarAjuste}>
+              <Icon name="check" size={14} /> {busy ? 'Ajustando...' : 'Registrar ajuste'}
+            </button>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
@@ -299,7 +403,7 @@ function Tecnicos() {
             {t.certificaciones.map((c) => <span key={c} className="muted" style={{ fontSize: 12 }}> <Icon name="shield" size={11} /> {c}</span>)}
           </div>
           <div className="row mt16">
-            <span className="badge amber">{active.length} orden(es) activa(s)</span>
+            <span className="badge amber">{active.length} órdenes activas</span>
             {bySpec.length > 0 && <span className="badge orange">{bySpec.length} fuera de especialidad</span>}
           </div>
         </div>
@@ -324,11 +428,11 @@ function Flotillas() {
                 <b style={{ fontSize: 15 }}><Icon name="building" size={15} /> {c.nombre}</b>
                 <div className="muted" style={{ fontSize: 12.5 }}>Contacto: {c.contacto} · {c.telefono} · {bats.length} equipos</div>
               </div>
-              {garantiaBaja.length > 0 ? <span className="badge green">Garantia activa en {garantiaBaja.length}</span> : <span className="badge gray">Sin garantias activas</span>}
+              {garantiaBaja.length > 0 ? <span className="badge green">Garantía activa en {garantiaBaja.length}</span> : <span className="badge gray">Sin garantías activas</span>}
             </div>
             <div className="mt16" style={{ overflowX: 'auto' }}>
               <table className="tbl">
-                <thead><tr><th>Equipo / Bateria</th><th>Serie</th><th>Especificacion</th><th>Estado actual</th><th>Vida util</th><th>Alerta</th></tr></thead>
+                <thead><tr><th>Equipo / Batería</th><th>Serie</th><th>Especificación</th><th>Estado actual</th><th>Vida útil</th><th>Alerta</th></tr></thead>
                 <tbody>
                   {bats.map((b) => {
                     const act = ordenActual(b.numero_serie);
@@ -408,8 +512,8 @@ function BajaYReciclaje({ onAbrirOrden }) {
   return (
     <div className="col">
       <div className="grid2">
-        <div className="kpi"><div className="kpi-label">Baterias dadas de baja</div><div className="kpi-value" style={{ color: 'var(--red)' }}>{bajas.length}</div><div className="kpi-sub">trazabilidad de disposicion</div></div>
-        <div className="kpi"><div className="kpi-label">Recicladas / dispuestas</div><div className="kpi-value green">{recicladas}</div><div className="kpi-sub">{bajas.length - recicladas} pendientes de disposicion final</div></div>
+        <div className="kpi"><div className="kpi-label">Baterías dadas de baja</div><div className="kpi-value" style={{ color: 'var(--red)' }}>{bajas.length}</div><div className="kpi-sub">trazabilidad de disposición</div></div>
+        <div className="kpi"><div className="kpi-label">Recicladas / dispuestas</div><div className="kpi-value green">{recicladas}</div><div className="kpi-sub">{bajas.length - recicladas} pendientes de disposición final</div></div>
       </div>
       <div className="card pad0 mt16">
         <div style={{ overflowX: 'auto' }}>
@@ -476,7 +580,7 @@ function HistorialSerie() {
           </div>
           <div className="muted" style={{ marginTop: 2, fontSize: 12.5 }}>{b.tipo} · {b.voltaje} · {b.capacidad}Ah · {b.equipo}</div>
           <div className="mt16">
-            {res.length === 0 && <p className="muted">Sin ordenes historicas registradas.</p>}
+            {res.length === 0 && <p className="muted">Sin órdenes historicas registradas.</p>}
             {res.map((o) => (
               <div key={o.id} className="row between" style={{ borderTop: '1px solid var(--line-soft)', padding: '10px 0' }}>
                 <span className="mono">{o.id}</span>
@@ -518,12 +622,12 @@ export default function Hub() {
 
       <div className="tabs mb16">
         <button className={`tab ${tab === 'kanban' ? 'active' : ''}`} onClick={() => setTab('kanban')}><Icon name="battery" size={13} /> Kanban</button>
-        <button className={`tab ${tab === 'dashboard' ? 'active' : ''}`} onClick={() => setTab('dashboard')}><Icon name="gauge" size={13} /> Dashboard del dia</button>
+        <button className={`tab ${tab === 'dashboard' ? 'active' : ''}`} onClick={() => setTab('dashboard')}><Icon name="gauge" size={13} /> Dashboard del día</button>
         <button className={`tab ${tab === 'historial' ? 'active' : ''}`} onClick={() => setTab('historial')}><Icon name="search" size={13} /> Historial por serie</button>
         <button className={`tab ${tab === 'inventario' ? 'active' : ''}`} onClick={() => setTab('inventario')}><Icon name="box" size={13} /> Inventario</button>
-        <button className={`tab ${tab === 'tecnicos' ? 'active' : ''}`} onClick={() => setTab('tecnicos')}><Icon name="users" size={13} /> Tecnicos</button>
+        <button className={`tab ${tab === 'tecnicos' ? 'active' : ''}`} onClick={() => setTab('tecnicos')}><Icon name="users" size={13} /> Técnicos</button>
         <button className={`tab ${tab === 'flotillas' ? 'active' : ''}`} onClick={() => setTab('flotillas')}><Icon name="building" size={13} /> Flotillas</button>
-        <button className={`tab ${tab === 'garantias' ? 'active' : ''}`} onClick={() => setTab('garantias')}><Icon name="shield" size={13} /> Garantias</button>
+        <button className={`tab ${tab === 'garantias' ? 'active' : ''}`} onClick={() => setTab('garantias')}><Icon name="shield" size={13} /> Garantías</button>
         <button className={`tab ${tab === 'baja' ? 'active' : ''}`} onClick={() => setTab('baja')}><Icon name="recycl" size={13} /> Baja / reciclaje</button>
       </div>
 

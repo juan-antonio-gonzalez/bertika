@@ -19,7 +19,7 @@ export const ESTADOS = [
   { key: 'diagnosing', label: 'Diagnosticando' },
   { key: 'quoted', label: 'Cotizada' },
   { key: 'approved', label: 'Aprobada' },
-  { key: 'in_repair', label: 'En reparacion' },
+  { key: 'in_repair', label: 'En reparación' },
   { key: 'testing', label: 'Prueba final' },
   { key: 'ready', label: 'Lista' },
   { key: 'delivered', label: 'Entregada' },
@@ -31,9 +31,9 @@ export const ESTADO_LABEL = Object.fromEntries(ESTADOS.map((e) => [e.key, e.labe
 // Flujo visible en el tracker (pasos de negocio)
 export const TRACKER_STEPS = [
   { key: 'received', label: 'Recibida' },
-  { key: 'diagnosing', label: 'Diagnostico' },
-  { key: 'quoted', label: 'Cotizacion' },
-  { key: 'approved', label: 'En reparacion' },
+  { key: 'diagnosing', label: 'Diagnóstico' },
+  { key: 'quoted', label: 'Cotización' },
+  { key: 'approved', label: 'En reparación' },
   { key: 'testing', label: 'Prueba final' },
   { key: 'ready', label: 'Lista' },
   { key: 'delivered', label: 'Entregada' },
@@ -64,6 +64,12 @@ export const FLOW_CHAIN = [
   'delivered',
 ];
 
+// Criterio de aceptacion de la prueba final: la capacidad medida debe alcanzar
+// este porcentaje de la capacidad nominal de la bateria. Lo usan la API (para
+// rechazar una aprobacion fuera de criterio) y el frontend (para mostrarlo en
+// vivo antes de registrar el resultado).
+export const MIN_CAPACIDAD_PCT = 80;
+
 // Grafo de transiciones permitidas. Regla central: testing -> in_repair cuando
 // la prueba final falla, y NO se puede entregar sin pasar la prueba.
 export const TRANSITIONS = {
@@ -81,7 +87,7 @@ export const TRANSITIONS = {
 // Validacion de una transicion. Devuelve { ok } o { ok: false, err }.
 export function canTransition(orden, target) {
   const t = TRANSITIONS[orden.estado] || [];
-  if (!t.includes(target)) return { ok: false, err: `Transicion ${orden.estado} -> ${target} no permitida` };
+  if (!t.includes(target)) return { ok: false, err: `Transición ${orden.estado} -> ${target} no permitida` };
   if (target === 'ready') {
     if (orden.prueba_final?.estado !== 'passed') {
       return { ok: false, err: 'La orden no puede marcarse lista: la prueba final debe estar aprobada' };
@@ -90,7 +96,7 @@ export function canTransition(orden, target) {
   // Volver de la prueba final fallida a reparacion no exige re-aprobacion.
   if (target === 'in_repair' && orden.estado !== 'testing') {
     if (orden.estado_cotizacion !== 'approved') {
-      return { ok: false, err: 'La cotizacion debe ser aprobada por el cliente antes de reparar' };
+      return { ok: false, err: 'La cotización debe ser aprobada por el cliente antes de reparar' };
     }
   }
   return { ok: true };

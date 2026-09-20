@@ -501,3 +501,48 @@ select.input option { background: var(--bg-3); }
   body.print-label .modal { width: auto; max-height: none; overflow: visible; background: none; border: 0; box-shadow: none; padding: 0; }
   body.print-label .print-label > div { width: 620px !important; max-width: 100%; }
 }
+
+/* ---------- documentos del taller (orden de trabajo / comprobante) ---------- */
+/* En pantalla se muestran como una hoja blanca dentro del modal; al imprimir
+   salen solos, ocupando la hoja completa. */
+.doc {
+  background: #fff;
+  color: #14181f;
+  padding: 16px;
+  border-radius: 8px;
+}
+.doc-head { display: flex; justify-content: space-between; gap: 16px; border-bottom: 3px solid #f5c116; padding-bottom: 8px; margin-bottom: 10px; }
+.doc-brand { font-size: 22px; font-weight: 800; letter-spacing: 2px; color: #0a1740; }
+.doc-brand-sub { font-size: 10px; color: #666; }
+.doc-head-right { text-align: right; font-size: 11px; color: #444; }
+.doc-title { font-size: 13px; font-weight: 800; color: #0a1740; letter-spacing: 1px; }
+.doc-num { font-family: ui-monospace, monospace; font-size: 13px; font-weight: 700; }
+.doc-seccion { margin-bottom: 10px; }
+.doc-seccion-titulo { font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .6px; color: #0a1740; border-bottom: 1px solid #dfe4ec; padding-bottom: 3px; margin-bottom: 5px; }
+.doc-row { display: flex; justify-content: space-between; gap: 12px; font-size: 11.5px; padding: 1.5px 0; }
+.doc-k { color: #5b6472; }
+.doc-v { font-weight: 600; text-align: right; }
+.doc-texto { font-size: 11.5px; white-space: pre-wrap; }
+.doc-tabla { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+.doc-tabla td { border-bottom: 1px solid #eef1f6; padding: 3px 0; }
+.doc-num-col { text-align: right; font-family: ui-monospace, monospace; white-space: nowrap; }
+.doc-total td { font-weight: 800; border-top: 2px solid #0a1740; border-bottom: none; }
+.doc-lineas span { display: block; border-bottom: 1px solid #cfd6df; height: 16px; }
+.doc-condiciones { font-size: 9.5px; color: #555; border: 1px solid #e3e7ee; border-radius: 6px; padding: 7px 9px; margin: 8px 0 12px; }
+.doc-firmas { display: flex; gap: 40px; margin-top: 18px; }
+.doc-firma { flex: 1; }
+.doc-firma-linea { border-bottom: 1px solid #333; height: 34px; }
+.doc-firma-rol { font-size: 10.5px; font-weight: 700; margin-top: 3px; }
+.doc-firma-aclaracion { font-size: 9px; color: #777; }
+.doc-pie { margin-top: 12px; border-top: 1px solid #dfe4ec; padding-top: 5px; font-size: 9px; color: #777; text-align: center; }
+
+@media print {
+  body.print-doc * { visibility: hidden !important; }
+  body.print-doc .print-doc,
+  body.print-doc .print-doc * { visibility: visible !important; }
+  body.print-doc .print-doc { position: absolute; left: 0; top: 0; width: 100%; background: #fff; padding: 0; }
+  body.print-doc .modal-back { position: static; display: block; background: none; padding: 0; }
+  body.print-doc .modal { width: auto; max-height: none; overflow: visible; background: none; border: 0; box-shadow: none; padding: 0; }
+  .doc { color: #000; break-inside: avoid; }
+  .doc-seccion, .doc-firmas, .doc-tabla tr { break-inside: avoid; }
+}

@@ -68,6 +68,7 @@ CREATE TABLE IF NOT EXISTS ordenes (
   hora_entrega TIMESTAMPTZ,
   fecha_entrega TIMESTAMPTZ,
   monto_cobrado NUMERIC,
+  medio_pago TEXT,
   garantia JSONB,
   cotizacion JSONB,
   insumos_utilizados JSONB DEFAULT '[]',
@@ -99,4 +100,27 @@ CREATE TABLE IF NOT EXISTS notificaciones (
 CREATE TABLE IF NOT EXISTS contadores (
   nombre TEXT PRIMARY KEY,
   valor INTEGER NOT NULL
+);
+
+-- Auditoria: versiones de cotizacion (quien cotizo que, cuando y por cuanto).
+CREATE TABLE IF NOT EXISTS cotizaciones_historial (
+  id TEXT PRIMARY KEY,
+  orden_id TEXT,
+  fecha TIMESTAMPTZ DEFAULT now(),
+  monto NUMERIC,
+  detalle JSONB,
+  usuario JSONB
+);
+
+-- Auditoria de inventario: todo movimiento de stock con motivo y autor.
+CREATE TABLE IF NOT EXISTS insumos_movimientos (
+  id TEXT PRIMARY KEY,
+  insumo_id TEXT,
+  tipo TEXT,
+  cantidad NUMERIC,
+  stock_resultante INTEGER,
+  motivo TEXT,
+  orden_id TEXT,
+  usuario JSONB,
+  fecha TIMESTAMPTZ DEFAULT now()
 );

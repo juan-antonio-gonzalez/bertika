@@ -56,14 +56,21 @@ Solo se admite en órdenes en `received` o `diagnosing`: si la orden ya avanzó 
 Body: `{ monto, servicios: [{nombre, monto}], insumos: [{nombre, cantidad, precio}] }` → estado `quoted`, `estado_cotizacion: 'pending'`.
 
 ### `POST /ordenes/:id/insumos`
-Body: `{ insumo_id, cantidad }`. Valida stock, descuenta, agrega a `insumos_utilizados`. → `{ ok, critico }` (`critico` = nuevo stock < 3).
+Body: `{ insumo_id, cantidad }`. Valida stock, descuenta, agrega a `insumos_utilizados`. → `{ ok, critico }` (`critico` = nuevo stock < 3). Registra movimiento de inventario.
+
+### `DELETE /ordenes/:id/insumos/:indice`
+Devuelve al stock un insumo cargado por error, lo quita de la orden y deja evento `insumo_revertido` + movimiento de inventario. Requiere acceso de escritura a la orden.
+
+### `GET /ordenes/:id/cotizaciones`
+Auditoría: todas las versiones guardadas de la cotización (`fecha`, `monto`, `detalle`, `usuario`), más recientes primero.
 
 ### `POST /ordenes/:id/prueba-final` — requiere estado `testing`
 Body: `{ capacidad, resultado: 'passed'|'failed', obs? }`.
 `passed` → `ready`; `failed` → vuelve a `in_repair` (regla de negocio).
+La `capacidad` (Ah) es obligatoria y numérica: no se puede aprobar por debajo del `MIN_CAPACIDAD_PCT` (80%) de la capacidad nominal de la batería.
 
 ### `POST /ordenes/:id/entregar` — admin, requiere `ready`
-Body: `{ monto_cobrado?, garantia_meses?, garantia_ciclos? }`. Registra cobro, garantía (vence en `vence`), batería → `en_garantia`, estado → `delivered`.
+Body: `{ monto_cobrado?, garantia_meses?, garantia_ciclos?, medio_pago? }`. Registra cobro y medio de pago, garantía (vence en `vence`), batería → `en_garantia`, estado → `delivered`.
 
 ### `POST /ordenes/:id/baja` — admin
 Body: `{ motivo? }`. Orden → `cancelled`, batería → `dada_de_baja`, inserta fila en `bajas`.
@@ -79,8 +86,17 @@ Staff con acceso a la orden. Devuelve `{ cotizacion, tracker }`: el enlace públ
 
 | Método | Ruta | Body / notas |
 | --- | --- | --- |
-| `POST` | `/insumos` | `{ nombre, categoria?, stock?, precio? }` → `201 { id }` |
-| `PATCH` | `/insumos/:id/stock` | `{ cantidad }` (suma al stock) → `{ ok, stock }` |
+| `POST` | `/insumos` | `{ nombre, categoria?, stock?, precio? }` → `201 { id }` (movimiento de alta) |
+| `PATCH` | `/insumos/:id/stock` | `{ cantidad, motivo? }` (suma al stock) → `{ ok, stock }` (movimiento de ingreso) |
+| `POST` | `/insumos/:id/ajuste` | `{ stock_contado, motivo }` — recuento físico: fija el stock real y audita la diferencia (motivo obligatorio) |
+| `GET` | `/insumos/:id/movimientos` | Admin/técnico: `{ insumo, movimientos[] }` con tipo, cantidad, stock resultante, motivo, orden y autor |
+
+## Auditoría de eventos
+
+Cada evento de una orden (`ordenes.eventos`) incluye `{ id, tipo, detalle, fecha, usuario }`, donde `usuario` es
+`{ id, email, rol, ref }` (`ref` = `tecnico_id` o `cliente_id` vinculado) o `null` si lo generó el sistema o el
+formulario web. La plataforma lo muestra en la pestaña **Eventos** de cada orden y es la base del documento
+imprimible de trazabilidad.
 
 ## Clientes
 
