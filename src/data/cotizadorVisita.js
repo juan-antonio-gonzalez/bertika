@@ -19,12 +19,11 @@ export const COTIZADOR_VISITA = {
   vigenciaDias: VIGENCIA_DIAS,
 
   // Franjas de traslado (km desde nuestra planta). `desdeKm` se deriva de la
-  // franja anterior: no hace falta cargarlo.
+  // franja anterior: no hace falta cargarlo. El km declarado YA contempla el
+  // viaje de ida y vuelta (no se multiplica por dos en ningún lado).
   zonas: [
-    { id: 'z1', nombre: 'Hasta 25 km', desdeKm: 0, hastaKm: 25, base: 180, cubreKm: 25, kmAdicional: 0 },
-    { id: 'z2', nombre: 'Hasta 50 km', desdeKm: 25, hastaKm: 50, base: 280, cubreKm: 50, kmAdicional: 0 },
-    { id: 'z3', nombre: 'Hasta 100 km', desdeKm: 50, hastaKm: 100, base: 420, cubreKm: 100, kmAdicional: 0 },
-    { id: 'z4', nombre: 'Más de 100 km', desdeKm: 100, hastaKm: 700, base: 600, cubreKm: 200, kmAdicional: 3 },
+    { id: 'z1', nombre: 'Hasta 100 km', desdeKm: 0, hastaKm: 100, base: 120, cubreKm: 100, kmAdicional: 0 },
+    { id: 'z2', nombre: 'Más de 100 km', desdeKm: 100, hastaKm: 700, base: 120, cubreKm: 200, kmAdicional: 3 },
   ],
 
   // Revisión por tipo de batería (precio por unidad revisada).
@@ -63,8 +62,9 @@ export const COTIZADOR_VISITA = {
   // viáticos y con un descuento sobre la revisión, que se muestra aparte.
   modoTaller: { habilitado: true, descuentoRevisionPct: 0.15 },
 
-  // Costos internos para el análisis del admin (NUNCA se muestran al cliente):
-  // sirven para ver el margen de una visita antes de aceptarla.
+  // Costos internos para el análisis del admin (NUNCA se muestran al cliente).
+  // porKm es el costo por km DECLARADO (ya incluye la ida y vuelta, igual que el
+  // precio): no se multiplica por dos.
   costos: { porKm: 0.9, tecnicoPorDia: 120, viaticoPorDia: 90 },
 
   // Recargos (fracción, se suman y se aplican al subtotal).
@@ -312,9 +312,10 @@ export function calcularVisita({
   // Equivalente informativo en pesos (no interviene en el cálculo en USD).
   const ars = !fueraDeZona && dolar?.venta ? r2(total * dolar.venta) : null;
 
-  // Costos internos (solo para el análisis del admin: nunca se muestran al cliente).
+  // Costos internos (solo para el análisis del admin: nunca se muestran al
+  // cliente). El km ya contempla ida y vuelta, así que no se multiplica.
   const diasTecnico = esTaller ? 1 : 1 + viaticosDias;
-  const costoViaje = esTaller ? 0 : r2(kmNum * 2 * config.costos.porKm);
+  const costoViaje = esTaller ? 0 : r2(kmNum * config.costos.porKm);
   const costoDias = r2(diasTecnico * config.costos.tecnicoPorDia);
   const costoViaticos = r2(viaticosDias * config.costos.viaticoPorDia);
   const costoInterno = r2(costoViaje + costoDias + costoViaticos);

@@ -244,8 +244,9 @@ Sin firma valida el endpoint responde 403.
 
 - **Cobertura configurable** (700 km por defecto). Por encima de ese tope **no se cotiza**: la pagina ofrece
   hablar con un vendedor (WhatsApp o formulario) para analizar la viabilidad del servicio.
-- **Traslado por franjas + precio por km**: cada franja tiene una base que cubre hasta X km y, desde ahi, un
-  valor por km extra (por defecto: USD 600 hasta 200 km y **USD 3 por km** desde 200 km).
+- **Traslado por franjas + precio por km** (el km declarado ya contempla la ida y vuelta): cada franja tiene una
+  base que cubre hasta X km y, desde ahi, un valor por km extra. Por defecto: **USD 120 hasta 200 km** (los
+  primeros 100 km ya estan cubiertos por esa base) y **USD 3 por km** desde los 200 km.
 - **Viaticos** para visitas largas: desde los 300 km se suma un dia de viaje y uno mas cada 200 km
   (por defecto USD 150 por dia, tope 5 dias).
 - **Revision** por tipo y cantidad de baterias, con **descuento por volumen** (5/10/25 unidades → 5/10/15%).

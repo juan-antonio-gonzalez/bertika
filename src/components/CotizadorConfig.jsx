@@ -314,7 +314,7 @@ export default function CotizadorConfig() {
       <div className="card">
         <div className="card-title"><Icon name="dollar" size={14} /> Costos internos y margen (no se muestran al cliente)</div>
         <p className="muted" style={{ fontSize: 12, margin: '4px 0 10px' }}>
-          Sirven para decidir si conviene una visita lejana. El costo estima el viaje de ida y vuelta, los días de técnico y los viáticos reales.
+          Sirven para decidir si conviene una visita lejana. El costo estima el viaje (el km ya contempla la ida y vuelta), los días de técnico y los viáticos reales.
         </p>
         <div className="grid3">
           <div className="field"><label>USD por km (combustible, desgaste)</label><input className="input" type="number" min="0" step="0.1" value={cfg.costos.porKm} onChange={(e) => set({ costos: { ...cfg.costos, porKm: num(e.target.value) } })} /></div>

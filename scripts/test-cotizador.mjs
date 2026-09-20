@@ -34,10 +34,9 @@ console.log('\nZonas y traslado (fronteras, incluye decimales)');
 // Regresión: 25,5 y 50,9 caían en "Hasta 25 km" por el hueco entre franjas.
 // Base por franja + $/km pasado lo cubierto (por defecto, $3/km desde 200 km).
 const casos = [
-  [0.5, 'z1', 180], [25, 'z1', 180], [25.5, 'z2', 280], [50, 'z2', 280],
-  [50.9, 'z3', 420], [100, 'z3', 420], [100.9, 'z4', 600], [150, 'z4', 600],
-  [200, 'z4', 600], [250, 'z4', 750], [300, 'z4', 900], [400, 'z4', 1200],
-  [500, 'z4', 1500], [700, 'z4', 2100],
+  [0.5, 'z1', 120], [25, 'z1', 120], [50, 'z1', 120], [100, 'z1', 120],
+  [100.9, 'z2', 120], [150, 'z2', 120], [200, 'z2', 120], [250, 'z2', 270],
+  [300, 'z2', 420], [400, 'z2', 720], [500, 'z2', 1020], [700, 'z2', 1620],
 ];
 for (const [km, zona, traslado] of casos) {
   test(`${km} km → ${zona} · traslado USD ${traslado}`, () => {
@@ -156,9 +155,10 @@ console.log('\nConfiguración editable (validación y uso)');
 const cfgBase = normalizarConfig(COTIZADOR_VISITA);
 test('la config de fábrica queda normalizada y con cobertura 700 km', () => {
   assert.equal(cfgBase.maxKm, 700);
-  assert.equal(cfgBase.zonas.length, 4);
-  assert.deepEqual(cfgBase.zonas.map((z) => z.desdeKm), [0, 25, 50, 100]);
-  assert.equal(cfgBase.zonas[3].kmAdicional, 3);
+  assert.equal(cfgBase.zonas.length, 2);
+  assert.deepEqual(cfgBase.zonas.map((z) => z.desdeKm), [0, 100]);
+  assert.equal(cfgBase.zonas[0].base, 120);
+  assert.equal(cfgBase.zonas[1].kmAdicional, 3);
 });
 test('las franjas se ordenan y el desdeKm se deriva de la anterior', () => {
   const c = normalizarConfig({ zonas: [
@@ -295,15 +295,16 @@ test('si el admin deshabilita el modo taller, se cotiza como visita', () => {
   const cfg = normalizarConfig({ ...COTIZADOR_VISITA, modoTaller: { habilitado: false, descuentoRevisionPct: 0.15 } });
   const r = calcularVisita({ km: 100, renglones: [{ tipoId: 'plomo', cantidad: 1 }], modo: 'taller', config: cfg });
   assert.equal(r.modo, 'sitio');
-  assert.equal(r.traslado, 420);
+  assert.equal(r.traslado, 120);
 });
 
 console.log('\nCosto interno y margen (solo para el admin)');
-test('el costo suma viaje ida y vuelta, días de técnico y viáticos reales', () => {
+test('el costo suma el viaje (sin duplicar por ida y vuelta), días de técnico y viáticos reales', () => {
   const r = calcularVisita({ km: 500, renglones: [{ tipoId: 'plomo', cantidad: 1 }] });
   assert.equal(r.viaticosDias, 2);
   assert.equal(r.diasTecnico, 3);
-  assert.equal(r.costoViaje, Math.round(500 * 2 * COTIZADOR_VISITA.costos.porKm));
+  // El km declarado ya contempla la ida y vuelta: no se multiplica por dos.
+  assert.equal(r.costoViaje, Math.round(500 * COTIZADOR_VISITA.costos.porKm));
   assert.equal(r.costoDias, 3 * COTIZADOR_VISITA.costos.tecnicoPorDia);
   assert.equal(r.costoViaticos, 2 * COTIZADOR_VISITA.costos.viaticoPorDia);
   assert.equal(r.costoInterno, r.costoViaje + r.costoDias + r.costoViaticos);
