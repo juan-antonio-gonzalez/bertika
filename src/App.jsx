@@ -4,6 +4,7 @@ import { Toast, Shell } from './components/ui';
 import SiteHeader from './components/SiteHeader';
 import SiteFooter from './components/SiteFooter';
 import Chatbot from './components/Chatbot';
+import ErrorBoundary from './components/ErrorBoundary';
 import { useStore } from './store/store';
 
 // Code splitting: solo la landing viaja en el bundle inicial. Cada ruta se
@@ -106,6 +107,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <Toast />
+      <ErrorBoundary>
       <Suspense fallback={<CargandoRuta />}>
       <Routes>
         {/* Sitio público */}
@@ -138,6 +140,7 @@ export default function App() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       </Suspense>
+      </ErrorBoundary>
     </BrowserRouter>
   );
 }
