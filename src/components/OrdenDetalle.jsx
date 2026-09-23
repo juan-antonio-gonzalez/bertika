@@ -3,6 +3,7 @@ import { useStore } from '../store/store';
 import { api } from '../store/api';
 import { Modal, EstadoPill, Timeline, Icon, fmtDate, fmtARS, appIconName, fmtFecha, diasEnEstado, etiquetaAntiguedad, tonoAntiguedad, waNumero, numeroEnRango, nombreActor } from './ui';
 import { MIN_CAPACIDAD_PCT } from '../data/reglas';
+import { esStockCritico } from '../data/inventario';
 import { OrdenTrabajo, ComprobanteEntrega } from './DocumentosTaller';
 import { CONTACTO, OFICIAL } from '../data/siteData';
 import EtiquetaBateria from './EtiquetaBateria';
@@ -229,7 +230,7 @@ function InsumosForm({ orden }) {
       <div className="col" style={{ maxHeight: 220, overflowY: 'auto' }}>
         {lis.length === 0 && <p className="muted">Sin insumos que coincidan con el filtro.</p>}
         {lis.map((i) => {
-          const crit = i.stock < 3;
+          const crit = esStockCritico(i);
           return (
             <button key={i.id} className="btn" style={{ justifyContent: 'space-between', opacity: i.stock <= 0 ? 0.45 : 1 }} disabled={i.stock <= 0 || !!enviando} onClick={() => agregar(i)}>
               <span className="row" style={{ textAlign: 'left' }}><Icon name={i.categoria === 'Celdas' ? 'battery' : 'box'} size={14} /> {i.nombre}</span>

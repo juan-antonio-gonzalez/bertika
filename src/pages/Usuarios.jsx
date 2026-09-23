@@ -99,7 +99,7 @@ export default function Usuarios() {
   const [lista, setLista] = useState(null);
   const [modal, setModal] = useState(null); // { mode: 'crear' } | { mode: 'editar', user }
   const [busy, setBusy] = useState(false);
-  const [aBorrar, setABorrar] = useState(null);
+  const [aBaja, setABaja] = useState(null);
 
   const cargar = async () => {
     try {
@@ -142,23 +142,24 @@ export default function Usuarios() {
     }
   };
 
-  const toggleActivo = async (u) => {
+  // La baja es logica (activo = false): la ficha se conserva y se puede reactivar.
+  const reactivar = async (u) => {
     if (u.id === currentUid) return;
     try {
-      await api(`/usuarios/${u.id}`, { method: 'PATCH', body: { activo: !u.activo } });
+      await api(`/usuarios/${u.id}`, { method: 'PATCH', body: { activo: true } });
       await cargar();
-      toastShow(u.activo ? 'Acceso desactivado' : 'Acceso activado', 'ok');
+      toastShow(`${u.email}: acceso reactivado`, 'ok');
     } catch (e) {
       toastShow(e.message, 'error');
     }
   };
 
-  const borrar = async (u) => {
+  const darDeBaja = async (u) => {
     try {
       await api(`/usuarios/${u.id}`, { method: 'DELETE' });
-      setABorrar(null);
+      setABaja(null);
       await cargar();
-      toastShow(`Acceso de ${u.email} eliminado`, 'ok');
+      toastShow(`${u.email}: acceso dado de baja (se puede reactivar)`, 'warn');
     } catch (e) {
       toastShow(e.message, 'error');
     }
@@ -201,10 +202,15 @@ export default function Usuarios() {
                 </div>
                 <div className="row" style={{ gap: 8 }}>
                   <button className="btn sm" onClick={() => setModal({ mode: 'editar', user: u })}><Icon name="gear" size={13} /> Editar</button>
-                  <button className="btn sm" onClick={() => toggleActivo(u)} disabled={u.id === currentUid}>
-                    <Icon name={u.activo ? 'x' : 'check'} size={13} /> {u.activo ? 'Desactivar' : 'Activar'}
-                  </button>
-                  <button className="btn sm danger" onClick={() => setABorrar(u)} disabled={u.id === currentUid}><Icon name="x" size={13} /> Eliminar</button>
+                  {u.activo ? (
+                    <button className="btn sm danger" onClick={() => setABaja(u)} disabled={u.id === currentUid}>
+                      <Icon name="x" size={13} /> Dar de baja
+                    </button>
+                  ) : (
+                    <button className="btn sm" onClick={() => reactivar(u)}>
+                      <Icon name="check" size={13} /> Reactivar
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -212,16 +218,22 @@ export default function Usuarios() {
         )}
       </div>
 
-      {aBorrar && (
-        <Modal title="Eliminar acceso" sub={aBorrar.email} onClose={() => setABorrar(null)}>
+      {aBaja && (
+        <Modal title="Dar de baja el acceso" sub={aBaja.email} onClose={() => setABaja(null)}>
           <div className="col">
-            <p className="muted" style={{ margin: 0 }}>
-              Se elimina solo el acceso a la plataforma; el cliente o técnico vinculado no se borra.
-              Esta acción no se puede deshacer.
+            <div className="banner-info">
+              <Icon name="info" size={15} />
+              <span>
+                Se da de baja <b>solo el acceso a la plataforma</b>: la ficha del usuario no se borra y
+                el cliente o técnico vinculado queda intacto. Se puede <b>reactivar</b> cuando quieras.
+              </span>
+            </div>
+            <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
+              Al darlo de baja, su sesión deja de servir al instante.
             </p>
             <div className="grid2">
-              <button className="btn danger" onClick={() => borrar(aBorrar)}><Icon name="x" size={14} /> Eliminar acceso</button>
-              <button className="btn" onClick={() => setABorrar(null)}>Cancelar</button>
+              <button className="btn danger" onClick={() => darDeBaja(aBaja)}><Icon name="x" size={14} /> Dar de baja</button>
+              <button className="btn" onClick={() => setABaja(null)}>Cancelar</button>
             </div>
           </div>
         </Modal>

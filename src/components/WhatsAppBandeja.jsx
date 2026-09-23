@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Icon, fmtFecha } from './ui';
+import { Icon, Modal, fmtFecha } from './ui';
 import { api } from '../store/api';
 import { useStore } from '../store/store';
 import { ETAPAS, agruparEmbudo, resumenEmbudo, normalizarMonto } from '../data/crm.js';
@@ -22,6 +22,7 @@ export default function WhatsAppBandeja() {
   const [etiquetaNueva, setEtiquetaNueva] = useState('');
   const [nota, setNota] = useState('');
   const [verNotas, setVerNotas] = useState(false);
+  const [notaABorrar, setNotaABorrar] = useState(null);
   const [prueba, setPrueba] = useState({ telefono: '', texto: 'Hola, esta es una prueba del canal de WhatsApp de Bertika.' });
   const [avisos, setAvisos] = useState(null);
   const [vista, setVista] = useState('bandeja');
@@ -216,6 +217,18 @@ export default function WhatsAppBandeja() {
       toastShow(e.message, 'error');
     } finally {
       setEnviando(false);
+    }
+  };
+
+  // Borrar una nota interna: la API solo lo permite al autor o a un admin.
+  const borrarNota = async (n) => {
+    try {
+      await api(`/whatsapp/conversaciones/${sel}/notas/${n.id}`, { method: 'DELETE' });
+      setNotaABorrar(null);
+      await abrir(sel);
+      toastShow('Nota borrada', 'ok');
+    } catch (e) {
+      toastShow(e.message, 'error');
     }
   };
 
@@ -519,7 +532,12 @@ export default function WhatsAppBandeja() {
                     <div className="col" style={{ gap: 6, marginTop: 8 }}>
                       {(hilo.notas || []).map((n) => (
                         <div key={n.id} style={{ background: 'var(--bg-3)', borderRadius: 10, padding: '6px 9px', fontSize: 12.5 }}>
-                          <div>{n.texto}</div>
+                          <div className="row between" style={{ gap: 8, alignItems: 'flex-start' }}>
+                            <div>{n.texto}</div>
+                            {(yo?.rol === 'admin' || n.autor === yo?.email) && (
+                              <button className="chip" title="Borrar nota" onClick={() => setNotaABorrar(n)}>✕</button>
+                            )}
+                          </div>
                           <div className="wa-meta">{n.autor} · {fmtFecha(n.fecha)}</div>
                         </div>
                       ))}
@@ -543,6 +561,21 @@ export default function WhatsAppBandeja() {
           )}
         </div>
       </div>
+      )}
+
+      {notaABorrar && (
+        <Modal title="Borrar nota interna" sub={notaABorrar.autor} onClose={() => setNotaABorrar(null)}>
+          <div className="col">
+            <p className="muted" style={{ margin: 0 }}>«{notaABorrar.texto}»</p>
+            <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
+              Se borra la nota del taller. Los mensajes de la conversación no se tocan. No se puede deshacer.
+            </p>
+            <div className="grid2">
+              <button className="btn danger" onClick={() => borrarNota(notaABorrar)}><Icon name="x" size={14} /> Borrar nota</button>
+              <button className="btn" onClick={() => setNotaABorrar(null)}>Cancelar</button>
+            </div>
+          </div>
+        </Modal>
       )}
     </div>
   );

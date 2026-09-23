@@ -7,8 +7,10 @@
 // Todo el calculo sale de src/data/clientesKpis.js (probado aparte) y los datos
 // del store: clientes, ordenes y baterias. Nunca se pide nada al backend.
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useStore } from '../store/store';
 import { Icon, Modal, EstadoPill, fmtARS, fmtFecha, waNumero } from './ui';
+import { TIPOS_CLIENTE } from '../data/crm';
 import {
   resumenClientes, filtrarClientes, ordenarClientes, ORDENES, fichaCliente, tipoCliente,
 } from '../data/clientesKpis';
@@ -39,8 +41,68 @@ function Kpi({ icono, label, valor, sub, tono }) {
   );
 }
 
+// Editar la ficha del cliente. Es lo que evita que un telefono mal cargado quede
+// para siempre: nombre, contacto, empresa, telefono, email, tipo y notas.
+function FormCliente({ cliente, onGuardar, onClose, busy }) {
+  const [f, setF] = useState({
+    nombre: cliente?.nombre || '',
+    contacto: cliente?.contacto || '',
+    empresa: cliente?.empresa || '',
+    telefono: cliente?.telefono || '',
+    email: cliente?.email || '',
+    tipo: cliente?.tipo || 'particular',
+    notas: cliente?.notas || '',
+  });
+  const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
+  const valido = Boolean(f.nombre.trim()) && /^\S+@\S+\.\S+$/.test(f.email.trim());
+
+  return (
+    <Modal title="Editar cliente" sub={cliente?.nombre} onClose={onClose}>
+      <div className="col">
+        <div className="field">
+          <label>Nombre *</label>
+          <input className="input" value={f.nombre} onChange={(e) => set('nombre', e.target.value)} />
+        </div>
+        <div className="row wrap" style={{ gap: 8 }}>
+          <div className="field" style={{ flex: 1, minWidth: 180 }}>
+            <label>Contacto</label>
+            <input className="input" value={f.contacto} onChange={(e) => set('contacto', e.target.value)} placeholder="Quién atiende" />
+          </div>
+          <div className="field" style={{ flex: 1, minWidth: 180 }}>
+            <label>Teléfono</label>
+            <input className="input" value={f.telefono} onChange={(e) => set('telefono', e.target.value)} placeholder="11 5555-0101" />
+          </div>
+        </div>
+        <div className="row wrap" style={{ gap: 8 }}>
+          <div className="field" style={{ flex: 1, minWidth: 220 }}>
+            <label>Email *</label>
+            <input className="input" value={f.email} onChange={(e) => set('email', e.target.value)} placeholder="cliente@ejemplo.com" />
+          </div>
+          <div className="field" style={{ width: 200 }}>
+            <label>Tipo</label>
+            <select className="input" value={f.tipo} onChange={(e) => set('tipo', e.target.value)}>
+              {TIPOS_CLIENTE.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+            </select>
+          </div>
+        </div>
+        <div className="field">
+          <label>Empresa</label>
+          <input className="input" value={f.empresa} onChange={(e) => set('empresa', e.target.value)} placeholder="Razón social (si es flotilla)" />
+        </div>
+        <div className="field">
+          <label>Notas internas</label>
+          <textarea className="input" value={f.notas} onChange={(e) => set('notas', e.target.value)} placeholder="Preferencias, horarios de contacto, cómo nos conoció…" />
+        </div>
+        <button className="btn primary block" disabled={busy || !valido} onClick={() => onGuardar(f)}>
+          <Icon name="check" size={14} /> {busy ? 'Guardando...' : 'Guardar cambios'}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 // Ficha del cliente: contacto, numeros, ordenes, equipos y garantias.
-function Ficha({ cliente, datos, onAbrirOrden, onClose }) {
+function Ficha({ cliente, datos, onAbrirOrden, onEditar, onBaja, onClose }) {
   const f = fichaCliente(cliente, datos);
   const k = f.kpis;
   const wa = waNumero(cliente.telefono);
@@ -57,7 +119,15 @@ function Ficha({ cliente, datos, onAbrirOrden, onClose }) {
             <Icon name="mail" size={12} /> WhatsApp
           </a>
         )}
+        <button className="btn sm" onClick={onEditar}><Icon name="gear" size={12} /> Editar ficha</button>
+        <button className="btn sm danger" onClick={onBaja}><Icon name="x" size={12} /> Dar de baja</button>
       </div>
+
+      {cliente.notas && (
+        <div className="banner-info" style={{ marginBottom: 12 }}>
+          <Icon name="info" size={15} /> <span>{cliente.notas}</span>
+        </div>
+      )}
 
       <div className="grid3">
         <Kpi icono="tools" label="Órdenes activas" valor={k.activas} sub={`${k.ordenes} en total · ${k.entregadas} entregadas`} />
@@ -141,9 +211,37 @@ function Ficha({ cliente, datos, onAbrirOrden, onClose }) {
 
 export default function ClientesCrm({ onAbrirOrden }) {
   const data = useStore((s) => s.data);
+  const editarCliente = useStore((s) => s.editarCliente);
+  const darDeBajaCliente = useStore((s) => s.darDeBajaCliente);
   const [texto, setTexto] = useState('');
   const [orden, setOrden] = useState('nombre');
   const [abierto, setAbierto] = useState(null);
+  const [editar, setEditar] = useState(null);   // cliente que se está editando
+  const [aBaja, setABaja] = useState(null);     // cliente a dar de baja
+  const [busy, setBusy] = useState(false);
+
+  const guardarEdicion = async (campos) => {
+    setBusy(true);
+    try {
+      const upd = await editarCliente(editar.id, campos);
+      if (upd) setEditar(null);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const confirmarBaja = async () => {
+    setBusy(true);
+    try {
+      const ok = await darDeBajaCliente(aBaja.id);
+      if (ok) {
+        setABaja(null);
+        setAbierto(null);
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const { filas, totales } = useMemo(
     () => resumenClientes(data.clientes, data),
@@ -182,6 +280,7 @@ export default function ClientesCrm({ onAbrirOrden }) {
             <select className="input" style={{ width: 200 }} value={orden} onChange={(e) => setOrden(e.target.value)} aria-label="Ordenar por">
               {ORDENES.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
             </select>
+            <Link className="btn sm" to="/hub/papelera"><Icon name="recycl" size={13} /> Papelera</Link>
           </div>
         </div>
 
@@ -239,7 +338,12 @@ export default function ClientesCrm({ onAbrirOrden }) {
                     </td>
                     <td className="num">{k.cobrado ? fmtARS(k.cobrado) : <span className="muted">—</span>}</td>
                     <td className="muted">{k.ultimaActividad ? fmtFecha(k.ultimaActividad) : '—'}</td>
-                    <td><button className="btn sm" onClick={(e) => { e.stopPropagation(); setAbierto(c.id); }}><Icon name="eye" size={12} /> Ficha</button></td>
+                    <td>
+                      <div className="row" style={{ gap: 4 }}>
+                        <button className="btn sm" onClick={(e) => { e.stopPropagation(); setAbierto(c.id); }}><Icon name="eye" size={12} /> Ficha</button>
+                        <button className="btn sm" onClick={(e) => { e.stopPropagation(); setEditar(c); }}><Icon name="gear" size={12} /> Editar</button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -252,7 +356,36 @@ export default function ClientesCrm({ onAbrirOrden }) {
       </div>
 
       {seleccionado && (
-        <Ficha cliente={seleccionado} datos={data} onAbrirOrden={onAbrirOrden} onClose={() => setAbierto(null)} />
+        <Ficha
+          cliente={seleccionado} datos={data} onAbrirOrden={onAbrirOrden}
+          onEditar={() => setEditar(seleccionado)}
+          onBaja={() => setABaja(seleccionado)}
+          onClose={() => setAbierto(null)}
+        />
+      )}
+
+      {editar && (
+        <FormCliente cliente={editar} busy={busy} onGuardar={guardarEdicion} onClose={() => setEditar(null)} />
+      )}
+
+      {aBaja && (
+        <Modal title="Dar de baja al cliente" sub={aBaja.nombre} onClose={() => setABaja(null)}>
+          <div className="col">
+            <div className="banner-info">
+              <Icon name="info" size={15} />
+              <span>
+                El cliente <b>no se borra</b>: se guarda en la <b>Papelera</b> con quién y cuándo lo dio de baja,
+                y se puede <b>restaurar</b> cuando quieras. Sus órdenes e historial quedan intactos.
+              </span>
+            </div>
+            <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>
+              No se puede dar de baja a un cliente con órdenes en curso: primero hay que entregarlas o cancelarlas.
+            </p>
+            <button className="btn danger block" disabled={busy} onClick={confirmarBaja}>
+              <Icon name="x" size={14} /> {busy ? 'Dando de baja...' : 'Confirmar baja'}
+            </button>
+          </div>
+        </Modal>
       )}
     </div>
   );

@@ -99,6 +99,16 @@ export default function CentroNotificaciones({ onAbrirOrden }) {
     if (proximo) marcarLeidas();
   };
 
+  // Borrar una sola notificación (antes solo se podían borrar todas juntas).
+  const borrar = async (n) => {
+    try {
+      await api(`/notificaciones/${n.id}`, { method: 'DELETE' });
+      await sync();
+    } catch (e) {
+      toastShow(e.message || 'No se pudo borrar la notificación', 'error');
+    }
+  };
+
   const verOrden = (n) => {
     setAbierto(false);
     if (n?.orden_id) onAbrirOrden?.(n.orden_id);
@@ -138,21 +148,23 @@ export default function CentroNotificaciones({ onAbrirOrden }) {
                 const orden = ordenDe(n.orden_id);
                 const canal = canalDe(n.canal);
                 return (
-                  <button
-                    key={n.id}
-                    className={`bell-item${n.leida ? '' : ' new'}${n.orden_id ? '' : ' sin-link'}`}
-                    onClick={n.orden_id ? () => verOrden(n) : undefined}
-                  >
-                    <span className={`bell-ic ${canal}`}>{ICONO_CANAL[canal]}</span>
-                    <span className="bell-txt">
-                      <span className="bell-msg">{n.mensaje || 'Novedad'}</span>
-                      <span className="bell-sub">
-                        {orden ? `${orden.id} · ${orden.bateria_serie}` : (n.canal || 'Sistema')}
-                        {n.fecha ? ` · ${fechaRelativa(n.fecha)}` : ''}
+                  <div key={n.id} className="bell-fila">
+                    <button
+                      className={`bell-item${n.leida ? '' : ' new'}${n.orden_id ? '' : ' sin-link'}`}
+                      onClick={n.orden_id ? () => verOrden(n) : undefined}
+                    >
+                      <span className={`bell-ic ${canal}`}>{ICONO_CANAL[canal]}</span>
+                      <span className="bell-txt">
+                        <span className="bell-msg">{n.mensaje || 'Novedad'}</span>
+                        <span className="bell-sub">
+                          {orden ? `${orden.id} · ${orden.bateria_serie}` : (n.canal || 'Sistema')}
+                          {n.fecha ? ` · ${fechaRelativa(n.fecha)}` : ''}
+                        </span>
                       </span>
-                    </span>
-                    {nuevas.includes(n.id) && <span className="bell-dot" title="Nueva" />}
-                  </button>
+                      {nuevas.includes(n.id) && <span className="bell-dot" title="Nueva" />}
+                    </button>
+                    <button className="bell-x" title="Borrar notificación" onClick={() => borrar(n)}>✕</button>
+                  </div>
                 );
               })}
             </div>

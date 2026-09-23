@@ -4,6 +4,7 @@ import { useStore } from '../../store/store';
 import { Icon, Modal } from '../ui';
 import { AltasForm, NewOrdenForm } from '../AccionesGlobales';
 import { CONTACTO } from '../../data/siteData';
+import { contarCriticos } from '../../data/inventario';
 import CentroNotificaciones from './CentroNotificaciones';
 import BusquedaGlobal from './BusquedaGlobal';
 
@@ -41,7 +42,7 @@ function contadores(data, user) {
   const delCliente = ordenes.filter((o) => o.cliente_id === user?.id);
   return {
     activas: ordenes.filter(ACTIVAS).length,
-    stockCritico: insumos.filter((i) => i.stock < 3).length,
+    stockCritico: contarCriticos(insumos),
     porVencer,
     miasActivas: mias.filter(ACTIVAS).length,
     sinAsignar: sinAsignar.length,
@@ -102,6 +103,7 @@ function menuDe(rol, c, esFlotilla) {
     { grupo: 'Sistema', items: [
       { to: '/reportes', label: 'Reportes', icon: 'clipboard' },
       { to: '/usuarios', label: 'Usuarios', icon: 'users' },
+      { to: '/hub/papelera', label: 'Papelera', icon: 'recycl' },
       { to: '/settings', label: 'Mi cuenta', icon: 'gear' },
     ] },
   ];

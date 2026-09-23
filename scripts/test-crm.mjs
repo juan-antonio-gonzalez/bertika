@@ -1,6 +1,6 @@
 // Tests del embudo comercial (CRM). Sin base de datos:  npm test
 import assert from 'node:assert/strict';
-import { ETAPAS, ETAPA_DEFAULT, ETAPAS_ABIERTAS, normalizarEtapa, normalizarMonto, resumenEmbudo, agruparEmbudo } from '../api/crm.js';
+import { ETAPAS, ETAPA_DEFAULT, ETAPAS_ABIERTAS, normalizarEtapa, normalizarMonto, resumenEmbudo, agruparEmbudo, TIPOS_CLIENTE, normalizarTipoCliente } from '../api/crm.js';
 
 let pasaron = 0;
 const test = (nombre, fn) => {
@@ -76,6 +76,16 @@ test('agrupar arma una columna por etapa', () => {
   assert.deepEqual(cols[0].conversaciones.map((c) => c.id), ['b', 'c']);
   assert.deepEqual(cols[3].conversaciones.map((c) => c.id), ['a']);
   assert.deepEqual(cols[1].conversaciones, []);
+});
+
+test('el tipo de cliente se valida contra la lista (particular por defecto)', () => {
+  assert.deepEqual(TIPOS_CLIENTE.map((t) => t.key), ['particular', 'flotilla_corporativa']);
+  assert.equal(normalizarTipoCliente('flotilla_corporativa'), 'flotilla_corporativa');
+  assert.equal(normalizarTipoCliente('  FLOTILLA_CORPORATIVA '), 'flotilla_corporativa');
+  assert.equal(normalizarTipoCliente('particular'), 'particular');
+  assert.equal(normalizarTipoCliente('mayorista'), 'particular', 'un tipo desconocido no rompe la ficha');
+  assert.equal(normalizarTipoCliente(''), 'particular');
+  assert.equal(normalizarTipoCliente(null), 'particular');
 });
 
 console.log(`\n${pasaron} tests OK${process.exitCode ? ' (con fallas)' : ''}\n`);

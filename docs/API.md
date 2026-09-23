@@ -113,10 +113,14 @@ Staff con acceso a la orden. Devuelve `{ cotizacion, tracker }`: el enlace públ
 
 | Método | Ruta | Body / notas |
 | --- | --- | --- |
-| `POST` | `/insumos` | `{ nombre, categoria?, stock?, precio? }` → `201 { id }` (movimiento de alta) |
+| `POST` | `/insumos` | `{ nombre, categoria?, stock?, precio?, stock_minimo? }` → `201 { id }` (movimiento de alta) |
+| `PATCH` | `/insumos/:id` | `{ nombre?, categoria?, precio?, stock_minimo? }` — edita los datos del insumo. El stock **no** se toca acá (se mueve con `/stock` y `/ajuste`, que dejan el movimiento auditado) |
 | `PATCH` | `/insumos/:id/stock` | `{ cantidad, motivo? }` (suma al stock) → `{ ok, stock }` (movimiento de ingreso) |
 | `POST` | `/insumos/:id/ajuste` | `{ stock_contado, motivo }` — recuento físico: fija el stock real y audita la diferencia (motivo obligatorio) |
 | `GET` | `/insumos/:id/movimientos` | Admin/técnico: `{ insumo, movimientos[] }` con tipo, cantidad, stock resultante, motivo, orden y autor |
+
+`stock_minimo` es el umbral de "stock crítico" de cada insumo (por defecto 3). El panel lo marca en rojo
+cuando el stock baja de ese número.
 
 ## Auditoría de eventos
 
@@ -129,30 +133,40 @@ imprimible de trazabilidad.
 
 | Método | Ruta | Notas |
 | --- | --- | --- |
-| `POST` | `/clientes` | `{ nombre, email, empresa?, telefono? }` → `201 { id }` |
-| `POST` | `/clientes/find-or-create` | `{ nombre?, email, empresa?, telefono? }` → `{ id }` (reusa por email) |
+| `GET` | `/clientes` | Admin/técnico: clientes **sin** los dados de baja |
+| `GET` | `/clientes?papelera=1` | Admin: solo los dados de baja (papelera) |
+| `POST` | `/clientes` | `{ nombre, email, empresa?, telefono?, tipo?, contacto?, notas? }` → `201 { id }`. `409` si el email ya existe (o está en la papelera) |
+| `POST` | `/clientes/find-or-create` | `{ nombre?, email, empresa?, telefono? }` → `{ id }` (reusa por email; `409` si el email está en la papelera) |
+| `PATCH` | `/clientes/:id` | Admin: `{ nombre?, contacto?, empresa?, telefono?, email?, tipo?, notas? }` → cliente actualizado. `409` si el email lo usa otro; `400` si está dado de baja |
+| `DELETE` | `/clientes/:id` | Admin: **baja lógica** (guarda `deleted_at` y `deleted_by`). `400` si tiene órdenes en curso |
+| `POST` | `/clientes/:id/restaurar` | Admin: recupera un cliente de la papelera. `409` si otro cliente activo ya tiene ese email |
+
+`tipo` acepta `particular` (por defecto) o `flotilla_corporativa` (cualquier otra cosa cae en `particular`).
+Los clientes dados de baja no aparecen en `GET /estado`.
 
 ## Técnicos (admin para escritura)
 
 | Método | Ruta | Body |
 | --- | --- | --- |
+| `GET` | `/tecnicos` | Por defecto solo los activos; `?todos=1` (admin) incluye los inactivos |
 | `POST` | `/tecnicos` | `{ nombre, especialidad, certificaciones? }` → `201 { id }` |
+| `PATCH` | `/tecnicos/:id` | `{ nombre?, especialidad?, certificaciones?, activo? }` → técnico actualizado. `400` si se quiere desactivar a alguien con órdenes en curso |
 
 ## Notificaciones
 
 | Método | Ruta | Efecto |
 | --- | --- | --- |
 | `POST` | `/notificaciones/leidas` | Marca todas como leídas |
-| `DELETE` | `/notificaciones` | Elimina todas |
+| `DELETE` | `/notificaciones/:id` | Borra **una** notificación (respeta el alcance por rol) |
+| `DELETE` | `/notificaciones` | Elimina todas las del alcance del usuario |
 
 ## Usuarios (admin)
-
 | Método | Ruta | Notas |
 | --- | --- | --- |
 | `GET` | `/usuarios` | Lista (sin password_hash) |
 | `POST` | `/usuarios` | `{ email, password, rol, tecnico_id?, cliente_id? }` (`rol` ∈ admin/tecnico/cliente) → `201 { id }` |
 | `PATCH` | `/usuarios/:id` | Campos opcionales: `email, password, rol, tecnico_id, cliente_id, activo` |
-| `DELETE` | `/usuarios/:id` | Borra el usuario |
+| `DELETE` | `/usuarios/:id` | **Baja lógica**: pone `activo = false` (conserva la ficha y el historial) y el token de ese usuario deja de servir al instante. Se reactiva con `PATCH { activo: true }` |
 
 ## Bajas / reciclaje (admin)
 
@@ -174,6 +188,9 @@ Limpia todas las tablas de demo y re-siembra desde `src/data/seed.js` (corre `no
 | `GET` | `/whatsapp/conversaciones/:id` | Admin/técnico. Hilo completo + ficha del cliente + sus últimas 5 órdenes. Marca la conversación como leída. |
 | `POST` | `/whatsapp/conversaciones/:id/responder` | Admin/técnico. Body `{ texto }`. Mensaje libre (vale dentro de las 24 h desde el último mensaje del cliente). |
 | `POST` | `/whatsapp/enviar` | Admin/técnico. Body `{ telefono, texto }`. Envía a un número suelto (pruebas del canal). |
+| `PATCH` | `/whatsapp/conversaciones/:id` | Admin/técnico. `{ asignado_a?, etiquetas?, etapa?, monto_estimado? }` (CRM de la conversación). |
+| `POST` | `/whatsapp/conversaciones/:id/notas` | Admin/técnico. Body `{ texto }`. Nota interna (no se le envía al cliente). |
+| `DELETE` | `/whatsapp/conversaciones/:id/notas/:notaId` | Admin/técnico. Borra una nota: **solo el autor o un admin**. |
 | `GET` | `/whatsapp/webhook` | Público. Verificación del webhook de Meta (`hub.verify_token` → `hub.challenge`). |
 | `POST` | `/whatsapp/webhook` | Público. Avisos de Meta: mensajes entrantes y estados de entrega. Valida la firma `X-Hub-Signature-256` con `WHATSAPP_APP_SECRET` antes de procesar. |
 

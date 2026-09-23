@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
 import { useStore } from '../store/store';
 import { Icon, EstadoPill, OrdenCard, Modal, fmtDate, fmtARS, fmtFecha, nombreActor } from '../components/ui';
@@ -7,6 +7,8 @@ import CotizadorConfig from '../components/CotizadorConfig';
 import WhatsAppBandeja from '../components/WhatsAppBandeja';
 import ClientesCrm from '../components/ClientesCrm';
 import { ORDEN_ESTADOS } from '../data/reglas';
+import { esStockCritico, stockMinimo } from '../data/inventario';
+import { tipoCliente } from '../data/clientesKpis';
 
 // Columnas del tablero: todos los estados del flujo (incluye "approved" y
 // "cancelled", que antes no tenian columna y desaparecian del kanban).
@@ -61,7 +63,7 @@ function Dashboard() {
   const activas = data.ordenes.filter((o) => !['delivered', 'cancelled'].includes(o.estado));
   const cerradasHoy = data.ordenes.filter((o) => o.estado === 'delivered' && new Date(o.fecha_entrega).toDateString() === hoy);
   const ingresosHoy = cerradasHoy.reduce((a, o) => a + (num(o.monto_cobrado) || num(o.cotizacion?.monto)), 0);
-  const stockCritico = data.insumos.filter((i) => i.stock < 3);
+  const stockCritico = data.insumos.filter(esStockCritico);
   const reproceso = data.ordenes.filter((o) => o.estado === 'in_repair' && o.prueba_final?.estado === 'failed');
   const gPorVencer = [];
   for (const o of data.ordenes) {
@@ -94,7 +96,7 @@ function Dashboard() {
         <div className="kpi"><div className="kpi-label">Baterías activas en taller</div><div className="kpi-value">{activas.length}</div><div className="kpi-sub">{bateriasActivas.length} registradas en total</div></div>
         <div className="kpi"><div className="kpi-label">Órdenes cerradas hoy</div><div className="kpi-value green">{cerradasHoy.length}</div><div className="kpi-sub">{pasadasHoy.length} entrega(s) pendiente(s) del día</div></div>
         <div className="kpi"><div className="kpi-label">Ingresos del día</div><div className="kpi-value">{fmtARS(ingresosHoy)}</div><div className="kpi-sub">facturados hoy</div></div>
-        <div className={`kpi ${stockCritico.length ? 'alert' : ''}`}><div className="kpi-label">Stock bajo (crítico &lt; 3)</div><div className="kpi-value">{stockCritico.length}</div><div className="kpi-sub">cargadores y celdas con atención</div></div>
+        <div className={`kpi ${stockCritico.length ? 'alert' : ''}`}><div className="kpi-label">Stock bajo (bajo el mínimo)</div><div className="kpi-value">{stockCritico.length}</div><div className="kpi-sub">cargadores y celdas con atención</div></div>
         <div className={`kpi ${reproceso.length ? 'danger' : ''}`}><div className="kpi-label">Prueba fallida (reproceso)</div><div className="kpi-value">{reproceso.length}</div><div className="kpi-sub">regresadas a reparación</div></div>
         <div className="kpi"><div className="kpi-label">Garantías por vencer (30 días)</div><div className="kpi-value">{gPorVencer.length}</div><div className="kpi-sub">{garantiaTip} baterías bajo garantía activa</div></div>
         <div className="kpi"><div className="kpi-label">Baterías dadas de baja</div><div className="kpi-value">{data.bajas.length}</div><div className="kpi-sub">trazabilidad de reciclaje</div></div>
@@ -131,11 +133,23 @@ function Inventario() {
   const agregarStock = useStore((s) => s.agregarStock);
   const ajustarStock = useStore((s) => s.ajustarStock);
   const movimientosInsumo = useStore((s) => s.movimientosInsumo);
+  const editarInsumo = useStore((s) => s.editarInsumo);
   const toastShow = useStore((s) => s.toastShow);
   const [extra, setExtra] = useState({});
   const [mov, setMov] = useState(null);       // { insumo, movimientos } | null
   const [ajuste, setAjuste] = useState(null); // { insumo, stock, motivo } | null
+  const [editar, setEditar] = useState(null); // insumo que se está editando
   const [busy, setBusy] = useState(false);
+
+  const guardarInsumo = async (campos) => {
+    setBusy(true);
+    try {
+      const upd = await editarInsumo(editar.id, campos);
+      if (upd) setEditar(null);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const verMovimientos = async (insumo) => {
     try {
@@ -173,12 +187,12 @@ function Inventario() {
             </thead>
             <tbody>
               {data.insumos.map((i) => {
-                const crit = i.stock < 3;
+                const crit = esStockCritico(i);
                 return (
                   <tr key={i.id}>
                     <td><b>{i.nombre}</b></td>
                     <td><span className="chip">{i.categoria}</span></td>
-                    <td className="num"><span className={`badge ${i.stock === 0 ? 'gray' : crit ? 'red' : 'green'}`}>{i.stock}</span></td>
+                    <td className="num"><span className={`badge ${i.stock === 0 ? 'gray' : crit ? 'red' : 'green'}`}>{i.stock}</span>{crit && <span className="muted" style={{ fontSize: 11 }}> mín {stockMinimo(i)}</span>}</td>
                     <td className="num">{fmtARS(i.precio)}</td>
                     <td className="num mono">{fmtARS(i.stock * i.precio)}</td>
                     <td>
@@ -188,9 +202,10 @@ function Inventario() {
                       </div>
                     </td>
                     <td>
-                      <div className="row">
+                      <div className="row wrap" style={{ gap: 4 }}>
                         <button className="btn sm" onClick={() => verMovimientos(i)}><Icon name="clock" size={13} /> Movimientos</button>
                         <button className="btn sm" onClick={() => setAjuste({ insumo: i, stock: i.stock, motivo: '' })}><Icon name="refresh" size={13} /> Ajustar</button>
+                        <button className="btn sm" onClick={() => setEditar(i)}><Icon name="gear" size={13} /> Editar</button>
                       </div>
                     </td>
                   </tr>
@@ -240,12 +255,71 @@ function Inventario() {
           </div>
         </Modal>
       )}
+      {editar && (
+        <FormInsumo insumo={editar} busy={busy} onGuardar={guardarInsumo} onClose={() => setEditar(null)} />
+      )}
     </div>
+  );
+}
+
+// Editar los datos del insumo. El stock no se toca por acá: se mueve con
+// "Cargar" o "Ajustar" para que quede el movimiento auditado.
+function FormInsumo({ insumo, onGuardar, onClose, busy }) {
+  const [f, setF] = useState({
+    nombre: insumo?.nombre || '',
+    categoria: insumo?.categoria || '',
+    precio: insumo?.precio ?? '',
+    stock_minimo: stockMinimo(insumo),
+  });
+  const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
+  return (
+    <Modal title="Editar insumo" sub={`${insumo?.nombre} · stock actual ${insumo?.stock}`} onClose={onClose}>
+      <div className="col">
+        <div className="field">
+          <label>Nombre *</label>
+          <input className="input" value={f.nombre} onChange={(e) => set('nombre', e.target.value)} />
+        </div>
+        <div className="row wrap" style={{ gap: 8 }}>
+          <div className="field" style={{ flex: 1, minWidth: 160 }}>
+            <label>Categoría</label>
+            <input className="input" value={f.categoria} onChange={(e) => set('categoria', e.target.value)} placeholder="Celdas, Cargadores…" />
+          </div>
+          <div className="field" style={{ width: 150 }}>
+            <label>Precio unitario</label>
+            <input className="input" type="number" min={0} value={f.precio} onChange={(e) => set('precio', e.target.value)} />
+          </div>
+          <div className="field" style={{ width: 150 }}>
+            <label>Avisar bajo</label>
+            <input className="input" type="number" min={0} value={f.stock_minimo} onChange={(e) => set('stock_minimo', e.target.value)} />
+          </div>
+        </div>
+        <div className="banner-info">
+          <Icon name="info" size={15} /> «Avisar bajo» es el stock mínimo: el panel lo marca en rojo cuando el stock baja de ese número.
+        </div>
+        <button className="btn primary block" disabled={busy || !String(f.nombre).trim()} onClick={() => onGuardar(f)}>
+          <Icon name="check" size={14} /> {busy ? 'Guardando...' : 'Guardar cambios'}
+        </button>
+      </div>
+    </Modal>
   );
 }
 
 function Tecnicos() {
   const data = useStore((s) => s.data);
+  const editarTecnico = useStore((s) => s.editarTecnico);
+  const [editar, setEditar] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const guardarTecnico = async (campos) => {
+    setBusy(true);
+    try {
+      const upd = await editarTecnico(editar.id, campos);
+      if (upd) setEditar(null);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const cArgos = data.tecnicos.map((t) => {
     const active = data.ordenes.filter((o) => !['delivered', 'cancelled'].includes(o.estado) && o.tecnico_id === t.id);
     const bySpec = active.filter((o) => {
@@ -269,12 +343,152 @@ function Tecnicos() {
           <div className="col mt8" style={{ gap: 2 }}>
             {t.certificaciones.map((c) => <span key={c} className="muted" style={{ fontSize: 12 }}> <Icon name="shield" size={11} /> {c}</span>)}
           </div>
-          <div className="row mt16">
+          <div className="row mt16" style={{ gap: 6, flexWrap: 'wrap' }}>
             <span className="badge amber">{active.length} órdenes activas</span>
             {bySpec.length > 0 && <span className="badge orange">{bySpec.length} fuera de especialidad</span>}
+            <button className="btn sm" onClick={() => setEditar(t)}><Icon name="gear" size={12} /> Editar</button>
           </div>
         </div>
       ))}
+
+      {editar && (
+        <FormTecnico tecnico={editar} busy={busy} onGuardar={guardarTecnico} onClose={() => setEditar(null)} />
+      )}
+    </div>
+  );
+}
+
+// Editar un técnico: especialidad, certificaciones y alta/baja. Antes solo se
+// podía crear, así que no había forma de corregirlo ni de desactivarlo.
+function FormTecnico({ tecnico, onGuardar, onClose, busy }) {
+  const [f, setF] = useState({
+    nombre: tecnico?.nombre || '',
+    especialidad: tecnico?.especialidad || '',
+    certificaciones: (tecnico?.certificaciones || []).join(', '),
+    activo: tecnico?.activo !== false,
+  });
+  const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
+  const valido = Boolean(f.nombre.trim()) && Boolean(f.especialidad.trim());
+  return (
+    <Modal title="Editar técnico" sub={tecnico?.nombre} onClose={onClose}>
+      <div className="col">
+        <div className="field">
+          <label>Nombre *</label>
+          <input className="input" value={f.nombre} onChange={(e) => set('nombre', e.target.value)} />
+        </div>
+        <div className="field">
+          <label>Especialidad *</label>
+          <input className="input" value={f.especialidad} onChange={(e) => set('especialidad', e.target.value)} placeholder="Plomo-Acido, Litio / Ion-Litio, Ferroviario…" />
+        </div>
+        <div className="field">
+          <label>Certificaciones (separadas por coma)</label>
+          <input className="input" value={f.certificaciones} onChange={(e) => set('certificaciones', e.target.value)} placeholder="Seguridad e higiene, Soldadura de placas…" />
+        </div>
+        <label className="row" style={{ gap: 8, fontSize: 13 }}>
+          <input type="checkbox" checked={f.activo} onChange={(e) => set('activo', e.target.checked)} />
+          Activo (puede recibir órdenes)
+        </label>
+        <div className="banner-info">
+          <Icon name="info" size={15} /> No se puede desactivar a un técnico con órdenes en curso: hay que reasignarlas primero.
+        </div>
+        <button
+          className="btn primary block" disabled={busy || !valido}
+          onClick={() => onGuardar({
+            nombre: f.nombre,
+            especialidad: f.especialidad,
+            certificaciones: f.certificaciones.split(',').map((c) => c.trim()).filter(Boolean),
+            activo: f.activo,
+          })}
+        >
+          <Icon name="check" size={14} /> {busy ? 'Guardando...' : 'Guardar cambios'}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+// Papelera: fichas dadas de baja (baja logica). Nada se borra de verdad, asi que
+// un error se puede deshacer desde aca.
+function Papelera() {
+  const papeleraClientes = useStore((s) => s.papeleraClientes);
+  const restaurarCliente = useStore((s) => s.restaurarCliente);
+  const [filas, setFilas] = useState(null); // null = cargando
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(null);
+
+  const cargar = async () => {
+    try {
+      setFilas(await papeleraClientes());
+      setError(null);
+    } catch (e) {
+      setError(e.message || 'No se pudo cargar la papelera');
+      setFilas([]);
+    }
+  };
+
+  useEffect(() => { cargar(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const restaurar = async (c) => {
+    setBusy(c.id);
+    try {
+      const ok = await restaurarCliente(c.id);
+      if (ok) await cargar();
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  if (filas === null) return <p className="muted">Cargando la papelera...</p>;
+
+  return (
+    <div className="col">
+      <div className="banner-info">
+        <Icon name="info" size={15} />
+        <span>
+          Acá quedan los clientes <b>dados de baja</b>: no se borraron, se guardaron con quién y cuándo los dio de baja.
+          Restaurar los devuelve a la cartera con sus órdenes, equipos y garantías intactos.
+        </span>
+      </div>
+
+      {error && <p style={{ color: 'var(--red)' }}>No pude cargar la papelera: {error}</p>}
+
+      {filas.length === 0 && !error && (
+        <div className="empty">
+          <div className="big"><Icon name="recycl" size={30} /></div>
+          La papelera está vacía.
+          <p className="muted" style={{ marginTop: 6, fontSize: 12.5 }}>
+            Cuando des de baja un cliente desde Clientes / CRM, va a aparecer acá.
+          </p>
+        </div>
+      )}
+
+      {filas.length > 0 && (
+        <div className="card pad0">
+          <div style={{ overflowX: 'auto' }}>
+            <table className="tbl">
+              <thead>
+                <tr><th>Cliente</th><th>Contacto</th><th>Tipo</th><th>Baja</th><th>La dio de baja</th><th /></tr>
+              </thead>
+              <tbody>
+                {filas.map((c) => (
+                  <tr key={c.id}>
+                    <td><b>{c.nombre}</b>{c.empresa ? <span className="muted"> · {c.empresa}</span> : null}</td>
+                    <td className="muted">{c.contacto || '—'} {c.telefono ? `· ${c.telefono}` : ''}</td>
+                    <td><span className="badge gray">{tipoCliente(c.tipo)}</span></td>
+                    <td className="muted">{c.deleted_at ? fmtFecha(c.deleted_at) : '—'}</td>
+                    <td className="muted">{c.deleted_by || '—'}</td>
+                    <td>
+                      <button className="btn sm primary" disabled={busy === c.id} onClick={() => restaurar(c)}>
+                        <Icon name="refresh" size={12} /> {busy === c.id ? 'Restaurando...' : 'Restaurar'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -468,7 +682,7 @@ function HistorialSerie() {
 
 // Pestanas del Hub: cada una es una sub-ruta real (/hub/dashboard, /hub/baja...).
 // Un slug desconocido cae en el tablero, asi los enlaces viejos no rompen.
-const HUB_TABS = ['kanban', 'dashboard', 'historial', 'inventario', 'tecnicos', 'flotillas', 'garantias', 'baja', 'cotizador', 'whatsapp', 'clientes'];
+const HUB_TABS = ['kanban', 'dashboard', 'historial', 'inventario', 'tecnicos', 'flotillas', 'garantias', 'baja', 'cotizador', 'whatsapp', 'clientes', 'papelera'];
 
 export default function Hub() {
   const data = useStore((s) => s.data);
@@ -500,6 +714,7 @@ export default function Hub() {
       {tab === 'cotizador' && <CotizadorConfig />}
       {tab === 'whatsapp' && <WhatsAppBandeja />}
       {tab === 'clientes' && <ClientesCrm onAbrirOrden={setSel} />}
+      {tab === 'papelera' && <Papelera />}
 
       {sel && <OrdenDetalle orden={sel} role="admin" onClose={() => setSel(null)} />}
     </div>

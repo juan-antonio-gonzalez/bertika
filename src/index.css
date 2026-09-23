@@ -178,6 +178,14 @@ input, select, textarea { font-family: inherit; color: var(--text); }
 .bell-msg { font-size: 12.8px; color: var(--text); }
 .bell-sub { font-size: 11px; color: var(--muted); }
 .bell-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--red); flex-shrink: 0; margin-top: 6px; }
+/* Fila de notificacion: el boton de borrar aparece al pasar el mouse. */
+.bell-fila { position: relative; }
+.bell-x {
+  position: absolute; right: 6px; top: 8px; border: 0; background: transparent; color: var(--muted);
+  cursor: pointer; font-size: 11px; padding: 2px 5px; border-radius: 6px; opacity: 0; transition: opacity 0.12s;
+}
+.bell-fila:hover .bell-x { opacity: 1; }
+.bell-x:hover { background: var(--red-bg); color: var(--red); }
 .bell-empty { display: grid; place-items: center; gap: 4px; padding: 26px 16px; text-align: center; color: var(--muted); font-size: 13px; }
 .bell-pie { padding: 8px 13px; border-top: 1px solid var(--line); font-size: 11px; color: var(--muted); background: var(--bg-3); }
 

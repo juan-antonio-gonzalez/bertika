@@ -17,7 +17,7 @@ import { obtenerDolar } from './dolar.js';
 import { calcularVisita, normalizarConfig, CONFIG_DEFAULT, textoFueraCobertura } from '../src/data/cotizadorVisita.js';
 import { enviarTexto, enviarPlantilla, configPublicaWhatsApp, normalizarTelefono, normalizarEtiquetas, verificarFirma, ESTADO_ENTREGA } from './whatsapp.js';
 import { EVENTOS as EVENTOS_AVISO, PLANTILLA_POR_ESTADO, PLANTILLA_GARANTIA, normalizarAvisos, parametrosAviso, resumenAviso, debeAvisarGarantia, parametrosGarantia } from './avisos.js';
-import { normalizarEtapa, normalizarMonto } from './crm.js';
+import { normalizarEtapa, normalizarMonto, normalizarTipoCliente } from './crm.js';
 import { generarCodigoUnico, digitar, formatearCodigo } from './codigo.js';
 import { normalizarBooleano } from './validaciones.js';
 
@@ -178,6 +178,12 @@ async function asegurarCodigos() {
   // WhatsApp: bandeja de conversaciones y mensajes (entrantes y salientes).
   await query('ALTER TABLE clientes ADD COLUMN IF NOT EXISTS wa_optin BOOLEAN DEFAULT FALSE');
   await query('ALTER TABLE clientes ADD COLUMN IF NOT EXISTS wa_optin_fecha TIMESTAMPTZ');
+  // Papelera (baja logica) y datos comerciales editables del cliente.
+  await query('ALTER TABLE clientes ADD COLUMN IF NOT EXISTS notas TEXT');
+  await query('ALTER TABLE clientes ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ');
+  await query('ALTER TABLE clientes ADD COLUMN IF NOT EXISTS deleted_by TEXT');
+  // Umbral de stock critico por insumo (antes estaba fijo en 3 en la UI).
+  await query('ALTER TABLE insumos ADD COLUMN IF NOT EXISTS stock_minimo INTEGER DEFAULT 3');
   await query(`CREATE TABLE IF NOT EXISTS wa_conversaciones (
     id TEXT PRIMARY KEY,
     telefono TEXT UNIQUE,
@@ -267,7 +273,7 @@ async function asegurarCodigos() {
     await query('CREATE UNIQUE INDEX IF NOT EXISTS uq_wa_mensajes_wamid ON wa_mensajes (wa_message_id) WHERE wa_message_id IS NOT NULL');
     indiceWamid = true;
   } catch (e) { console.error(`[migracion] indice unico de mensajes: ${e.message}`); }
-  console.log('[migracion] esquema asegurado (codigos, medio de pago, historial de cotizaciones, movimientos de insumos, cotizador configurable, whatsapp, crm de whatsapp, avisos automaticos, embudo comercial, integridad)');
+  console.log('[migracion] esquema asegurado (codigos, medio de pago, historial de cotizaciones, movimientos de insumos, cotizador configurable, whatsapp, crm de whatsapp, avisos automaticos, embudo comercial, integridad, papelera de clientes)');
 }
 
 async function enviarMailContacto(d) {
@@ -478,7 +484,9 @@ app.get('/api/estado', authRequired, async (req, res) => {
   for (const t of deps) {
     if (rol === 'cliente' && (t === 'insumos' || t === 'bajas')) { out[t] = []; continue; }
     if (rol !== 'admin' && t === 'bajas') { out[t] = []; continue; }
-    out[t] = await query(`SELECT * FROM ${t}`);
+    // Los clientes dados de baja (papelera) no se mandan al panel: se recuperan
+    // desde /api/clientes?papelera=1 (solo admin).
+    out[t] = await query(t === 'clientes' ? 'SELECT * FROM clientes WHERE deleted_at IS NULL' : `SELECT * FROM ${t}`);
   }
   if (rol === 'tecnico') {
     out.ordenes = out.ordenes.filter((o) => o.tecnico_id === req.user.tecnico_id
@@ -971,21 +979,53 @@ app.post('/api/ordenes/:id/compartir', authRequired, async (req, res) => {
 
 // ---------- Insumos ----------
 app.post('/api/insumos', authRequired, requireRol('admin'), async (req, res) => {
-  const { nombre, categoria, stock, precio } = req.body || {};
+  const { nombre, categoria, stock, precio, stock_minimo } = req.body || {};
   const nombreT = limStr(nombre, 120);
   if (!nombreT) return res.status(400).json({ error: 'Falta nombre' });
   const stockInicial = Math.max(0, Math.min(Number(stock) || 0, 1000000));
+  const minimo = numEnRango(stock_minimo, 0, 100000) ?? 3;
   // Alta + movimiento de stock en una transaccion: si falla el movimiento no
   // queda un insumo sin su rastro de auditoria.
   const id = await tx(async (client) => {
     const nuevo = await nextId('ins', client);
-    await client.query('INSERT INTO insumos (id, nombre, categoria, stock, precio) VALUES ($1,$2,$3,$4,$5)', [
-      nuevo, nombreT, limStr(categoria, 60), stockInicial, Math.max(0, Math.min(Number(precio) || 0, 1e9)),
+    await client.query('INSERT INTO insumos (id, nombre, categoria, stock, precio, stock_minimo) VALUES ($1,$2,$3,$4,$5,$6)', [
+      nuevo, nombreT, limStr(categoria, 60), stockInicial, Math.max(0, Math.min(Number(precio) || 0, 1e9)), Math.round(minimo),
     ]);
     await movimientoInsumo(client, { insumoId: nuevo, tipo: 'alta', cantidad: stockInicial, stockResultante: stockInicial, motivo: 'Alta de insumo', actor: actorDe(req) });
     return nuevo;
   });
   return res.status(201).json({ id });
+});
+
+// Editar los datos del insumo (nombre, categoria, precio, umbral de stock
+// critico). El stock NO se toca por aca: se mueve con /stock y /ajuste, que
+// dejan el movimiento auditado.
+app.patch('/api/insumos/:id', authRequired, requireRol('admin'), async (req, res) => {
+  const actual = await one('SELECT * FROM insumos WHERE id = $1', [req.params.id]);
+  if (!actual) return res.status(404).json({ error: 'Insumo no encontrado' });
+  const campos = [];
+  const args = [];
+  const set = (col, valor) => { args.push(valor); campos.push(`${col} = $${args.length}`); };
+  if (req.body?.nombre !== undefined) {
+    const nombreT = limStr(req.body.nombre, 120);
+    if (!nombreT) return res.status(400).json({ error: 'El nombre no puede quedar vacío' });
+    set('nombre', nombreT);
+  }
+  if (req.body?.categoria !== undefined) set('categoria', limStr(req.body.categoria, 60));
+  if (req.body?.precio !== undefined) {
+    const precio = numEnRango(req.body.precio, 0, 1e9);
+    if (precio === null) return res.status(400).json({ error: 'El precio tiene que ser un número entre 0 y 1.000.000.000' });
+    set('precio', precio);
+  }
+  if (req.body?.stock_minimo !== undefined) {
+    const minimo = numEnRango(req.body.stock_minimo, 0, 100000);
+    if (minimo === null) return res.status(400).json({ error: 'El stock mínimo tiene que ser un número entre 0 y 100.000' });
+    set('stock_minimo', Math.round(minimo));
+  }
+  if (!campos.length) return res.status(400).json({ error: 'No hay nada para actualizar' });
+  args.push(actual.id);
+  const upd = await one(`UPDATE insumos SET ${campos.join(', ')} WHERE id = $${args.length} RETURNING *`, args);
+  return res.json(upd);
 });
 
 app.patch('/api/insumos/:id/stock', authRequired, requireRol('admin'), async (req, res) => {
@@ -1033,21 +1073,36 @@ app.get('/api/insumos/:id/movimientos', authRequired, requireRol('admin', 'tecni
 });
 
 // ---------- Clientes ----------
-app.get('/api/clientes', authRequired, requireRol('admin', 'tecnico'), async (req, res) => res.json(await query('SELECT * FROM clientes ORDER BY nombre')));
+// Listado normal (sin los dados de baja) y papelera (solo admin).
+app.get('/api/clientes', authRequired, requireRol('admin', 'tecnico'), async (req, res) => {
+  if (String(req.query?.papelera || '') === '1') {
+    if (!esAdmin(req)) return res.status(403).json({ error: 'Solo un administrador puede ver la papelera' });
+    return res.json(await query('SELECT * FROM clientes WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC LIMIT 200'));
+  }
+  return res.json(await query('SELECT * FROM clientes WHERE deleted_at IS NULL ORDER BY nombre'));
+});
 
 app.post('/api/clientes', authRequired, requireRol('admin'), async (req, res) => {
-  const { nombre, empresa, email, telefono } = req.body || {};
+  const { nombre, empresa, email, telefono, tipo, contacto, notas } = req.body || {};
   const nombreT = limStr(nombre, 120);
   const emailT = String(email || '').trim();
   if (!nombreT || !validEmail(emailT)) return res.status(400).json({ error: 'Faltan nombre y email valido' });
   // El email no puede estar repetido: se avisa con un mensaje de negocio en vez
   // del error crudo de Postgres (el indice unico es la red de seguridad).
-  const existente = await one('SELECT id, nombre FROM clientes WHERE LOWER(email) = LOWER($1)', [emailT]);
-  if (existente) return res.status(409).json({ error: `Ya hay un cliente cargado con ese email (${existente.nombre}).` });
+  // Si el email lo tiene un cliente en la papelera, se ofrece restaurarlo.
+  const existente = await one('SELECT id, nombre, deleted_at FROM clientes WHERE LOWER(email) = LOWER($1)', [emailT]);
+  if (existente) {
+    return res.status(409).json({
+      error: existente.deleted_at
+        ? `Ese email pertenece a ${existente.nombre}, que está en la papelera. Restauralo o usá otro email.`
+        : `Ya hay un cliente cargado con ese email (${existente.nombre}).`,
+    });
+  }
   const id = await nextId('cli');
   try {
-    await query('INSERT INTO clientes (id, nombre, tipo, telefono, contacto, email, empresa) VALUES ($1,$2,$3,$4,$5,$6,$7)', [
-      id, nombreT, 'particular', limStr(telefono, 40), nombreT, emailT, limStr(empresa, 120),
+    await query('INSERT INTO clientes (id, nombre, tipo, telefono, contacto, email, empresa, notas) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)', [
+      id, nombreT, normalizarTipoCliente(tipo), limStr(telefono, 40), limStr(contacto, 120) || nombreT, emailT,
+      limStr(empresa, 120), limStr(notas, 1000),
     ]);
   } catch (e) {
     if (e.code === '23505') return res.status(409).json({ error: 'Ya hay un cliente cargado con ese email.' });
@@ -1056,12 +1111,89 @@ app.post('/api/clientes', authRequired, requireRol('admin'), async (req, res) =>
   return res.status(201).json({ id });
 });
 
+// Editar la ficha: es lo que evita que un telefono mal cargado quede para siempre.
+app.patch('/api/clientes/:id', authRequired, requireRol('admin'), async (req, res) => {
+  const actual = await one('SELECT * FROM clientes WHERE id = $1', [req.params.id]);
+  if (!actual) return res.status(404).json({ error: 'Cliente no encontrado' });
+  if (actual.deleted_at) return res.status(400).json({ error: 'El cliente está dado de baja: restauralo antes de editarlo' });
+  const campos = [];
+  const args = [];
+  const set = (col, valor) => { args.push(valor); campos.push(`${col} = $${args.length}`); };
+  if (req.body?.nombre !== undefined) {
+    const nombreT = limStr(req.body.nombre, 120);
+    if (!nombreT) return res.status(400).json({ error: 'El nombre no puede quedar vacío' });
+    set('nombre', nombreT);
+  }
+  if (req.body?.contacto !== undefined) set('contacto', limStr(req.body.contacto, 120));
+  if (req.body?.empresa !== undefined) set('empresa', limStr(req.body.empresa, 120));
+  if (req.body?.telefono !== undefined) set('telefono', limStr(req.body.telefono, 40));
+  if (req.body?.notas !== undefined) set('notas', limStr(req.body.notas, 1000));
+  if (req.body?.tipo !== undefined) set('tipo', normalizarTipoCliente(req.body.tipo));
+  if (req.body?.email !== undefined) {
+    const emailT = String(req.body.email || '').trim();
+    if (!validEmail(emailT)) return res.status(400).json({ error: 'El email no es válido' });
+    const repetido = await one('SELECT id, nombre FROM clientes WHERE LOWER(email) = LOWER($1) AND id <> $2', [emailT, actual.id]);
+    if (repetido) return res.status(409).json({ error: `Ese email ya lo usa otro cliente (${repetido.nombre}).` });
+    set('email', emailT);
+  }
+  if (!campos.length) return res.status(400).json({ error: 'No hay nada para actualizar' });
+  args.push(actual.id);
+  try {
+    const upd = await one(`UPDATE clientes SET ${campos.join(', ')} WHERE id = $${args.length} RETURNING *`, args);
+    return res.json(upd);
+  } catch (e) {
+    if (e.code === '23505') return res.status(409).json({ error: 'Ese email ya lo usa otro cliente.' });
+    throw e;
+  }
+});
+
+// Baja logica: la ficha se conserva (con quien y cuando la dio de baja) y se
+// puede restaurar. No se da de baja un cliente con trabajo en curso.
+app.delete('/api/clientes/:id', authRequired, requireRol('admin'), async (req, res) => {
+  const c = await one('SELECT * FROM clientes WHERE id = $1', [req.params.id]);
+  if (!c) return res.status(404).json({ error: 'Cliente no encontrado' });
+  if (c.deleted_at) return res.status(400).json({ error: 'El cliente ya estaba dado de baja' });
+  const activas = await one(
+    "SELECT count(*)::int AS n, min(id) AS primera FROM ordenes WHERE cliente_id = $1 AND estado NOT IN ('delivered','cancelled')",
+    [c.id]
+  );
+  if (activas?.n > 0) {
+    return res.status(400).json({
+      error: `No se puede dar de baja: tiene ${activas.n} orden(es) en curso (ej. ${activas.primera}). Entregalas o cancelalas primero.`,
+    });
+  }
+  const upd = await one('UPDATE clientes SET deleted_at = now(), deleted_by = $2 WHERE id = $1 RETURNING *', [
+    c.id, actorDe(req)?.email || 'panel',
+  ]);
+  return res.json(upd);
+});
+
+app.post('/api/clientes/:id/restaurar', authRequired, requireRol('admin'), async (req, res) => {
+  const c = await one('SELECT * FROM clientes WHERE id = $1', [req.params.id]);
+  if (!c) return res.status(404).json({ error: 'Cliente no encontrado' });
+  if (!c.deleted_at) return res.status(400).json({ error: 'El cliente no está dado de baja' });
+  // Si otro cliente activo se quedo con ese email mientras estaba en la papelera,
+  // restaurarlo romperia el indice unico: se avisa en vez de fallar con un 500.
+  const repetido = await one('SELECT id, nombre FROM clientes WHERE LOWER(email) = LOWER($1) AND id <> $2 AND deleted_at IS NULL', [c.email || '', c.id]);
+  if (repetido) {
+    return res.status(409).json({ error: `No se puede restaurar: ese email ahora es de ${repetido.nombre}. Cambiale el email a uno de los dos primero.` });
+  }
+  const upd = await one('UPDATE clientes SET deleted_at = NULL, deleted_by = NULL WHERE id = $1 RETURNING *', [c.id]);
+  return res.json(upd);
+});
+
 app.post('/api/clientes/find-or-create', authRequired, requireRol('admin'), async (req, res) => {
   const { nombre, empresa, email, telefono } = req.body || {};
   const emailT = String(email || '').trim();
   if (!validEmail(emailT)) return res.status(400).json({ error: 'Falta email valido' });
-  const exist = await one('SELECT * FROM clientes WHERE LOWER(email) = LOWER($1)', [emailT]);
+  const exist = await one('SELECT * FROM clientes WHERE LOWER(email) = LOWER($1) AND deleted_at IS NULL', [emailT]);
   if (exist) return res.json({ id: exist.id });
+  // Si el email es de alguien en la papelera, no se reutiliza en silencio: la
+  // orden quedaria colgada de una ficha dada de baja.
+  const enPapelera = await one('SELECT id, nombre FROM clientes WHERE LOWER(email) = LOWER($1) AND deleted_at IS NOT NULL', [emailT]);
+  if (enPapelera) {
+    return res.status(409).json({ error: `Ese email es de ${enPapelera.nombre}, que está en la papelera: restauralo desde Papelera o usá otro email.` });
+  }
   const id = await nextId('cli');
   const nombreT = limStr(nombre, 120) || 'Cliente';
   // ON CONFLICT DO NOTHING + relectura: si dos pedidos del mismo email entran
@@ -1076,7 +1208,11 @@ app.post('/api/clientes/find-or-create', authRequired, requireRol('admin'), asyn
 });
 
 // ---------- Tecnicos ----------
-app.get('/api/tecnicos', authRequired, requireRol('admin', 'tecnico'), async (req, res) => res.json(await query('SELECT * FROM tecnicos ORDER BY nombre')));
+// Por defecto solo los activos; con ?todos=1 (admin) vienen tambien los inactivos.
+app.get('/api/tecnicos', authRequired, requireRol('admin', 'tecnico'), async (req, res) => {
+  const todos = String(req.query?.todos || '') === '1' && esAdmin(req);
+  return res.json(await query(`SELECT * FROM tecnicos${todos ? '' : ' WHERE activo = true'} ORDER BY nombre`));
+});
 
 app.post('/api/tecnicos', authRequired, requireRol('admin'), async (req, res) => {
   const { nombre, especialidad, certificaciones } = req.body || {};
@@ -1090,10 +1226,66 @@ app.post('/api/tecnicos', authRequired, requireRol('admin'), async (req, res) =>
   return res.status(201).json({ id });
 });
 
+// Editar un tecnico: especialidad, certificaciones y alta/baja. Antes solo se
+// podia crear, asi que no habia forma de corregir ni de desactivar a alguien.
+app.patch('/api/tecnicos/:id', authRequired, requireRol('admin'), async (req, res) => {
+  const actual = await one('SELECT * FROM tecnicos WHERE id = $1', [req.params.id]);
+  if (!actual) return res.status(404).json({ error: 'Técnico no encontrado' });
+  const campos = [];
+  const args = [];
+  const set = (col, valor) => { args.push(valor); campos.push(`${col} = $${args.length}`); };
+  if (req.body?.nombre !== undefined) {
+    const nombreT = limStr(req.body.nombre, 120);
+    if (!nombreT) return res.status(400).json({ error: 'El nombre no puede quedar vacío' });
+    set('nombre', nombreT);
+  }
+  if (req.body?.especialidad !== undefined) {
+    const espT = limStr(req.body.especialidad, 80);
+    if (!espT) return res.status(400).json({ error: 'La especialidad no puede quedar vacía' });
+    set('especialidad', espT);
+  }
+  if (req.body?.certificaciones !== undefined) {
+    if (!arrBounded(req.body.certificaciones, 20)) {
+      return res.status(400).json({ error: 'Las certificaciones tienen que ser una lista de hasta 20 elementos' });
+    }
+    set('certificaciones', JSON.stringify(req.body.certificaciones.map((c) => limStr(c, 120)).filter(Boolean)));
+  }
+  if (req.body?.activo !== undefined) {
+    const activo = req.body.activo === true || req.body.activo === 'true';
+    // No se desactiva a alguien con trabajo asignado sin cerrar: sus ordenes
+    // quedarian sin responsable visible en el tablero.
+    if (!activo) {
+      const pendientes = await one(
+        "SELECT count(*)::int AS n, min(id) AS primera FROM ordenes WHERE tecnico_id = $1 AND estado NOT IN ('delivered','cancelled')",
+        [actual.id]
+      );
+      if (pendientes?.n > 0 && actual.activo) {
+        return res.status(400).json({
+          error: `No se puede desactivar: tiene ${pendientes.n} orden(es) en curso (ej. ${pendientes.primera}). Reasignalas primero.`,
+        });
+      }
+    }
+    set('activo', activo);
+  }
+  if (!campos.length) return res.status(400).json({ error: 'No hay nada para actualizar' });
+  args.push(actual.id);
+  const upd = await one(`UPDATE tecnicos SET ${campos.join(', ')} WHERE id = $${args.length} RETURNING *`, args);
+  return res.json(upd);
+});
 // ---------- Notificaciones ----------
 app.post('/api/notificaciones/leidas', authRequired, async (req, res) => {
   const { clause, params } = notifWhere(req);
   await query(`UPDATE notificaciones n SET leida = true WHERE ${clause}`, params);
+  return res.json({ ok: true });
+});
+
+// Borrar UNA sola notificacion (antes solo se podian borrar todas de un saque).
+app.delete('/api/notificaciones/:id', authRequired, async (req, res) => {
+  const { clause, params } = notifWhere(req);
+  // Los parametros del filtro por rol van primero para no pisar sus $1..$n.
+  const args = [...params, req.params.id];
+  const borrada = await one(`DELETE FROM notificaciones n WHERE ${clause} AND n.id = $${args.length} RETURNING n.id`, args);
+  if (!borrada) return res.status(404).json({ error: 'Notificación no encontrada' });
   return res.json({ ok: true });
 });
 
@@ -1184,9 +1376,14 @@ app.patch('/api/usuarios/:id', authRequired, requireRol('admin'), async (req, re
 });
 
 app.delete('/api/usuarios/:id', authRequired, requireRol('admin'), async (req, res) => {
-  if (req.params.id === req.user.sub) return res.status(403).json({ error: 'No podes eliminar tu propio usuario' });
-  await query('DELETE FROM usuarios WHERE id = $1', [req.params.id]);
-  return res.json({ ok: true });
+  if (req.params.id === req.user.sub) return res.status(403).json({ error: 'No podes dar de baja tu propio usuario' });
+  const u = await one('SELECT * FROM usuarios WHERE id = $1', [req.params.id]);
+  if (!u) return res.status(404).json({ error: 'Usuario no encontrado' });
+  if (!u.activo) return res.status(400).json({ error: 'El usuario ya estaba dado de baja' });
+  // Baja logica: se conserva la ficha (y el rastro de quien tenia acceso) y se
+  // puede reactivar. Ademas el middleware rechaza el token de un usuario inactivo.
+  await query('UPDATE usuarios SET activo = false WHERE id = $1', [u.id]);
+  return res.json({ ok: true, baja: true });
 });
 
 // ---------- Bajas ----------
@@ -1777,6 +1974,18 @@ app.post('/api/whatsapp/conversaciones/:id/notas', authRequired, requireRol('adm
   const autor = actorDe(req)?.email || 'panel';
   const nota = await one('INSERT INTO wa_notas (id, conversacion_id, autor, texto) VALUES ($1,$2,$3,$4) RETURNING *', [id, conv.id, autor, texto]);
   return res.json(nota);
+});
+
+// Borrar una nota interna: solo el autor o un administrador.
+app.delete('/api/whatsapp/conversaciones/:id/notas/:notaId', authRequired, requireRol('admin', 'tecnico'), async (req, res) => {
+  const nota = await one('SELECT * FROM wa_notas WHERE id = $1 AND conversacion_id = $2', [req.params.notaId, req.params.id]);
+  if (!nota) return res.status(404).json({ error: 'Nota no encontrada' });
+  const quien = actorDe(req)?.email || 'panel';
+  if (!esAdmin(req) && nota.autor !== quien) {
+    return res.status(403).json({ error: 'Solo el autor de la nota o un administrador pueden borrarla' });
+  }
+  await query('DELETE FROM wa_notas WHERE id = $1', [nota.id]);
+  return res.json({ ok: true, id: nota.id });
 });
 
 app.get('/api/whatsapp/conversaciones/:id', authRequired, requireRol('admin', 'tecnico'), async (req, res) => {

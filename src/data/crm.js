@@ -17,6 +17,18 @@ export const ETAPAS = [
 export const ETAPA_DEFAULT = 'nuevo';
 export const ETAPAS_ABIERTAS = ['nuevo', 'presupuestado', 'negociando'];
 
+// Tipos de cliente que acepta la ficha (el CRM los muestra con etiqueta legible).
+export const TIPOS_CLIENTE = [
+  { key: 'particular', label: 'Particular' },
+  { key: 'flotilla_corporativa', label: 'Flotilla corporativa' },
+];
+
+// Deja el tipo en un valor valido (cualquier cosa rara cae en 'particular').
+export function normalizarTipoCliente(valor) {
+  const v = String(valor || '').trim().toLowerCase();
+  return TIPOS_CLIENTE.some((t) => t.key === v) ? v : 'particular';
+}
+
 // Deja la etapa en un valor valido (cualquier cosa rara cae en 'nuevo').
 export function normalizarEtapa(valor) {
   const v = String(valor || '').trim().toLowerCase();

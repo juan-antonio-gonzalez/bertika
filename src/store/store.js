@@ -338,6 +338,76 @@ export const useStore = create()((set, get) => ({
     }
   },
 
+  // ---------- Editar y dar de baja (admin) ----------
+  // Corregir la ficha de un cliente: sin esto, un teléfono mal cargado quedaba
+  // para siempre. Devuelve el cliente actualizado o null si falló.
+  async editarCliente(id, campos) {
+    try {
+      const upd = await api(`/clientes/${id}`, { method: 'PATCH', body: campos });
+      await get().sync();
+      get().toastShow('Ficha del cliente actualizada', 'ok');
+      return upd;
+    } catch (e) {
+      get().toastShow(e.message, 'error');
+      return null;
+    }
+  },
+
+  // Baja lógica: queda en la papelera y se puede restaurar.
+  async darDeBajaCliente(id) {
+    try {
+      await api(`/clientes/${id}`, { method: 'DELETE' });
+      await get().sync();
+      get().toastShow('Cliente enviado a la papelera', 'warn');
+      return true;
+    } catch (e) {
+      get().toastShow(e.message, 'error');
+      return false;
+    }
+  },
+
+  async restaurarCliente(id) {
+    try {
+      await api(`/clientes/${id}/restaurar`, { method: 'POST' });
+      await get().sync();
+      get().toastShow('Cliente restaurado', 'ok');
+      return true;
+    } catch (e) {
+      get().toastShow(e.message, 'error');
+      return false;
+    }
+  },
+
+  // Lista de la papelera (no vive en data: son fichas dadas de baja).
+  papeleraClientes() {
+    return api('/clientes?papelera=1');
+  },
+
+  async editarTecnico(id, campos) {
+    try {
+      const upd = await api(`/tecnicos/${id}`, { method: 'PATCH', body: campos });
+      await get().sync();
+      get().toastShow('Técnico actualizado', 'ok');
+      return upd;
+    } catch (e) {
+      get().toastShow(e.message, 'error');
+      return null;
+    }
+  },
+
+  // Solo los datos del insumo: el stock se mueve con agregarStock/ajustarStock.
+  async editarInsumo(id, campos) {
+    try {
+      const upd = await api(`/insumos/${id}`, { method: 'PATCH', body: campos });
+      await get().sync();
+      get().toastShow('Insumo actualizado', 'ok');
+      return upd;
+    } catch (e) {
+      get().toastShow(e.message, 'error');
+      return null;
+    }
+  },
+
   // ---------- Baja / reciclaje ----------
   async darDeBaja(ordenId, motivo) {
     try {

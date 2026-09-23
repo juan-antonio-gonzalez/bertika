@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { Icon, fmtARS } from '../components/ui';
 import { useStore } from '../store/store';
+import { esStockCritico } from '../data/inventario';
 
 const csv = (rows) => {
   const esc = (v) => {
@@ -31,7 +32,7 @@ export default function Reportes() {
     const cotizado = data.ordenes.reduce((t, o) => t + (o.cotizacion?.monto || 0), 0);
     const enCurso = data.ordenes.filter((o) => o.estado !== 'delivered' && o.estado !== 'cancelled');
     const pendienteAprobar = data.ordenes.filter((o) => o.estado === 'quoted');
-    const criticos = data.insumos.filter((i) => i.stock < 3);
+    const criticos = data.insumos.filter(esStockCritico);
     return { entregadas: entregadas.length, cobrado, cotizado, enCurso: enCurso.length, pendienteAprobar: pendienteAprobar.length, criticos };
   }, [data]);
 
@@ -81,7 +82,7 @@ export default function Reportes() {
         <div className="kpi green"><div className="kpi-label">Cobrado (entregadas)</div><div className="kpi-value">{fmtARS(resumen.cobrado)}</div><div className="kpi-sub">{resumen.entregadas} entregas</div></div>
         <div className="kpi"><div className="kpi-label">Cotizado (total cartera)</div><div className="kpi-value">{fmtARS(resumen.cotizado)}</div><div className="kpi-sub">({resumen.enCurso} en taller)</div></div>
         <div className="kpi alert"><div className="kpi-label">Cotizaciones a aprobar</div><div className="kpi-value">{resumen.pendienteAprobar}</div><div className="kpi-sub">esperando cliente</div></div>
-        <div className="kpi danger"><div className="kpi-label">Stock critico</div><div className="kpi-value">{resumen.criticos.length}</div><div className="kpi-sub">insumos con &lt;3</div></div>
+        <div className="kpi danger"><div className="kpi-label">Stock critico</div><div className="kpi-value">{resumen.criticos.length}</div><div className="kpi-sub">insumos bajo el mínimo</div></div>
       </div>
 
       <div className="card mt24">
