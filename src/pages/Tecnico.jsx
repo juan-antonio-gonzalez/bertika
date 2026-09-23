@@ -1,12 +1,13 @@
 import { useMemo, useState } from 'react';
 import { useStore } from '../store/store';
+import TareasCrm from '../components/TareasCrm';
 import { Icon, EstadoPill, fmtDate, appIconName, fmtTiempo, fmtARS, diasEnEstado, etiquetaAntiguedad, tonoAntiguedad } from '../components/ui';
 import OrdenDetalle from '../components/OrdenDetalle';
 import { ESTADO_LABEL } from '../data/reglas';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
 
 // Pestanas del tecnico: cada una es una sub-ruta real (/tecnico/sin-asignar...).
-const TECNICO_TABS = { 'mis-ordenes': 'activas', 'sin-asignar': 'sin_asignar', completadas: 'completadas' };
+const TECNICO_TABS = { 'mis-ordenes': 'activas', 'sin-asignar': 'sin_asignar', completadas: 'completadas', tareas: 'tareas' };
 
 export default function Tecnico() {
   const navigate = useNavigate();
@@ -52,6 +53,8 @@ export default function Tecnico() {
   const listaCompletadas = completadas.filter(porEstado).filter(coincide).sort(porAntiguedad);
   const vis = tab === 'activas' ? listaActivas : tab === 'sin_asignar' ? listaSinAsignar : listaCompletadas;
   if (slug && !TECNICO_TABS[slug]) return <Navigate to="/tecnico/mis-ordenes" replace />;
+  // Mis tareas: la misma pantalla del CRM (la API ya devuelve solo las mias).
+  if (tab === 'tareas') return <div className="wrap page"><TareasCrm /></div>;
 
   return (
     <div className="wrap page">

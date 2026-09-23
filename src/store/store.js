@@ -10,6 +10,7 @@ const emptyData = () => ({
   ordenes: [],
   bajas: [],
   notificaciones: [],
+  tareas: [],
   seq: { ev: 100, ord: 100, bat: 100 },
 });
 
@@ -308,9 +309,15 @@ export const useStore = create()((set, get) => ({
   },
 
   // ---------- Altas (admin) ----------
-  async crearCliente({ nombre, empresa, email, telefono }) {
+  // El alta acepta tambien los datos comerciales del CRM (direccion, CUIT,
+  // condicion de pago, como nos conocio, vendedor): los manda tal cual los recibe.
+  async crearCliente(campos) {
     try {
-      await api('/clientes', { method: 'POST', body: { nombre, empresa, email, telefono } });
+      const { nombre, empresa, email, telefono, tipo, contacto, notas, direccion, localidad, cuit, condicion_pago, canal_origen, vendedor } = campos || {};
+      await api('/clientes', {
+        method: 'POST',
+        body: { nombre, empresa, email, telefono, tipo, contacto, notas, direccion, localidad, cuit, condicion_pago, canal_origen, vendedor },
+      });
       await get().sync();
       get().toastShow('Cliente creado', 'ok');
     } catch (e) {

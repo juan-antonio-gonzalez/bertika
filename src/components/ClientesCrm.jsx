@@ -10,6 +10,7 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useStore } from '../store/store';
 import { Icon, Modal, EstadoPill, fmtARS, fmtFecha, waNumero } from './ui';
+import { CANALES_ORIGEN, camposComercialesCargados } from '../data/crm.js';
 import { TIPOS_CLIENTE } from '../data/crm';
 import {
   resumenClientes, filtrarClientes, ordenarClientes, ORDENES, fichaCliente, tipoCliente,
@@ -52,6 +53,12 @@ function FormCliente({ cliente, onGuardar, onClose, busy }) {
     email: cliente?.email || '',
     tipo: cliente?.tipo || 'particular',
     notas: cliente?.notas || '',
+    direccion: cliente?.direccion || '',
+    localidad: cliente?.localidad || '',
+    cuit: cliente?.cuit || '',
+    condicion_pago: cliente?.condicion_pago || '',
+    canal_origen: cliente?.canal_origen || '',
+    vendedor: cliente?.vendedor || '',
   });
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
   const valido = Boolean(f.nombre.trim()) && /^\S+@\S+\.\S+$/.test(f.email.trim());
@@ -89,6 +96,40 @@ function FormCliente({ cliente, onGuardar, onClose, busy }) {
           <label>Empresa</label>
           <input className="input" value={f.empresa} onChange={(e) => set('empresa', e.target.value)} placeholder="Razón social (si es flotilla)" />
         </div>
+        <p className="muted" style={{ fontSize: 12, margin: '4px 0 0' }}>Datos comerciales</p>
+        <div className="row wrap" style={{ gap: 8 }}>
+          <div className="field" style={{ flex: 1, minWidth: 220 }}>
+            <label>Dirección</label>
+            <input className="input" value={f.direccion} onChange={(e) => set('direccion', e.target.value)} placeholder="Calle y número" />
+          </div>
+          <div className="field" style={{ flex: 1, minWidth: 160 }}>
+            <label>Localidad</label>
+            <input className="input" value={f.localidad} onChange={(e) => set('localidad', e.target.value)} placeholder="Ciudad / partido" />
+          </div>
+        </div>
+        <div className="row wrap" style={{ gap: 8 }}>
+          <div className="field" style={{ width: 180 }}>
+            <label>CUIT</label>
+            <input className="input" value={f.cuit} onChange={(e) => set('cuit', e.target.value)} placeholder="30-12345678-9" />
+          </div>
+          <div className="field" style={{ flex: 1, minWidth: 160 }}>
+            <label>Condición de pago</label>
+            <input className="input" value={f.condicion_pago} onChange={(e) => set('condicion_pago', e.target.value)} placeholder="Contado / 30 días" />
+          </div>
+        </div>
+        <div className="row wrap" style={{ gap: 8 }}>
+          <div className="field" style={{ flex: 1, minWidth: 180 }}>
+            <label>Cómo nos conoció</label>
+            <input className="input" list="canales-origen-cliente" value={f.canal_origen} onChange={(e) => set('canal_origen', e.target.value)} placeholder="WhatsApp, recomendación…" />
+            <datalist id="canales-origen-cliente">
+              {CANALES_ORIGEN.map((c) => <option key={c} value={c} />)}
+            </datalist>
+          </div>
+          <div className="field" style={{ flex: 1, minWidth: 160 }}>
+            <label>Vendedor</label>
+            <input className="input" value={f.vendedor} onChange={(e) => set('vendedor', e.target.value)} placeholder="Quién lo atiende" />
+          </div>
+        </div>
         <div className="field">
           <label>Notas internas</label>
           <textarea className="input" value={f.notas} onChange={(e) => set('notas', e.target.value)} placeholder="Preferencias, horarios de contacto, cómo nos conoció…" />
@@ -105,6 +146,7 @@ function FormCliente({ cliente, onGuardar, onClose, busy }) {
 function Ficha({ cliente, datos, onAbrirOrden, onEditar, onBaja, onClose }) {
   const f = fichaCliente(cliente, datos);
   const k = f.kpis;
+  const comerciales = camposComercialesCargados(cliente);
   const wa = waNumero(cliente.telefono);
   const abrir = (o) => { onClose(); onAbrirOrden?.(o); };
 
@@ -126,6 +168,20 @@ function Ficha({ cliente, datos, onAbrirOrden, onEditar, onBaja, onClose }) {
       {cliente.notas && (
         <div className="banner-info" style={{ marginBottom: 12 }}>
           <Icon name="info" size={15} /> <span>{cliente.notas}</span>
+        </div>
+      )}
+
+      {/* Datos comerciales: solo se muestran los que tienen algo cargado. */}
+      {comerciales.length > 0 && (
+        <div className="card" style={{ marginBottom: 12 }}>
+          <div className="card-title"><Icon name="building" size={14} /> Datos comerciales</div>
+          <div className="row wrap" style={{ gap: 8 }}>
+            {comerciales.map((c) => (
+              <span key={c.key} className="pill" title={c.label}>
+                <b style={{ fontWeight: 700 }}>{c.label}:</b> {c.valor}
+              </span>
+            ))}
+          </div>
         </div>
       )}
 

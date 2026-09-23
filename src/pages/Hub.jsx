@@ -6,6 +6,7 @@ import OrdenDetalle from '../components/OrdenDetalle';
 import CotizadorConfig from '../components/CotizadorConfig';
 import WhatsAppBandeja from '../components/WhatsAppBandeja';
 import ClientesCrm from '../components/ClientesCrm';
+import TareasCrm from '../components/TareasCrm';
 import { ORDEN_ESTADOS } from '../data/reglas';
 import { esStockCritico, stockMinimo } from '../data/inventario';
 import { tipoCliente } from '../data/clientesKpis';
@@ -682,7 +683,7 @@ function HistorialSerie() {
 
 // Pestanas del Hub: cada una es una sub-ruta real (/hub/dashboard, /hub/baja...).
 // Un slug desconocido cae en el tablero, asi los enlaces viejos no rompen.
-const HUB_TABS = ['kanban', 'dashboard', 'historial', 'inventario', 'tecnicos', 'flotillas', 'garantias', 'baja', 'cotizador', 'whatsapp', 'clientes', 'papelera'];
+const HUB_TABS = ['kanban', 'dashboard', 'historial', 'inventario', 'tecnicos', 'flotillas', 'garantias', 'baja', 'cotizador', 'whatsapp', 'clientes', 'tareas', 'papelera'];
 
 export default function Hub() {
   const data = useStore((s) => s.data);
@@ -714,6 +715,7 @@ export default function Hub() {
       {tab === 'cotizador' && <CotizadorConfig />}
       {tab === 'whatsapp' && <WhatsAppBandeja />}
       {tab === 'clientes' && <ClientesCrm onAbrirOrden={setSel} />}
+      {tab === 'tareas' && <TareasCrm />}
       {tab === 'papelera' && <Papelera />}
 
       {sel && <OrdenDetalle orden={sel} role="admin" onClose={() => setSel(null)} />}

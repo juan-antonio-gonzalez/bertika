@@ -79,3 +79,211 @@ export function agruparEmbudo(convs) {
     conversaciones: filas.filter((c) => normalizarEtapa(c?.etapa) === e.key),
   }));
 }
+
+// ---------- Datos comerciales del cliente ----------
+
+// Campos comerciales de la ficha (CRM). El orden es el que se muestra.
+export const CAMPOS_COMERCIALES = [
+  { key: 'direccion', label: 'Dirección', max: 160 },
+  { key: 'localidad', label: 'Localidad', max: 80 },
+  { key: 'cuit', label: 'CUIT', max: 20 },
+  { key: 'condicion_pago', label: 'Condición de pago', max: 60 },
+  { key: 'canal_origen', label: 'Cómo nos conoció', max: 60 },
+  { key: 'vendedor', label: 'Vendedor', max: 80 },
+];
+
+// Canales de origen sugeridos (se puede escribir otro).
+export const CANALES_ORIGEN = ['WhatsApp', 'Recomendación', 'Instagram', 'Facebook', 'Google', 'Pasó por el taller', 'Flotilla', 'Otro'];
+
+// Devuelve solo los campos comerciales que tienen algo, listos para mostrar.
+export function camposComercialesCargados(cliente) {
+  return CAMPOS_COMERCIALES
+    .map((c) => ({ ...c, valor: String(cliente?.[c.key] || '').trim() }))
+    .filter((c) => c.valor !== '');
+}
+
+// ---------- Motivo de pérdida ----------
+
+export const MOTIVOS_PERDIDA = ['Precio', 'Compró en otro lado', 'No era el momento', 'No contestó más', 'Reparación no convenía', 'Otro'];
+
+// El motivo es obligatorio para dar una oportunidad por perdida.
+export function faltaMotivoPerdida(etapa, motivo) {
+  return normalizarEtapa(etapa) === 'perdido' && String(motivo || '').trim() === '';
+}
+
+// ---------- Métricas del embudo ----------
+
+// Orden del flujo comercial (perdido queda afuera: no es un paso hacia adelante).
+export const FLUJO = ['nuevo', 'presupuestado', 'negociando', 'ganado'];
+
+const red2 = (n) => Math.round(n * 10000) / 10000;
+const aFecha = (v) => {
+  const t = v ? new Date(v).getTime() : NaN;
+  return Number.isFinite(t) ? t : null;
+};
+
+// Metricas del embudo a partir de las conversaciones, el historial de etapas y
+// la primera fecha de cada conversacion (para saber cuando entro a "nuevo").
+export function calcularMetricas({ conversaciones = [], historial = [], primeras = {}, ahora = Date.now() } = {}) {
+  const convs = Array.isArray(conversaciones) ? conversaciones : [];
+  const hist = Array.isArray(historial) ? historial : [];
+  const resumen = resumenEmbudo(convs);
+  const total = convs.length;
+
+  // 1) Cuantas oportunidades llegaron a cada etapa (las de hoy + las que pasaron).
+  //    Todas arrancan en "nuevo", asi que esa etapa cuenta el total.
+  const alcanzo = {};
+  for (const e of ETAPAS) alcanzo[e.key] = 0;
+  alcanzo[ETAPA_DEFAULT] = total;
+  const vistas = new Set(convs.map((c) => `${c?.id || ''}|${ETAPA_DEFAULT}`));
+  const sumar = (id, etapa) => {
+    const clave = `${id}|${etapa}`;
+    if (vistas.has(clave)) return;
+    vistas.add(clave);
+    alcanzo[etapa] += 1;
+  };
+  for (const c of convs) sumar(c?.id || '', normalizarEtapa(c?.etapa));
+  for (const h of hist) sumar(h?.conversacion_id || '', normalizarEtapa(h?.nueva));
+
+  // La conversion de cada paso se mide contra la ultima etapa del flujo que tuvo
+  // oportunidades (si nadie pasó por "negociando", no tiene sentido dividir por 0:
+  // se compara con la anterior que sí tuvo).
+  const embudo = FLUJO.map((etapa, i) => {
+    let base = null;
+    for (let j = i - 1; j >= 0; j -= 1) {
+      if (alcanzo[FLUJO[j]] > 0) { base = alcanzo[FLUJO[j]]; break; }
+    }
+    return {
+      etapa,
+      cantidad: alcanzo[etapa],
+      tasaDelTotal: total ? red2(alcanzo[etapa] / total) : 0,
+      tasaDeAnterior: i === 0
+        ? (total ? red2(alcanzo[etapa] / total) : 0)
+        : (base ? red2(alcanzo[etapa] / base) : null),
+    };
+  });
+
+  const cerradas = resumen.ganado.cantidad + resumen.perdido.cantidad;
+  const tasaCierre = cerradas ? red2(resumen.ganado.cantidad / cerradas) : null;
+
+  // 2) Motivos de perdida (contados del historial, agrupados sin distinguir mayusculas).
+  const motivosMap = new Map();
+  for (const h of hist) {
+    if (normalizarEtapa(h?.nueva) !== 'perdido') continue;
+    const motivo = String(h?.motivo || '').trim();
+    if (!motivo) continue;
+    const clave = motivo.toLowerCase();
+    const prev = motivosMap.get(clave) || { motivo, cantidad: 0, monto: 0 };
+    prev.cantidad += 1;
+    prev.monto = red2(prev.monto + (normalizarMonto(h?.monto) || 0));
+    motivosMap.set(clave, prev);
+  }
+  const motivos = [...motivosMap.values()]
+    .sort((a, b) => b.cantidad - a.cantidad || a.motivo.localeCompare(b.motivo))
+    .slice(0, 5);
+
+  // 3) Tiempo medio en cada etapa: se recorre el historial de cada conversacion
+  //    midiendo el tramo entre un cambio y el siguiente (o hasta ahora si sigue ahi).
+  const porConv = new Map();
+  for (const h of hist) {
+    const id = String(h?.conversacion_id || '');
+    if (!id) continue;
+    if (!porConv.has(id)) porConv.set(id, []);
+    porConv.get(id).push(h);
+  }
+  const acumulado = {};
+  for (const e of ETAPAS) acumulado[e.key] = { totalMs: 0, muestras: 0 };
+  const medir = (etapa, desde, hasta) => {
+    if (desde === null || hasta === null || hasta < desde) return;
+    acumulado[etapa].totalMs += hasta - desde;
+    acumulado[etapa].muestras += 1;
+  };
+  for (const c of convs) {
+    const id = c?.id || '';
+    const filas = (porConv.get(id) || [])
+      .slice()
+      .sort((a, b) => (aFecha(a.fecha) || 0) - (aFecha(b.fecha) || 0));
+    let etapa = ETAPA_DEFAULT;
+    let desde = aFecha(primeras[id]) ?? aFecha(c?.ultima_fecha);
+    for (const h of filas) {
+      const f = aFecha(h.fecha);
+      medir(etapa, desde, f);
+      etapa = normalizarEtapa(h.nueva);
+      desde = f;
+    }
+    if (normalizarEtapa(c?.etapa) === etapa) medir(etapa, desde, ahora);
+  }
+  const tiempoPorEtapa = {};
+  for (const e of ETAPAS) {
+    const a = acumulado[e.key];
+    tiempoPorEtapa[e.key] = { promedioMs: a.muestras ? Math.round(a.totalMs / a.muestras) : null, muestras: a.muestras };
+  }
+
+  return {
+    total,
+    porEtapa: resumen.porEtapa,
+    abiertos: resumen.abiertos,
+    ganado: resumen.ganado,
+    perdido: resumen.perdido,
+    embudo,
+    tasaCierre,
+    motivos,
+    tiempoPorEtapa,
+  };
+}
+
+// Duracion legible ("3 d 4 h", "45 min", "—" si no hay dato).
+export function formatearDuracion(ms) {
+  if (!Number.isFinite(ms) || ms < 0) return '—';
+  const min = Math.round(ms / 60000);
+  if (min < 60) return `${min} min`;
+  const horas = Math.floor(min / 60);
+  if (horas < 24) return `${horas} h ${min % 60} min`;
+  return `${Math.floor(horas / 24)} d ${horas % 24} h`;
+}
+
+// Porcentaje legible ("35 %" o "—" si no hay base de calculo).
+export function formatearTasa(tasa) {
+  if (tasa === null || tasa === undefined || !Number.isFinite(Number(tasa))) return '—';
+  return `${Math.round(Number(tasa) * 100)} %`;
+}
+
+// ---------- Tareas / recordatorios ----------
+
+export const ESTADOS_TAREA = [
+  { key: 'pendiente', label: 'Pendiente' },
+  { key: 'cerrada', label: 'Cerrada' },
+];
+
+export function normalizarEstadoTarea(valor) {
+  const v = String(valor || '').trim().toLowerCase();
+  return ESTADOS_TAREA.some((e) => e.key === v) ? v : 'pendiente';
+}
+
+// Una tarea vencida es la pendiente cuya fecha ya paso.
+export function tareaVencida(tarea, ahora = Date.now()) {
+  if (normalizarEstadoTarea(tarea?.estado) !== 'pendiente') return false;
+  const v = aFecha(tarea?.vence);
+  return v !== null && v < ahora;
+}
+
+// Ordena por vencimiento: primero las vencidas, despues las que vencen antes y
+// al final las que no tienen fecha.
+export function ordenarTareas(tareas) {
+  const filas = Array.isArray(tareas) ? tareas.slice() : [];
+  return filas.sort((a, b) => {
+    const va = aFecha(a?.vence);
+    const vb = aFecha(b?.vence);
+    if (va === null && vb === null) return 0;
+    if (va === null) return 1;
+    if (vb === null) return -1;
+    return va - vb;
+  });
+}
+
+// Cantidad de tareas pendientes (para el contador del menu). Con `soloDe` cuenta
+// unicamente las asignadas a esa persona.
+export function contarTareasPendientes(tareas, { soloDe = null } = {}) {
+  const filas = Array.isArray(tareas) ? tareas : [];
+  return filas.filter((t) => normalizarEstadoTarea(t?.estado) === 'pendiente' && (!soloDe || t?.asignado_a === soloDe)).length;
+}

@@ -2,7 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { Icon, Modal, fmtFecha } from './ui';
 import { api } from '../store/api';
 import { useStore } from '../store/store';
-import { ETAPAS, agruparEmbudo, resumenEmbudo, normalizarMonto } from '../data/crm.js';
+import {
+  ETAPAS, agruparEmbudo, resumenEmbudo, normalizarMonto, formatearDuracion, formatearTasa,
+  MOTIVOS_PERDIDA, TIPOS_CLIENTE, CANALES_ORIGEN,
+} from '../data/crm.js';
 
 const listaDe = (texto) => String(texto || '').split(', ').filter(Boolean);
 
@@ -10,6 +13,8 @@ const listaDe = (texto) => String(texto || '').split(', ').filter(Boolean);
 // conversacion (responsable, etiquetas, notas internas y ficha del cliente).
 export default function WhatsAppBandeja() {
   const toastShow = useStore((s) => s.toastShow);
+  const clientes = useStore((s) => s.data.clientes) || [];
+  const sync = useStore((s) => s.sync);
   const yo = useStore((s) => s.user);
   const [estado, setEstado] = useState(null);
   const [convs, setConvs] = useState([]);
@@ -28,6 +33,13 @@ export default function WhatsAppBandeja() {
   const [vista, setVista] = useState('bandeja');
   const [embudo, setEmbudo] = useState([]);
   const [revisando, setRevisando] = useState(false);
+  const [metricas, setMetricas] = useState(null);
+  const [motivoPerdida, setMotivoPerdida] = useState(null);
+  const [motivo, setMotivo] = useState('');
+  const [vincular, setVincular] = useState(false);
+  const [buscaCliente, setBuscaCliente] = useState('');
+  const [crearCli, setCrearCli] = useState(null);
+  const [tareaNueva, setTareaNueva] = useState(null);
   const [enviando, setEnviando] = useState(false);
   const [cargando, setCargando] = useState(true);
   const finRef = useRef(null);
@@ -59,13 +71,85 @@ export default function WhatsAppBandeja() {
   const cargarEmbudo = async () => {
     try { setEmbudo(await api('/whatsapp/conversaciones')); } catch (e) { toastShow(e.message, 'error'); }
   };
-  const moverEtapa = async (id, etapa) => {
+  const cargarMetricas = async () => {
+    try { setMetricas(await api('/whatsapp/metricas')); } catch (e) { toastShow(e.message, 'error'); }
+  };
+  // Perder una oportunidad exige motivo: se pide antes de guardar (queda en el
+  // historial de etapas y alimenta el ranking de motivos).
+  const moverEtapa = async (id, etapa, textoMotivo = '') => {
+    if (etapa === 'perdido' && !textoMotivo) {
+      const conv = embudo.find((c) => c.id === id);
+      setMotivo('');
+      setMotivoPerdida({ id, titulo: conv?.cliente_nombre || conv?.nombre_perfil || conv?.telefono || id });
+      return;
+    }
     setEmbudo((cs) => cs.map((c) => (c.id === id ? { ...c, etapa } : c)));
     try {
-      await api(`/whatsapp/conversaciones/${id}`, { method: 'PATCH', body: { etapa } });
+      await api(`/whatsapp/conversaciones/${id}`, { method: 'PATCH', body: { etapa, motivo: textoMotivo || undefined } });
+      if (vista === 'metricas') cargarMetricas();
     } catch (e) {
       toastShow(e.message, 'error');
       cargarEmbudo();
+    }
+  };
+  const confirmarPerdida = async () => {
+    const t = motivo.trim();
+    if (!t) return toastShow('Escribí el motivo de la pérdida', 'warn');
+    const pend = motivoPerdida;
+    setMotivoPerdida(null);
+    await moverEtapa(pend.id, 'perdido', t);
+  };
+  const vincularCliente = async (clienteId) => {
+    try {
+      await api(`/whatsapp/conversaciones/${sel}`, { method: 'PATCH', body: { cliente_id: clienteId } });
+      toastShow('Conversación vinculada al cliente', 'ok');
+      setVincular(false);
+      setBuscaCliente('');
+      await abrir(sel);
+      cargarConvs(filtro);
+    } catch (e) {
+      toastShow(e.message, 'error');
+    }
+  };
+  const guardarClienteNuevo = async () => {
+    const f = crearCli || {};
+    if (!String(f.nombre || '').trim() || !/^\S+@\S+\.\S+$/.test(String(f.email || '').trim())) {
+      return toastShow('El nombre y un email válido son obligatorios', 'warn');
+    }
+    setEnviando(true);
+    try {
+      const nuevo = await api('/clientes', { method: 'POST', body: f });
+      if (nuevo?.id) await api(`/whatsapp/conversaciones/${sel}`, { method: 'PATCH', body: { cliente_id: nuevo.id } });
+      toastShow('Cliente creado y vinculado', 'ok');
+      setCrearCli(null);
+      await sync();
+      await abrir(sel);
+      cargarConvs(filtro);
+    } catch (e) {
+      toastShow(e.message, 'error');
+    } finally {
+      setEnviando(false);
+    }
+  };
+  const guardarTarea = async () => {
+    const f = tareaNueva || {};
+    if (!String(f.titulo || '').trim()) return toastShow('La tarea necesita un título', 'warn');
+    setEnviando(true);
+    try {
+      await api('/whatsapp/tareas', {
+        method: 'POST',
+        body: {
+          titulo: f.titulo, vence: f.vence || null, asignado_a: f.asignado_a || '',
+          conversacion_id: sel, cliente_id: hilo?.conversacion?.cliente_id || null,
+        },
+      });
+      toastShow('Tarea creada', 'ok');
+      setTareaNueva(null);
+      await sync();
+    } catch (e) {
+      toastShow(e.message, 'error');
+    } finally {
+      setEnviando(false);
     }
   };
   const guardarMonto = async (id, valor) => {
@@ -136,6 +220,7 @@ export default function WhatsAppBandeja() {
 
   useEffect(() => {
     if (vista === 'embudo') cargarEmbudo();
+    if (vista === 'metricas') cargarMetricas();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vista]);
 
@@ -237,6 +322,14 @@ export default function WhatsAppBandeja() {
   const hayFiltro = Boolean(filtro.q || filtro.etiqueta || filtro.asignado || filtro.sinLeer);
   const embudoResumen = resumenEmbudo(embudo);
   const columnas = agruparEmbudo(embudo);
+  // Clientes para el buscador de "Vincular cliente".
+  const clientesFiltrados = (() => {
+    const q = buscaCliente.trim().toLowerCase();
+    const base = q
+      ? clientes.filter((c) => `${c.nombre} ${c.telefono || ''} ${c.email || ''} ${c.empresa || ''}`.toLowerCase().includes(q))
+      : clientes;
+    return base.slice(0, 20);
+  })();
   const etiquetasHilo = listaDe(hilo?.conversacion?.etiquetas);
   const porVencer = (hilo?.ficha?.garantias || []).filter((g) => {
     const v = g.garantia?.vence;
@@ -336,13 +429,16 @@ export default function WhatsAppBandeja() {
         </div>
       )}
 
-      {/* Bandeja / Embudo comercial */}
+      {/* Bandeja / Embudo comercial / Métricas */}
       <div className="row wrap" style={{ gap: 8, alignItems: 'center' }}>
         <button className={`chip${vista === 'bandeja' ? ' on' : ''}`} onClick={() => setVista('bandeja')}>
           <Icon name="mail" size={12} /> Bandeja
         </button>
         <button className={`chip${vista === 'embudo' ? ' on' : ''}`} onClick={() => setVista('embudo')}>
           <Icon name="bolt" size={12} /> Embudo comercial
+        </button>
+        <button className={`chip${vista === 'metricas' ? ' on' : ''}`} onClick={() => setVista('metricas')}>
+          <Icon name="gauge" size={12} /> Métricas
         </button>
         {vista === 'embudo' && (
           <span className="muted" style={{ fontSize: 12 }}>
@@ -390,6 +486,76 @@ export default function WhatsAppBandeja() {
               {col.conversaciones.length === 0 && <p className="muted" style={{ fontSize: 11.5, padding: '4px 2px' }}>—</p>}
             </div>
           ))}
+        </div>
+      ) : vista === 'metricas' ? (
+        <div className="col">
+          {!metricas ? (
+            <p className="muted">Cargando métricas…</p>
+          ) : (
+            <>
+              <div className="grid4">
+                <div className="kpi"><div className="kpi-label">Oportunidades</div><div className="kpi-value">{metricas.total}</div><div className="kpi-sub">{metricas.abiertos.cantidad} abiertas</div></div>
+                <div className="kpi"><div className="kpi-label">Monto abierto</div><div className="kpi-value" style={{ fontSize: 20 }}>$ {Number(metricas.abiertos.monto).toLocaleString('es-AR')}</div><div className="kpi-sub">estimado en el embudo</div></div>
+                <div className="kpi"><div className="kpi-label">Tasa de cierre</div><div className="kpi-value">{formatearTasa(metricas.tasaCierre)}</div><div className="kpi-sub">{metricas.ganado.cantidad} ganadas · {metricas.perdido.cantidad} perdidas</div></div>
+                <div className="kpi"><div className="kpi-label">Ganado</div><div className="kpi-value" style={{ fontSize: 20 }}>$ {Number(metricas.ganado.monto).toLocaleString('es-AR')}</div><div className="kpi-sub">monto estimado</div></div>
+              </div>
+
+              <div className="card">
+                <div className="card-title"><Icon name="bolt" size={14} /> Conversión etapa por etapa</div>
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="tbl">
+                    <thead>
+                      <tr><th>Etapa</th><th className="num">Llegaron</th><th className="num">% del total</th><th className="num">% de la anterior</th><th className="num">Tiempo medio</th></tr>
+                    </thead>
+                    <tbody>
+                      {metricas.embudo.map((e) => (
+                        <tr key={e.etapa}>
+                          <td><b>{ETAPAS.find((x) => x.key === e.etapa)?.label || e.etapa}</b></td>
+                          <td className="num">{e.cantidad}</td>
+                          <td className="num">{formatearTasa(e.tasaDelTotal)}</td>
+                          <td className="num">{formatearTasa(e.tasaDeAnterior)}</td>
+                          <td className="num">{formatearDuracion(metricas.tiempoPorEtapa[e.etapa]?.promedioMs)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="grid2">
+                <div className="card">
+                  <div className="card-title"><Icon name="warn" size={14} /> Motivos de pérdida</div>
+                  {metricas.motivos.length === 0 ? (
+                    <p className="muted" style={{ margin: '6px 0 0', fontSize: 12.5 }}>
+                      Todavía no hay oportunidades perdidas con motivo. Cuando muevas una a «Perdido», el motivo queda acá.
+                    </p>
+                  ) : (
+                    <ul className="ulist">
+                      {metricas.motivos.map((m) => (
+                        <li key={m.motivo}>
+                          <b>{m.motivo}</b> — {m.cantidad} {m.cantidad === 1 ? 'vez' : 'veces'} · $ {Number(m.monto).toLocaleString('es-AR')}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                <div className="card">
+                  <div className="card-title"><Icon name="dollar" size={14} /> Monto por etapa</div>
+                  <ul className="ulist">
+                    {ETAPAS.map((e) => (
+                      <li key={e.key}>
+                        <b>{e.label}</b> — {metricas.porEtapa[e.key].cantidad} · $ {Number(metricas.porEtapa[e.key].monto).toLocaleString('es-AR')}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+              <p className="muted" style={{ fontSize: 11.5 }}>
+                El tiempo por etapa se mide con el historial de cambios de etapa y arranca desde el primer mensaje del cliente
+                (las oportunidades viejas empiezan a medirse desde que se muevan).
+              </p>
+            </>
+          )}
         </div>
       ) : (
       <div className="wa-panel">
@@ -497,6 +663,31 @@ export default function WhatsAppBandeja() {
                   value={etiquetaNueva} onChange={(e) => setEtiquetaNueva(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); agregarEtiqueta(); } }}
                 />
+                {/* Ficha del cliente: si el teléfono no coincidió, la conversación
+                    queda huérfana; desde acá se vincula o se crea la ficha. */}
+                {hilo.conversacion.cliente_id ? (
+                  <span className="badge green" title="Conversación vinculada a una ficha">
+                    cliente: {hilo.cliente?.nombre || hilo.conversacion.cliente_id}
+                  </span>
+                ) : (
+                  <>
+                    <button className="btn sm" onClick={() => setVincular(true)}>
+                      <Icon name="users" size={12} /> Vincular cliente
+                    </button>
+                    <button
+                      className="btn sm"
+                      onClick={() => setCrearCli({
+                        nombre: hilo.conversacion.nombre_perfil || '', email: '',
+                        telefono: hilo.conversacion.telefono || '', tipo: 'particular', canal_origen: 'WhatsApp',
+                      })}
+                    >
+                      <Icon name="plus" size={12} /> Crear cliente
+                    </button>
+                  </>
+                )}
+                <button className="btn sm ghost" onClick={() => setTareaNueva({ titulo: '', vence: '', asignado_a: yo?.email || '' })}>
+                  <Icon name="clock" size={12} /> Tarea
+                </button>
               </div>
 
               <div className="wa-mensajes">
@@ -574,6 +765,136 @@ export default function WhatsAppBandeja() {
               <button className="btn danger" onClick={() => borrarNota(notaABorrar)}><Icon name="x" size={14} /> Borrar nota</button>
               <button className="btn" onClick={() => setNotaABorrar(null)}>Cancelar</button>
             </div>
+          </div>
+        </Modal>
+      )}
+      {/* Perder una oportunidad exige motivo (queda en el historial). */}
+      {motivoPerdida && (
+        <Modal title="¿Por qué se perdió?" sub={motivoPerdida.titulo} onClose={() => setMotivoPerdida(null)}>
+          <div className="col">
+            <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
+              El motivo queda guardado en el historial y alimenta el ranking de motivos de pérdida.
+            </p>
+            <div className="row wrap" style={{ gap: 6 }}>
+              {MOTIVOS_PERDIDA.map((m) => (
+                <button key={m} className={`chip${motivo === m ? ' on' : ''}`} onClick={() => setMotivo(m)}>{m}</button>
+              ))}
+            </div>
+            <div className="field">
+              <label>Motivo</label>
+              <input
+                className="input" value={motivo} onChange={(e) => setMotivo(e.target.value)}
+                placeholder="ej. el precio no le cerró" autoFocus
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); confirmarPerdida(); } }}
+              />
+            </div>
+            <div className="grid2">
+              <button className="btn primary" disabled={!motivo.trim()} onClick={confirmarPerdida}>
+                <Icon name="check" size={14} /> Marcar como perdida
+              </button>
+              <button className="btn" onClick={() => setMotivoPerdida(null)}>Cancelar</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Vincular la conversación con una ficha existente. */}
+      {vincular && (
+        <Modal title="Vincular con un cliente" sub={hilo?.conversacion?.telefono} onClose={() => setVincular(false)}>
+          <div className="col">
+            <input
+              className="input" placeholder="Buscar por nombre, teléfono, email o empresa"
+              value={buscaCliente} onChange={(e) => setBuscaCliente(e.target.value)} autoFocus
+            />
+            <div className="col" style={{ gap: 4, maxHeight: 300, overflowY: 'auto' }}>
+              {clientesFiltrados.map((c) => (
+                <button key={c.id} className="btn sm block" style={{ justifyContent: 'flex-start' }} onClick={() => vincularCliente(c.id)}>
+                  <b>{c.nombre}</b>
+                  <span className="muted" style={{ marginLeft: 6 }}>{c.telefono || c.email || ''}</span>
+                </button>
+              ))}
+              {clientesFiltrados.length === 0 && (
+                <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>No encontré clientes con eso.</p>
+              )}
+            </div>
+            <p className="muted" style={{ fontSize: 11.5, margin: 0 }}>
+              ¿Todavía no existe la ficha? Cerrá y usá «Crear cliente» (toma el nombre y el teléfono de la conversación).
+            </p>
+          </div>
+        </Modal>
+      )}
+
+      {/* Crear la ficha del cliente desde la conversación. */}
+      {crearCli && (
+        <Modal title="Crear cliente" sub={crearCli.telefono} onClose={() => setCrearCli(null)}>
+          <div className="col">
+            <div className="field">
+              <label>Nombre *</label>
+              <input className="input" value={crearCli.nombre} onChange={(e) => setCrearCli({ ...crearCli, nombre: e.target.value })} autoFocus />
+            </div>
+            <div className="row wrap" style={{ gap: 8 }}>
+              <div className="field" style={{ flex: 1, minWidth: 200 }}>
+                <label>Email *</label>
+                <input className="input" value={crearCli.email} onChange={(e) => setCrearCli({ ...crearCli, email: e.target.value })} placeholder="cliente@ejemplo.com" />
+              </div>
+              <div className="field" style={{ flex: 1, minWidth: 150 }}>
+                <label>Teléfono</label>
+                <input className="input" value={crearCli.telefono} onChange={(e) => setCrearCli({ ...crearCli, telefono: e.target.value })} />
+              </div>
+            </div>
+            <div className="row wrap" style={{ gap: 8 }}>
+              <div className="field" style={{ width: 200 }}>
+                <label>Tipo</label>
+                <select className="input" value={crearCli.tipo} onChange={(e) => setCrearCli({ ...crearCli, tipo: e.target.value })}>
+                  {TIPOS_CLIENTE.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+                </select>
+              </div>
+              <div className="field" style={{ flex: 1, minWidth: 180 }}>
+                <label>Cómo nos conoció</label>
+                <input className="input" list="canales-origen-bandeja" value={crearCli.canal_origen} onChange={(e) => setCrearCli({ ...crearCli, canal_origen: e.target.value })} />
+                <datalist id="canales-origen-bandeja">
+                  {CANALES_ORIGEN.map((c) => <option key={c} value={c} />)}
+                </datalist>
+              </div>
+            </div>
+            <div className="field">
+              <label>Empresa / flotilla</label>
+              <input className="input" value={crearCli.empresa || ''} onChange={(e) => setCrearCli({ ...crearCli, empresa: e.target.value })} />
+            </div>
+            <button className="btn primary block" disabled={enviando} onClick={guardarClienteNuevo}>
+              <Icon name="check" size={14} /> {enviando ? 'Guardando...' : 'Crear y vincular'}
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {/* Tarea / recordatorio desde la conversación. */}
+      {tareaNueva && (
+        <Modal title="Nueva tarea" sub={hilo?.conversacion?.nombre_perfil || hilo?.conversacion?.telefono} onClose={() => setTareaNueva(null)}>
+          <div className="col">
+            <div className="field">
+              <label>Título *</label>
+              <input
+                className="input" value={tareaNueva.titulo} autoFocus
+                onChange={(e) => setTareaNueva({ ...tareaNueva, titulo: e.target.value })}
+                placeholder="ej. llamarlo el jueves por el presupuesto"
+              />
+            </div>
+            <div className="row wrap" style={{ gap: 8 }}>
+              <div className="field" style={{ flex: 1, minWidth: 170 }}>
+                <label>Vence</label>
+                <input className="input" type="date" value={tareaNueva.vence} onChange={(e) => setTareaNueva({ ...tareaNueva, vence: e.target.value })} />
+              </div>
+              <div className="field" style={{ flex: 1, minWidth: 190 }}>
+                <label>Responsable</label>
+                <select className="input" value={tareaNueva.asignado_a} onChange={(e) => setTareaNueva({ ...tareaNueva, asignado_a: e.target.value })}>
+                  {agentes.map((a) => <option key={a.email} value={a.email}>{a.email}</option>)}
+                </select>
+              </div>
+            </div>
+            <button className="btn primary block" disabled={enviando || !tareaNueva.titulo.trim()} onClick={guardarTarea}>
+              <Icon name="check" size={14} /> Crear tarea
+            </button>
           </div>
         </Modal>
       )}

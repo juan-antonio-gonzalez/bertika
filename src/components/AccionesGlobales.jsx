@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useStore } from '../store/store';
 import { Icon } from './ui';
+import { CANALES_ORIGEN, TIPOS_CLIENTE } from '../data/crm.js';
 
 // Acciones globales de la plataforma (las dispara la topbar del AppShell).
 // Vivian dentro de Hub.jsx: se movieron aca para que esten disponibles en
@@ -12,7 +13,10 @@ export function AltasForm({ onClose }) {
   const crearTecnico = useStore((s) => s.crearTecnico);
   const crearInsumo = useStore((s) => s.crearInsumo);
   const [tipo, setTipo] = useState('cliente');
-  const [cliente, setCliente] = useState({ nombre: '', empresa: '', email: '', telefono: '' });
+  const [cliente, setCliente] = useState({
+    nombre: '', empresa: '', email: '', telefono: '', tipo: 'particular',
+    direccion: '', localidad: '', cuit: '', condicion_pago: '', canal_origen: '', vendedor: '',
+  });
   const [tecnico, setTecnico] = useState({ nombre: '', especialidad: '', certificaciones: '' });
   const [insumo, setInsumo] = useState({ nombre: '', categoria: '', stock: '', precio: '' });
   const [busy, setBusy] = useState(false);
@@ -41,9 +45,43 @@ export function AltasForm({ onClose }) {
       {tipo === 'cliente' && (
         <div className="col">
           <div className="field"><label>Nombre</label><input className="input" value={cliente.nombre} onChange={(e) => setCliente({ ...cliente, nombre: e.target.value })} placeholder="Nombre del cliente" /></div>
-          <div className="field"><label>Empresa / flotilla</label><input className="input" value={cliente.empresa} onChange={(e) => setCliente({ ...cliente, empresa: e.target.value })} placeholder="ej. Transportes La Union" /></div>
-          <div className="field"><label>Email</label><input className="input" type="email" value={cliente.email} onChange={(e) => setCliente({ ...cliente, email: e.target.value })} placeholder="cliente@empresa.com" /></div>
-          <div className="field"><label>Teléfono</label><input className="input" value={cliente.telefono} onChange={(e) => setCliente({ ...cliente, telefono: e.target.value })} placeholder="(55) 0000-0000" /></div>
+          <div className="row wrap" style={{ gap: 8 }}>
+            <div className="field" style={{ flex: 1, minWidth: 200 }}>
+              <label>Empresa / flotilla</label>
+              <input className="input" value={cliente.empresa} onChange={(e) => setCliente({ ...cliente, empresa: e.target.value })} placeholder="ej. Transportes La Union" />
+            </div>
+            <div className="field" style={{ width: 220 }}>
+              <label>Tipo</label>
+              <select className="input" value={cliente.tipo} onChange={(e) => setCliente({ ...cliente, tipo: e.target.value })}>
+                {TIPOS_CLIENTE.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="row wrap" style={{ gap: 8 }}>
+            <div className="field" style={{ flex: 1, minWidth: 200 }}><label>Email</label><input className="input" type="email" value={cliente.email} onChange={(e) => setCliente({ ...cliente, email: e.target.value })} placeholder="cliente@empresa.com" /></div>
+            <div className="field" style={{ flex: 1, minWidth: 160 }}><label>Teléfono</label><input className="input" value={cliente.telefono} onChange={(e) => setCliente({ ...cliente, telefono: e.target.value })} placeholder="11 5555-0101" /></div>
+          </div>
+          <p className="muted" style={{ fontSize: 12, margin: '2px 0 0' }}>
+            Datos comerciales (opcionales, se pueden completar después):
+          </p>
+          <div className="row wrap" style={{ gap: 8 }}>
+            <div className="field" style={{ flex: 1, minWidth: 220 }}><label>Dirección</label><input className="input" value={cliente.direccion} onChange={(e) => setCliente({ ...cliente, direccion: e.target.value })} placeholder="Calle y número" /></div>
+            <div className="field" style={{ flex: 1, minWidth: 160 }}><label>Localidad</label><input className="input" value={cliente.localidad} onChange={(e) => setCliente({ ...cliente, localidad: e.target.value })} placeholder="Ciudad / partido" /></div>
+          </div>
+          <div className="row wrap" style={{ gap: 8 }}>
+            <div className="field" style={{ width: 180 }}><label>CUIT</label><input className="input" value={cliente.cuit} onChange={(e) => setCliente({ ...cliente, cuit: e.target.value })} placeholder="30-12345678-9" /></div>
+            <div className="field" style={{ flex: 1, minWidth: 160 }}><label>Condición de pago</label><input className="input" value={cliente.condicion_pago} onChange={(e) => setCliente({ ...cliente, condicion_pago: e.target.value })} placeholder="Contado / 30 días" /></div>
+          </div>
+          <div className="row wrap" style={{ gap: 8 }}>
+            <div className="field" style={{ flex: 1, minWidth: 180 }}>
+              <label>Cómo nos conoció</label>
+              <input className="input" list="canales-origen" value={cliente.canal_origen} onChange={(e) => setCliente({ ...cliente, canal_origen: e.target.value })} placeholder="WhatsApp, recomendación…" />
+              <datalist id="canales-origen">
+                {CANALES_ORIGEN.map((c) => <option key={c} value={c} />)}
+              </datalist>
+            </div>
+            <div className="field" style={{ flex: 1, minWidth: 160 }}><label>Vendedor</label><input className="input" value={cliente.vendedor} onChange={(e) => setCliente({ ...cliente, vendedor: e.target.value })} placeholder="Quién lo atiende" /></div>
+          </div>
         </div>
       )}
 

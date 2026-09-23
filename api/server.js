@@ -17,7 +17,10 @@ import { obtenerDolar } from './dolar.js';
 import { calcularVisita, normalizarConfig, CONFIG_DEFAULT, textoFueraCobertura } from '../src/data/cotizadorVisita.js';
 import { enviarTexto, enviarPlantilla, configPublicaWhatsApp, normalizarTelefono, normalizarEtiquetas, verificarFirma, ESTADO_ENTREGA } from './whatsapp.js';
 import { EVENTOS as EVENTOS_AVISO, PLANTILLA_POR_ESTADO, PLANTILLA_GARANTIA, normalizarAvisos, parametrosAviso, resumenAviso, debeAvisarGarantia, parametrosGarantia } from './avisos.js';
-import { normalizarEtapa, normalizarMonto, normalizarTipoCliente } from './crm.js';
+import {
+  normalizarEtapa, normalizarMonto, normalizarTipoCliente, faltaMotivoPerdida,
+  calcularMetricas, normalizarEstadoTarea,
+} from './crm.js';
 import { generarCodigoUnico, digitar, formatearCodigo } from './codigo.js';
 import { normalizarBooleano } from './validaciones.js';
 
@@ -182,6 +185,13 @@ async function asegurarCodigos() {
   await query('ALTER TABLE clientes ADD COLUMN IF NOT EXISTS notas TEXT');
   await query('ALTER TABLE clientes ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ');
   await query('ALTER TABLE clientes ADD COLUMN IF NOT EXISTS deleted_by TEXT');
+  // Datos comerciales de la ficha (CRM): se cargan al alta y se pueden editar.
+  await query('ALTER TABLE clientes ADD COLUMN IF NOT EXISTS direccion TEXT');
+  await query('ALTER TABLE clientes ADD COLUMN IF NOT EXISTS localidad TEXT');
+  await query('ALTER TABLE clientes ADD COLUMN IF NOT EXISTS cuit TEXT');
+  await query('ALTER TABLE clientes ADD COLUMN IF NOT EXISTS condicion_pago TEXT');
+  await query('ALTER TABLE clientes ADD COLUMN IF NOT EXISTS canal_origen TEXT');
+  await query('ALTER TABLE clientes ADD COLUMN IF NOT EXISTS vendedor TEXT');
   // Umbral de stock critico por insumo (antes estaba fijo en 3 en la UI).
   await query('ALTER TABLE insumos ADD COLUMN IF NOT EXISTS stock_minimo INTEGER DEFAULT 3');
   await query(`CREATE TABLE IF NOT EXISTS wa_conversaciones (
@@ -223,6 +233,34 @@ async function asegurarCodigos() {
     fecha TIMESTAMPTZ DEFAULT now()
   )`);
   await query('CREATE INDEX IF NOT EXISTS idx_wa_notas_conv ON wa_notas (conversacion_id, fecha DESC)');
+  // Embudo comercial: historial de cambios de etapa. Es lo que permite medir la
+  // conversion entre etapas, el tiempo en cada una y los motivos de perdida.
+  await query(`CREATE TABLE IF NOT EXISTS wa_etapa_historial (
+    id TEXT PRIMARY KEY,
+    conversacion_id TEXT,
+    anterior TEXT,
+    nueva TEXT,
+    monto NUMERIC,
+    motivo TEXT,
+    usuario TEXT,
+    fecha TIMESTAMPTZ DEFAULT now()
+  )`);
+  await query('CREATE INDEX IF NOT EXISTS idx_wa_etapa_conv ON wa_etapa_historial (conversacion_id, fecha DESC)');
+  // Tareas / recordatorios del CRM: con vencimiento y responsable.
+  await query(`CREATE TABLE IF NOT EXISTS wa_tareas (
+    id TEXT PRIMARY KEY,
+    conversacion_id TEXT,
+    orden_id TEXT,
+    cliente_id TEXT,
+    titulo TEXT,
+    vence TIMESTAMPTZ,
+    asignado_a TEXT,
+    estado TEXT DEFAULT 'pendiente',
+    creada_por TEXT,
+    creada_en TIMESTAMPTZ DEFAULT now(),
+    cerrada_en TIMESTAMPTZ
+  )`);
+  await query('CREATE INDEX IF NOT EXISTS idx_wa_tareas_vence ON wa_tareas (estado, vence)');
   // Avisos automaticos: que avisos estan prendidos y cuales ya se mandaron
   // (la clave (orden, plantilla) evita mandar dos veces el mismo aviso).
   await query('CREATE TABLE IF NOT EXISTS wa_avisos_config (evento TEXT PRIMARY KEY, activo BOOLEAN DEFAULT TRUE)');
@@ -505,6 +543,18 @@ app.get('/api/estado', authRequired, async (req, res) => {
   const seq = {};
   for (const c of cont) seq[c.nombre] = c.valor;
   out.seq = seq;
+  // Tareas del CRM: el admin ve todas las pendientes; el tecnico las suyas y las
+  // que no tienen responsable; el cliente ninguna.
+  if (rol === 'cliente') {
+    out.tareas = [];
+  } else {
+    out.tareas = await query(
+      `SELECT * FROM wa_tareas WHERE estado = 'pendiente'
+       ${rol === 'admin' ? '' : 'AND (asignado_a = $1 OR asignado_a IS NULL)'}
+       ORDER BY vence ASC NULLS LAST LIMIT 200`,
+      rol === 'admin' ? [] : [req.user.email]
+    );
+  }
   return res.json(out);
 });
 
@@ -1084,6 +1134,7 @@ app.get('/api/clientes', authRequired, requireRol('admin', 'tecnico'), async (re
 
 app.post('/api/clientes', authRequired, requireRol('admin'), async (req, res) => {
   const { nombre, empresa, email, telefono, tipo, contacto, notas } = req.body || {};
+  const { direccion, localidad, cuit, condicion_pago, canal_origen, vendedor } = req.body || {};
   const nombreT = limStr(nombre, 120);
   const emailT = String(email || '').trim();
   if (!nombreT || !validEmail(emailT)) return res.status(400).json({ error: 'Faltan nombre y email valido' });
@@ -1100,10 +1151,17 @@ app.post('/api/clientes', authRequired, requireRol('admin'), async (req, res) =>
   }
   const id = await nextId('cli');
   try {
-    await query('INSERT INTO clientes (id, nombre, tipo, telefono, contacto, email, empresa, notas) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)', [
-      id, nombreT, normalizarTipoCliente(tipo), limStr(telefono, 40), limStr(contacto, 120) || nombreT, emailT,
-      limStr(empresa, 120), limStr(notas, 1000),
-    ]);
+    await query(
+      `INSERT INTO clientes (id, nombre, tipo, telefono, contacto, email, empresa, notas,
+        direccion, localidad, cuit, condicion_pago, canal_origen, vendedor)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+      [
+        id, nombreT, normalizarTipoCliente(tipo), limStr(telefono, 40), limStr(contacto, 120) || nombreT, emailT,
+        limStr(empresa, 120), limStr(notas, 1000),
+        limStr(direccion, 160), limStr(localidad, 80), limStr(cuit, 20),
+        limStr(condicion_pago, 60), limStr(canal_origen, 60), limStr(vendedor, 80),
+      ]
+    );
   } catch (e) {
     if (e.code === '23505') return res.status(409).json({ error: 'Ya hay un cliente cargado con ese email.' });
     throw e;
@@ -1129,6 +1187,13 @@ app.patch('/api/clientes/:id', authRequired, requireRol('admin'), async (req, re
   if (req.body?.telefono !== undefined) set('telefono', limStr(req.body.telefono, 40));
   if (req.body?.notas !== undefined) set('notas', limStr(req.body.notas, 1000));
   if (req.body?.tipo !== undefined) set('tipo', normalizarTipoCliente(req.body.tipo));
+  // Datos comerciales de la ficha (CRM).
+  if (req.body?.direccion !== undefined) set('direccion', limStr(req.body.direccion, 160));
+  if (req.body?.localidad !== undefined) set('localidad', limStr(req.body.localidad, 80));
+  if (req.body?.cuit !== undefined) set('cuit', limStr(req.body.cuit, 20));
+  if (req.body?.condicion_pago !== undefined) set('condicion_pago', limStr(req.body.condicion_pago, 60));
+  if (req.body?.canal_origen !== undefined) set('canal_origen', limStr(req.body.canal_origen, 60));
+  if (req.body?.vendedor !== undefined) set('vendedor', limStr(req.body.vendedor, 80));
   if (req.body?.email !== undefined) {
     const emailT = String(req.body.email || '').trim();
     if (!validEmail(emailT)) return res.status(400).json({ error: 'El email no es válido' });
@@ -1944,19 +2009,178 @@ app.patch('/api/whatsapp/conversaciones/:id', authRequired, requireRol('admin', 
     args.push(normalizarEtiquetas(req.body.etiquetas) || null);
     campos.push(`etiquetas = $${args.length}`);
   }
-  // Embudo comercial: mover la oportunidad de etapa y guardar el monto.
+  // Vincular la conversacion con una ficha: los mensajes que entran solo se
+  // vinculan solos cuando el telefono coincide con una ficha cargada.
+  if (req.body?.cliente_id !== undefined) {
+    const clienteId = limStr(req.body.cliente_id, 40);
+    if (clienteId) {
+      const cli = await one('SELECT id, nombre, deleted_at FROM clientes WHERE id = $1', [clienteId]);
+      if (!cli) return res.status(404).json({ error: 'Ese cliente no existe' });
+      if (cli.deleted_at) return res.status(400).json({ error: 'Ese cliente está en la papelera: restauralo primero' });
+    }
+    args.push(clienteId || null);
+    campos.push(`cliente_id = $${args.length}`);
+  }
+  // Embudo comercial: mover la oportunidad de etapa (queda el historial, que es
+  // lo que permite medir conversion y tiempo por etapa) y guardar el monto.
+  let cambioEtapa = null;
   if (req.body?.etapa !== undefined) {
-    args.push(normalizarEtapa(req.body.etapa));
+    const nueva = normalizarEtapa(req.body.etapa);
+    const anterior = normalizarEtapa(conv.etapa);
+    const motivo = limStr(req.body?.motivo, 300);
+    if (faltaMotivoPerdida(nueva, motivo)) {
+      return res.status(400).json({ error: 'Para dar por perdida una oportunidad hay que indicar el motivo.' });
+    }
+    if (nueva !== anterior) cambioEtapa = { anterior, nueva, motivo: motivo || null };
+    args.push(nueva);
     campos.push(`etapa = $${args.length}`);
   }
+  // El monto del historial es el que queda guardado (el nuevo, si vino).
+  const montoFinal = req.body?.monto_estimado !== undefined
+    ? normalizarMonto(req.body.monto_estimado)
+    : normalizarMonto(conv.monto_estimado);
   if (req.body?.monto_estimado !== undefined) {
-    args.push(normalizarMonto(req.body.monto_estimado));
+    args.push(montoFinal);
     campos.push(`monto_estimado = $${args.length}`);
   }
   if (!campos.length) return res.status(400).json({ error: 'No hay nada para actualizar' });
   args.push(conv.id);
   const upd = await one(`UPDATE wa_conversaciones SET ${campos.join(', ')} WHERE id = $${args.length} RETURNING *`, args);
+  if (cambioEtapa) {
+    const histId = await nextId('weh');
+    await query(
+      `INSERT INTO wa_etapa_historial (id, conversacion_id, anterior, nueva, monto, motivo, usuario)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [histId, conv.id, cambioEtapa.anterior, cambioEtapa.nueva, montoFinal, cambioEtapa.motivo, actorDe(req)?.email || 'panel']
+    );
+  }
   return res.json(upd);
+});
+
+// Metricas del embudo comercial: conversion, tasa de cierre, tiempo medio en cada
+// etapa y motivos de perdida. El calculo vive en src/data/crm.js (probado aparte).
+app.get('/api/whatsapp/metricas', authRequired, requireRol('admin'), async (req, res) => {
+  const conversaciones = await query('SELECT id, etapa, monto_estimado, ultima_fecha FROM wa_conversaciones');
+  const historial = await query(
+    'SELECT conversacion_id, anterior, nueva, monto, motivo, fecha FROM wa_etapa_historial ORDER BY fecha ASC LIMIT 5000'
+  );
+  // La entrada a la primera etapa se aproxima con el primer mensaje del cliente.
+  const primeras = await query(
+    "SELECT conversacion_id, min(fecha) AS primera FROM wa_mensajes WHERE direccion = 'in' GROUP BY conversacion_id"
+  );
+  const porPrimera = {};
+  for (const p of primeras) porPrimera[p.conversacion_id] = p.primera;
+  return res.json(calcularMetricas({ conversaciones, historial, primeras: porPrimera }));
+});
+
+// Historial de etapas de una conversacion (para ver como se movio la oportunidad).
+app.get('/api/whatsapp/conversaciones/:id/etapas', authRequired, requireRol('admin', 'tecnico'), async (req, res) => {
+  const filas = await query(
+    'SELECT * FROM wa_etapa_historial WHERE conversacion_id = $1 ORDER BY fecha DESC LIMIT 100',
+    [req.params.id]
+  );
+  return res.json(filas);
+});
+
+// ---------- Tareas / recordatorios del CRM ----------
+
+// Un tecnico solo ve y toca sus tareas (o las que no tienen responsable).
+function tareaVisible(req, t) {
+  if (esAdmin(req)) return true;
+  return !t.asignado_a || t.asignado_a === req.user.email;
+}
+
+app.get('/api/whatsapp/tareas', authRequired, requireRol('admin', 'tecnico'), async (req, res) => {
+  const estado = limStr(req.query?.estado, 20);
+  const mias = String(req.query?.mias || '') === '1';
+  const cond = [];
+  const args = [];
+  if (estado === 'pendiente' || estado === 'cerrada') {
+    args.push(estado);
+    cond.push(`t.estado = $${args.length}`);
+  }
+  if (mias || !esAdmin(req)) {
+    args.push(req.user.email);
+    cond.push(`(t.asignado_a = $${args.length}${mias ? '' : ' OR t.asignado_a IS NULL'})`);
+  }
+  const filas = await query(
+    `SELECT t.*, cl.nombre AS cliente_nombre, cl.telefono AS cliente_telefono,
+            conv.nombre_perfil AS conversacion_perfil, conv.telefono AS conversacion_telefono
+       FROM wa_tareas t
+       LEFT JOIN clientes cl ON cl.id = t.cliente_id
+       LEFT JOIN wa_conversaciones conv ON conv.id = t.conversacion_id
+       ${cond.length ? `WHERE ${cond.join(' AND ')}` : ''}
+      ORDER BY t.estado ASC, t.vence ASC NULLS LAST, t.creada_en DESC LIMIT 200`,
+    args
+  );
+  return res.json(filas);
+});
+
+app.post('/api/whatsapp/tareas', authRequired, requireRol('admin', 'tecnico'), async (req, res) => {
+  const titulo = limStr(req.body?.titulo, 160);
+  if (!titulo) return res.status(400).json({ error: 'La tarea necesita un título' });
+  const vence = limStr(req.body?.vence, 40);
+  if (vence && Number.isNaN(new Date(vence).getTime())) {
+    return res.status(400).json({ error: 'La fecha de vencimiento no es válida' });
+  }
+  const id = await nextId('wat');
+  const tarea = await one(
+    `INSERT INTO wa_tareas (id, conversacion_id, orden_id, cliente_id, titulo, vence, asignado_a, creada_por)
+     VALUES ($1,$2,$3,$4,$5,$6::timestamptz,$7,$8) RETURNING *`,
+    [
+      id,
+      limStr(req.body?.conversacion_id, 40) || null,
+      limStr(req.body?.orden_id, 40) || null,
+      limStr(req.body?.cliente_id, 40) || null,
+      titulo,
+      vence || null,
+      limStr(req.body?.asignado_a, 120) || req.user.email,
+      req.user.email,
+    ]
+  );
+  return res.status(201).json(tarea);
+});
+
+app.patch('/api/whatsapp/tareas/:id', authRequired, requireRol('admin', 'tecnico'), async (req, res) => {
+  const tarea = await one('SELECT * FROM wa_tareas WHERE id = $1', [req.params.id]);
+  if (!tarea) return res.status(404).json({ error: 'Tarea no encontrada' });
+  if (!tareaVisible(req, tarea)) return res.status(403).json({ error: 'Esa tarea es de otra persona' });
+  const campos = [];
+  const args = [];
+  const set = (col, valor) => { args.push(valor); campos.push(`${col} = $${args.length}`); };
+  if (req.body?.titulo !== undefined) {
+    const titulo = limStr(req.body.titulo, 160);
+    if (!titulo) return res.status(400).json({ error: 'El título no puede quedar vacío' });
+    set('titulo', titulo);
+  }
+  if (req.body?.vence !== undefined) {
+    const vence = limStr(req.body.vence, 40);
+    if (vence && Number.isNaN(new Date(vence).getTime())) {
+      return res.status(400).json({ error: 'La fecha de vencimiento no es válida' });
+    }
+    args.push(vence || null);
+    campos.push(`vence = $${args.length}::timestamptz`);
+  }
+  if (req.body?.asignado_a !== undefined) set('asignado_a', limStr(req.body.asignado_a, 120) || null);
+  if (req.body?.estado !== undefined) {
+    const estado = normalizarEstadoTarea(req.body.estado);
+    set('estado', estado);
+    campos.push(estado === 'cerrada' ? 'cerrada_en = now()' : 'cerrada_en = NULL');
+  }
+  if (!campos.length) return res.status(400).json({ error: 'No hay nada para actualizar' });
+  args.push(tarea.id);
+  const upd = await one(`UPDATE wa_tareas SET ${campos.join(', ')} WHERE id = $${args.length} RETURNING *`, args);
+  return res.json(upd);
+});
+
+app.delete('/api/whatsapp/tareas/:id', authRequired, requireRol('admin', 'tecnico'), async (req, res) => {
+  const tarea = await one('SELECT * FROM wa_tareas WHERE id = $1', [req.params.id]);
+  if (!tarea) return res.status(404).json({ error: 'Tarea no encontrada' });
+  if (!esAdmin(req) && tarea.creada_por !== req.user.email) {
+    return res.status(403).json({ error: 'Solo quien la creó o un administrador pueden borrarla' });
+  }
+  await query('DELETE FROM wa_tareas WHERE id = $1', [tarea.id]);
+  return res.json({ ok: true, id: tarea.id });
 });
 
 // Notas internas del taller: no se le mandan al cliente.

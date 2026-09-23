@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useStore } from '../../store/store';
 import { Icon, Modal } from '../ui';
 import { AltasForm, NewOrdenForm } from '../AccionesGlobales';
+import { contarTareasPendientes } from '../../data/crm.js';
 import { CONTACTO } from '../../data/siteData';
 import { contarCriticos } from '../../data/inventario';
 import CentroNotificaciones from './CentroNotificaciones';
@@ -50,6 +51,7 @@ function contadores(data, user) {
     cotizaciones: delCliente.filter((o) => o.estado === 'quoted').length,
     entregadas: delCliente.filter((o) => o.estado === 'delivered').length,
     garantias: delCliente.filter((o) => o.garantia).length,
+    tareas: contarTareasPendientes(data.tareas),
   };
 }
 
@@ -62,6 +64,7 @@ function menuDe(rol, c, esFlotilla) {
         { to: '/tecnico/mis-ordenes', label: 'Mis órdenes', icon: 'battery', exact: true, contador: c.miasActivas },
         { to: '/tecnico/sin-asignar', label: 'Sin asignar', icon: 'warn', contador: c.sinAsignar },
         { to: '/tecnico/completadas', label: 'Completadas', icon: 'check', contador: c.miasCerradas },
+        { to: '/tecnico/tareas', label: 'Mis tareas', icon: 'clock', contador: c.tareas },
       ] },
       { grupo: 'Sistema', items: [
         { to: '/settings', label: 'Mi cuenta', icon: 'gear' },
@@ -90,6 +93,7 @@ function menuDe(rol, c, esFlotilla) {
     ] },
     { grupo: 'Comercial', items: [
       { to: '/hub/clientes', label: 'Clientes', icon: 'users' },
+      { to: '/hub/tareas', label: 'Tareas', icon: 'clock', contador: c.tareas },
       { to: '/hub/whatsapp', label: 'WhatsApp', icon: 'mail' },
       { to: '/hub/cotizador', label: 'Cotizador', icon: 'calculator' },
     ] },
