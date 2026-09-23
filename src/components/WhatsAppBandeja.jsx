@@ -43,7 +43,22 @@ export default function WhatsAppBandeja() {
   const [tareaNueva, setTareaNueva] = useState(null);
   const [enviando, setEnviando] = useState(false);
   const [cargando, setCargando] = useState(true);
+  // Etiquetas administrables, respuestas rápidas y búsqueda dentro de los mensajes.
+  const [respuestas, setRespuestas] = useState([]);
+  const [etiquetasCat, setEtiquetasCat] = useState([]);
+  const [verEtiquetas, setVerEtiquetas] = useState(false);
+  const [etiquetaForm, setEtiquetaForm] = useState({ nombre: '', color: '#d98e00' });
+  const [respuestaForm, setRespuestaForm] = useState({ atajo: '', texto: '' });
+  const [buscarMsg, setBuscarMsg] = useState({ abierta: false, q: '', resultados: [], buscando: false });
+  const [atajosAbiertos, setAtajosAbiertos] = useState(false);
   const finRef = useRef(null);
+
+  const cargarRespuestas = async () => {
+    try { setRespuestas(await api('/whatsapp/respuestas')); } catch { setRespuestas([]); }
+  };
+  const cargarEtiquetas = async () => {
+    try { setEtiquetasCat(await api('/whatsapp/etiquetas')); } catch { setEtiquetasCat([]); }
+  };
 
   const cargarEstado = async () => {
     try { setEstado(await api('/whatsapp/estado')); } catch (e) { toastShow(e.message, 'error'); }
@@ -206,7 +221,7 @@ export default function WhatsAppBandeja() {
   }, [filtro]);
 
   useEffect(() => {
-    Promise.all([cargarEstado(), cargarAgentes(), cargarAvisos()]).finally(() => setCargando(false));
+    Promise.all([cargarEstado(), cargarAgentes(), cargarAvisos(), cargarRespuestas(), cargarEtiquetas()]).finally(() => setCargando(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -282,13 +297,85 @@ export default function WhatsAppBandeja() {
       toastShow(e.message, 'error');
     }
   };
-  const agregarEtiqueta = () => {
-    const t = etiquetaNueva.trim();
+  const agregarEtiqueta = (nombre) => {
+    const t = String(nombre || etiquetaNueva || '').trim();
     if (!t || !sel) return;
     guardarEtiquetas([...listaDe(hilo?.conversacion?.etiquetas), t]);
     setEtiquetaNueva('');
   };
   const quitarEtiqueta = (t) => guardarEtiquetas(listaDe(hilo?.conversacion?.etiquetas).filter((x) => x.toLowerCase() !== t.toLowerCase()));
+
+  // Alta de etiqueta en el catálogo (desde el botón "Nueva etiqueta…").
+  const crearEtiqueta = async () => {
+    const nombre = etiquetaForm.nombre.trim();
+    if (!nombre) return toastShow('Poné un nombre para la etiqueta', 'warn');
+    try {
+      const nueva = await api('/whatsapp/etiquetas', { method: 'POST', body: { nombre, color: etiquetaForm.color } });
+      await cargarEtiquetas();
+      setEtiquetaForm({ nombre: '', color: '#d98e00' });
+      toastShow(`Etiqueta "${nueva.nombre}" creada`, 'ok');
+      if (sel) agregarEtiqueta(nueva.nombre);
+    } catch (e) {
+      toastShow(e.message, 'error');
+    }
+  };
+  const cambiarEtiqueta = async (id, cambios) => {
+    try {
+      await api(`/whatsapp/etiquetas/${id}`, { method: 'PATCH', body: cambios });
+      await cargarEtiquetas();
+      cargarEstado();
+      if (hilo) abrir(sel);
+    } catch (e) {
+      toastShow(e.message, 'error');
+    }
+  };
+  const crearRespuesta = async () => {
+    const atajo = respuestaForm.atajo.trim();
+    const txt = respuestaForm.texto.trim();
+    if (!atajo || !txt) return toastShow('Completá el atajo y el texto', 'warn');
+    try {
+      await api('/whatsapp/respuestas', { method: 'POST', body: { atajo, texto: txt } });
+      setRespuestaForm({ atajo: '', texto: '' });
+      await cargarRespuestas();
+      toastShow('Respuesta rápida creada', 'ok');
+    } catch (e) {
+      toastShow(e.message, 'error');
+    }
+  };
+  const cambiarRespuesta = async (id, cambios) => {
+    try {
+      await api(`/whatsapp/respuestas/${id}`, { method: 'PATCH', body: cambios });
+      await cargarRespuestas();
+    } catch (e) {
+      toastShow(e.message, 'error');
+    }
+  };
+
+  // ---- Respuestas rápidas: se disparan escribiendo "/" en el compositor ----
+  const primerNombre = (n) => (String(n || '').trim().split(/\s+/)[0] || 'cliente');
+  const textoConVariables = (t) => String(t || '')
+    .replace(/\{\{\s*nombre\s*\}\}/gi, primerNombre(hilo?.cliente?.nombre || hilo?.conversacion?.nombre_perfil))
+    .replace(/\{\{\s*serie\s*\}\}/gi, hilo?.ordenes?.[0]?.bateria_serie || 'tu batería');
+  const usarAtajo = (r) => { setTexto(textoConVariables(r.texto)); setAtajosAbiertos(false); };
+  const atajosFiltrados = (() => {
+    if (!atajosAbiertos) return [];
+    const q = texto.replace(/^\//, '').toLowerCase().trim();
+    return respuestas.filter((r) => !q || r.atajo.toLowerCase().includes(q) || String(r.texto).toLowerCase().includes(q)).slice(0, 6);
+  })();
+
+  // ---- Buscar dentro de los mensajes (no solo en nombre/teléfono) ----
+  const buscarEnMensajes = async () => {
+    const q = buscarMsg.q.trim();
+    if (q.length < 2) return toastShow('Escribí al menos 2 letras', 'warn');
+    setBuscarMsg((b) => ({ ...b, buscando: true }));
+    try {
+      const r = await api(`/whatsapp/buscar?q=${encodeURIComponent(q)}`);
+      setBuscarMsg((b) => ({ ...b, resultados: r, buscando: false }));
+    } catch (e) {
+      setBuscarMsg((b) => ({ ...b, buscando: false }));
+      toastShow(e.message, 'error');
+    }
+  };
 
   const guardarNota = async () => {
     const t = nota.trim();
@@ -566,6 +653,52 @@ export default function WhatsAppBandeja() {
               className="input" style={{ fontSize: 12.5 }} placeholder="Buscar por nombre, teléfono o texto"
               value={filtro.q} onChange={(e) => setFiltro({ ...filtro, q: e.target.value })}
             />
+            <div className="row wrap" style={{ gap: 6, alignItems: 'center' }}>
+              <button
+                className={`chip${buscarMsg.abierta ? ' on' : ''}`}
+                title="Buscar en el texto de todos los mensajes"
+                onClick={() => setBuscarMsg((b) => ({ ...b, abierta: !b.abierta, resultados: [] }))}
+              >
+                🔍 En mensajes
+              </button>
+              <button className="chip" title="Administrar las etiquetas del taller" onClick={() => setVerEtiquetas(true)}>
+                Etiquetas ({etiquetasCat.length})
+              </button>
+            </div>
+            {buscarMsg.abierta && (
+              <div className="col" style={{ gap: 6 }}>
+                <div className="row" style={{ gap: 6 }}>
+                  <input
+                    className="input" style={{ fontSize: 12.5, flex: 1 }} placeholder="Buscar dentro de los mensajes…"
+                    value={buscarMsg.q}
+                    onChange={(e) => setBuscarMsg((b) => ({ ...b, q: e.target.value }))}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); buscarEnMensajes(); } }}
+                  />
+                  <button className="btn sm" disabled={buscarMsg.buscando} onClick={buscarEnMensajes}>
+                    {buscarMsg.buscando ? '...' : 'Buscar'}
+                  </button>
+                </div>
+                {buscarMsg.resultados.length > 0 && (
+                  <div className="col" style={{ gap: 4, maxHeight: 220, overflowY: 'auto' }}>
+                    {buscarMsg.resultados.map((m) => (
+                      <button
+                        key={m.id} type="button" className="wa-conv" style={{ borderRadius: 8, border: '1px solid var(--line)' }}
+                        onClick={() => { setVista('bandeja'); abrir(m.conversacion_id); }}
+                      >
+                        <div className="row between" style={{ gap: 6 }}>
+                          <b style={{ fontSize: 12 }}>{m.cliente_nombre || m.nombre_perfil || m.telefono}</b>
+                          <span className="muted" style={{ fontSize: 10.5 }}>{fmtFecha(m.fecha)}</span>
+                        </div>
+                        <div className="muted" style={{ fontSize: 11.5 }}>{m.direccion === 'in' ? '←' : '→'} {m.texto}</div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {!buscarMsg.buscando && buscarMsg.q.trim().length >= 2 && buscarMsg.resultados.length === 0 && (
+                  <span className="muted" style={{ fontSize: 11.5 }}>Sin resultados en los mensajes.</span>
+                )}
+              </div>
+            )}
             <div className="row wrap" style={{ gap: 6 }}>
               <button className={`chip${filtro.sinLeer ? ' on' : ''}`} onClick={() => setFiltro({ ...filtro, sinLeer: !filtro.sinLeer })}>Sin leer</button>
               <button
@@ -653,17 +786,28 @@ export default function WhatsAppBandeja() {
                   {agentes.map((a) => <option key={a.email} value={a.email}>{a.email}</option>)}
                 </select>
                 <span className="muted" style={{ fontSize: 12 }}>Etiquetas:</span>
-                {etiquetasHilo.map((t) => (
-                  <span key={t} className="chip on">
-                    {t}
-                    <button type="button" title="Quitar" onClick={() => quitarEtiqueta(t)}>✕</button>
-                  </span>
-                ))}
-                <input
-                  className="input" style={{ width: 130, fontSize: 12.5 }} placeholder="+ etiqueta"
-                  value={etiquetaNueva} onChange={(e) => setEtiquetaNueva(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); agregarEtiqueta(); } }}
-                />
+                {etiquetasHilo.map((t) => {
+                  const cat = etiquetasCat.find((e) => e.nombre.toLowerCase() === t.toLowerCase());
+                  return (
+                    <span key={t} className="chip on" style={cat ? { borderColor: cat.color, color: cat.color } : undefined}>
+                      {t}
+                      <button type="button" title="Quitar" onClick={() => quitarEtiqueta(t)}>✕</button>
+                    </span>
+                  );
+                })}
+                <select
+                  className="input" style={{ width: 165, fontSize: 12.5 }} value=""
+                  onChange={(e) => {
+                    if (e.target.value === '__nueva') { setEtiquetaForm({ nombre: '', color: '#d98e00' }); setVerEtiquetas(true); return; }
+                    if (e.target.value) agregarEtiqueta(e.target.value);
+                  }}
+                >
+                  <option value="">+ etiqueta</option>
+                  {etiquetasCat
+                    .filter((e) => !etiquetasHilo.some((t) => t.toLowerCase() === e.nombre.toLowerCase()))
+                    .map((e) => <option key={e.id} value={e.nombre}>{e.nombre}</option>)}
+                  <option value="__nueva">Nueva etiqueta…</option>
+                </select>
                 {/* Ficha del cliente: si el teléfono no coincidió, la conversación
                     queda huérfana; desde acá se vincula o se crea la ficha. */}
                 {hilo.conversacion.cliente_id ? (
@@ -739,10 +883,21 @@ export default function WhatsAppBandeja() {
                 )}
               </div>
 
-              <div className="row" style={{ padding: 10, gap: 8, borderTop: '1px solid var(--line)' }}>
+              <div className="row" style={{ padding: 10, gap: 8, borderTop: '1px solid var(--line)', position: 'relative' }}>
+                {atajosAbiertos && atajosFiltrados.length > 0 && (
+                  <div className="atajos">
+                    {atajosFiltrados.map((r) => (
+                      <button key={r.id} type="button" className="atajo" onClick={() => usarAtajo(r)}>
+                        <b>/{r.atajo}</b>
+                        <span className="muted">{textoConVariables(r.texto).slice(0, 70)}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <input
-                  className="input" style={{ flex: 1 }} placeholder="Escribí una respuesta y enter..."
-                  value={texto} onChange={(e) => setTexto(e.target.value)}
+                  className="input" style={{ flex: 1 }} placeholder="Escribí una respuesta (o / para respuestas rápidas)…"
+                  value={texto}
+                  onChange={(e) => { setTexto(e.target.value); setAtajosAbiertos(/^\/\S*$/.test(e.target.value)); }}
                   onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); responder(); } }}
                 />
                 <button className="btn primary" disabled={enviando || !texto.trim()} onClick={responder}>
@@ -896,6 +1051,83 @@ export default function WhatsAppBandeja() {
             <button className="btn primary block" disabled={enviando || !tareaNueva.titulo.trim()} onClick={guardarTarea}>
               <Icon name="check" size={14} /> Crear tarea
             </button>
+          </div>
+        </Modal>
+      )}
+
+      {/* Administrar el catálogo de etiquetas y las respuestas rápidas */}
+      {verEtiquetas && (
+        <Modal title="Etiquetas y respuestas rápidas" sub="Lo que el taller usa en la bandeja" onClose={() => setVerEtiquetas(false)}>
+          <div className="col" style={{ gap: 16 }}>
+            <div className="col" style={{ gap: 6 }}>
+              <b style={{ fontSize: 13 }}>Etiquetas</b>
+              <div className="row" style={{ gap: 6 }}>
+                <input
+                  className="input" style={{ flex: 1 }} placeholder="Nombre de la etiqueta"
+                  value={etiquetaForm.nombre} onChange={(e) => setEtiquetaForm({ ...etiquetaForm, nombre: e.target.value })}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); crearEtiqueta(); } }}
+                />
+                <input
+                  type="color" title="Color" value={etiquetaForm.color}
+                  onChange={(e) => setEtiquetaForm({ ...etiquetaForm, color: e.target.value })}
+                  style={{ width: 46, height: 34, padding: 2, borderRadius: 8, border: '1px solid var(--line)' }}
+                />
+                <button className="btn primary" onClick={crearEtiqueta}>Agregar</button>
+              </div>
+              <div className="col" style={{ gap: 4, maxHeight: 190, overflowY: 'auto' }}>
+                {etiquetasCat.map((e) => (
+                  <div key={e.id} className="row between" style={{ gap: 8, border: '1px solid var(--line)', borderRadius: 8, padding: '4px 8px' }}>
+                    <span className="chip on" style={{ borderColor: e.color, color: e.color }}>{e.nombre}</span>
+                    <div className="row" style={{ gap: 6 }}>
+                      <input
+                        className="input" style={{ width: 120, fontSize: 12 }} defaultValue={e.nombre} title="Renombrar (se cambia en las conversaciones)"
+                        onBlur={(ev) => { const v = ev.target.value.trim(); if (v && v !== e.nombre) cambiarEtiqueta(e.id, { nombre: v }); }}
+                      />
+                      <input
+                        type="color" title="Color" value={e.color || '#d98e00'}
+                        onChange={(ev) => cambiarEtiqueta(e.id, { color: ev.target.value })}
+                        style={{ width: 36, height: 30, padding: 2, borderRadius: 8, border: '1px solid var(--line)' }}
+                      />
+                      <button className="btn sm ghost" title="Sacarla del catálogo (deja de ofrecerse)" onClick={() => cambiarEtiqueta(e.id, { activo: false })}>Sacar</button>
+                    </div>
+                  </div>
+                ))}
+                {etiquetasCat.length === 0 && <span className="muted" style={{ fontSize: 12 }}>Todavía no hay etiquetas.</span>}
+              </div>
+            </div>
+
+            <div className="col" style={{ gap: 6 }}>
+              <b style={{ fontSize: 13 }}>Respuestas rápidas</b>
+              <p className="muted" style={{ fontSize: 12, margin: 0 }}>
+                En el chat escribís <b>/</b> y elegís la respuesta. Podés usar <span className="mono">{'{{nombre}}'}</span> y{' '}
+                <span className="mono">{'{{serie}}'}</span> y se completan solos.
+              </p>
+              <div className="row" style={{ gap: 6 }}>
+                <input
+                  className="input" style={{ width: 120 }} placeholder="atajo"
+                  value={respuestaForm.atajo} onChange={(e) => setRespuestaForm({ ...respuestaForm, atajo: e.target.value })}
+                />
+                <input
+                  className="input" style={{ flex: 1 }} placeholder="Texto de la respuesta"
+                  value={respuestaForm.texto} onChange={(e) => setRespuestaForm({ ...respuestaForm, texto: e.target.value })}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); crearRespuesta(); } }}
+                />
+                <button className="btn primary" disabled={enviando} onClick={crearRespuesta}>Agregar</button>
+              </div>
+              <div className="col" style={{ gap: 4, maxHeight: 190, overflowY: 'auto' }}>
+                {respuestas.map((r) => (
+                  <div key={r.id} className="row between" style={{ gap: 8, border: '1px solid var(--line)', borderRadius: 8, padding: '4px 8px' }}>
+                    <span className="chip on">/{r.atajo}</span>
+                    <input
+                      className="input" style={{ flex: 1, fontSize: 12 }} defaultValue={r.texto}
+                      onBlur={(ev) => { const v = ev.target.value.trim(); if (v && v !== r.texto) cambiarRespuesta(r.id, { texto: v }); }}
+                    />
+                    <button className="btn sm ghost" title="Sacarla de la lista" onClick={() => cambiarRespuesta(r.id, { activo: false })}>Sacar</button>
+                  </div>
+                ))}
+                {respuestas.length === 0 && <span className="muted" style={{ fontSize: 12 }}>Todavía no hay respuestas rápidas.</span>}
+              </div>
+            </div>
           </div>
         </Modal>
       )}

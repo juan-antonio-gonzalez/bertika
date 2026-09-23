@@ -771,6 +771,10 @@ details[open] > .cz-summary::after { content: ' –'; }
 .chip button { border: 0; background: transparent; color: inherit; cursor: pointer; font-weight: 800; font-size: 10px; padding: 0 0 0 2px; }
 .wa-crm { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 9px 14px; border-bottom: 1px solid var(--line); background: #fff; }
 .wa-notas { border-top: 1px solid var(--line); padding: 10px 14px; background: #fff; }
+/* Respuestas rápidas: lista que aparece al escribir "/" en el compositor. */
+.atajos { position: absolute; bottom: 52px; left: 10px; right: 10px; background: #fff; border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow-s, 0 8px 20px rgba(10,23,64,.14)); padding: 6px; display: grid; gap: 4px; z-index: 20; max-height: 260px; overflow-y: auto; }
+.atajo { display: grid; gap: 2px; text-align: left; border: 0; background: transparent; padding: 6px 8px; border-radius: 8px; cursor: pointer; font-size: 12.5px; }
+.atajo:hover { background: var(--bg-3); }
 /* Embudo comercial (CRM): una columna por etapa. */
 .embudo { display: grid; grid-template-columns: repeat(5, minmax(210px, 1fr)); gap: 10px; overflow-x: auto; }
 .embudo-col { background: var(--bg-3); border: 1px solid var(--line); border-radius: 12px; padding: 8px; min-height: 180px; }
