@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { Navigate, useParams } from 'react-router-dom';
 import { useStore } from '../store/store';
 import { Icon, EstadoPill, ProgressTracker, fmtDate, fmtARS, fmtFecha, appIconName, Timeline } from '../components/ui';
 import OrdenDetalle from '../components/OrdenDetalle';
@@ -76,10 +77,14 @@ function TrackerPanel({ orden, onVer }) {
   );
 }
 
+// Pestanas del cliente: cada una es una sub-ruta real (/cliente/garantias...).
+const CLIENTE_TABS = { rastreo: 'tracker', cotizaciones: 'cotizaciones', historial: 'historial', flotilla: 'flotilla', garantias: 'garantias', agenda: 'agenda' };
+
 export default function Cliente() {
   const data = useStore((s) => s.data);
   const user = useStore((s) => s.user);
-  const [tab, setTab] = useState('tracker');
+  const { tab: slug } = useParams();
+  const tab = CLIENTE_TABS[slug] || 'tracker';
   const [sel, setSel] = useState(null);
   const [serieSel, setSerieSel] = useState('');
   const [agenda, setAgenda] = useState('');
@@ -108,6 +113,7 @@ export default function Cliente() {
   }).sort((a, b) => a.dias - b.dias), [garantias, hoyRef]);
 
   const bateriasDelCliente = data.baterias.filter((b) => b.cliente_id === clienteActual?.id);
+  if (slug && !CLIENTE_TABS[slug]) return <Navigate to="/cliente/rastreo" replace />;
 
   return (
     <div className="wrap page">
@@ -126,15 +132,6 @@ export default function Cliente() {
             </select>
           </div>
         )}
-      </div>
-
-      <div className="tabs mb16">
-        <button className={`tab ${tab === 'tracker' ? 'active' : ''}`} onClick={() => setTab('tracker')}><Icon name="battery" size={13} /> Rastrear bateria</button>
-        <button className={`tab ${tab === 'cotizaciones' ? 'active' : ''}`} onClick={() => setTab('cotizaciones')}>Cotizaciones ({activas.filter((o) => o.estado === 'quoted').length})</button>
-        <button className={`tab ${tab === 'historial' ? 'active' : ''}`} onClick={() => setTab('historial')}>Historial ({historial.length})</button>
-        {esFlotilla && <button className={`tab ${tab === 'flotilla' ? 'active' : ''}`} onClick={() => setTab('flotilla')}>Flotilla</button>}
-        <button className={`tab ${tab === 'garantias' ? 'active' : ''}`} onClick={() => setTab('garantias')}>Garantias</button>
-        <button className={`tab ${tab === 'agenda' ? 'active' : ''}`} onClick={() => setTab('agenda')}>Agendar visita</button>
       </div>
 
       {tab === 'tracker' && (

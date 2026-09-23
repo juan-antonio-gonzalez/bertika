@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import { Toast, Shell } from './components/ui';
+import { Toast } from './components/ui';
+import AppShell from './components/layout/AppShell';
 import SiteHeader from './components/SiteHeader';
 import SiteFooter from './components/SiteFooter';
 import Chatbot from './components/Chatbot';
@@ -70,12 +71,7 @@ function PublicLayout({ children }) {
 }
 
 function AppLayout({ children }) {
-  return (
-    <>
-      <Shell />
-      {children}
-    </>
-  );
+  return <AppShell>{children}</AppShell>;
 }
 
 function Plataforma() {
@@ -127,11 +123,14 @@ export default function App() {
         {/* Acceso */}
         <Route path="/auth" element={<PublicLayout><Auth /></PublicLayout>} />
 
-        {/* Plataforma */}
+        {/* Plataforma (cada seccion es una sub-ruta real: /hub/dashboard, etc.) */}
         <Route path="/home" element={<AppLayout><Protected><Home /></Protected></AppLayout>} />
         <Route path="/hub" element={<AppLayout><RequireRol rol="admin"><Hub /></RequireRol></AppLayout>} />
+        <Route path="/hub/:tab" element={<AppLayout><RequireRol rol="admin"><Hub /></RequireRol></AppLayout>} />
         <Route path="/tecnico" element={<AppLayout><RequireRol rol="tecnico"><Tecnico /></RequireRol></AppLayout>} />
+        <Route path="/tecnico/:tab" element={<AppLayout><RequireRol rol="tecnico"><Tecnico /></RequireRol></AppLayout>} />
         <Route path="/cliente" element={<AppLayout><RequireRol rol="cliente"><Cliente /></RequireRol></AppLayout>} />
+        <Route path="/cliente/:tab" element={<AppLayout><RequireRol rol="cliente"><Cliente /></RequireRol></AppLayout>} />
         <Route path="/tracker/:orden_id" element={<AppLayout><Tracker /></AppLayout>} />
         <Route path="/settings" element={<AppLayout><Protected><Settings /></Protected></AppLayout>} />
         <Route path="/reportes" element={<AppLayout><RequireRol rol="admin"><Reportes /></RequireRol></AppLayout>} />

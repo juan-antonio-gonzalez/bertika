@@ -3,13 +3,17 @@ import { useStore } from '../store/store';
 import { Icon, EstadoPill, fmtDate, appIconName, fmtTiempo, fmtARS, diasEnEstado, etiquetaAntiguedad, tonoAntiguedad } from '../components/ui';
 import OrdenDetalle from '../components/OrdenDetalle';
 import { ESTADO_LABEL } from '../data/reglas';
-import { useNavigate } from 'react-router-dom';
+import { Navigate, useNavigate, useParams } from 'react-router-dom';
+
+// Pestanas del tecnico: cada una es una sub-ruta real (/tecnico/sin-asignar...).
+const TECNICO_TABS = { 'mis-ordenes': 'activas', 'sin-asignar': 'sin_asignar', completadas: 'completadas' };
 
 export default function Tecnico() {
   const navigate = useNavigate();
   const data = useStore((s) => s.data);
   const user = useStore((s) => s.user);
-  const [tab, setTab] = useState('activas');
+  const { tab: slug } = useParams();
+  const tab = TECNICO_TABS[slug] || 'activas';
   const [sel, setSel] = useState(null);
   const [filtro, setFiltro] = useState('todas');
   const [q, setQ] = useState('');
@@ -47,6 +51,7 @@ export default function Tecnico() {
   const listaSinAsignar = sinAsignar.filter(coincide).sort(porAntiguedad);
   const listaCompletadas = completadas.filter(porEstado).filter(coincide).sort(porAntiguedad);
   const vis = tab === 'activas' ? listaActivas : tab === 'sin_asignar' ? listaSinAsignar : listaCompletadas;
+  if (slug && !TECNICO_TABS[slug]) return <Navigate to="/tecnico/mis-ordenes" replace />;
 
   return (
     <div className="wrap page">
@@ -66,12 +71,6 @@ export default function Tecnico() {
       {reproceso.length > 0 && (
         <div className="banner-red"><Icon name="warn" size={15} /> Una batería con prueba final fallida NO puede entregarse hasta pasar la prueba. Regresa automáticamente a reparación.</div>
       )}
-
-      <div className="tabs mb16">
-        <button className={`tab ${tab === 'activas' ? 'active' : ''}`} onClick={() => setTab('activas')}>Activas ({activas.length})</button>
-        <button className={`tab ${tab === 'sin_asignar' ? 'active' : ''}`} onClick={() => setTab('sin_asignar')}>Sin asignar ({sinAsignar.length})</button>
-        <button className={`tab ${tab === 'completadas' ? 'active' : ''}`} onClick={() => setTab('completadas')}>Completadas ({completadas.length})</button>
-      </div>
 
       <div className="field mb16">
         <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por serie, equipo, cliente, falla o N° de orden" />

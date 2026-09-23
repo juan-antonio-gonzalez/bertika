@@ -1,5 +1,4 @@
 import { useEffect } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useStore } from '../store/store';
 import { ESTADO_LABEL, STATUS_STEP_INDEX, TRACKER_STEPS } from '../data/reglas';
 
@@ -119,60 +118,6 @@ export function Toast() {
         {toast.msg}
       </div>
     </div>
-  );
-}
-
-/* ---------------- App shell / navbar ---------------- */
-export function Shell() {
-  const user = useStore((s) => s.user);
-  const logout = useStore((s) => s.logout);
-  const location = useLocation();
-  const navigate = useNavigate();
-
-  const isAuth = location.pathname === '/auth';
-  const onLanding = location.pathname === '/';
-
-  if (isAuth) return null;
-
-  const dest = (rol) => ({ admin: '/hub', tecnico: '/tecnico', cliente: '/cliente' }[rol]);
-
-  return (
-    <header className="shell">
-      <div className="shell-inner">
-        <Link to="/" className="brand">
-          <span className="logo"><Icon name="bolt" size={20} /></span>
-          <span>
-            Bertika
-            <small>Energia bajo control</small>
-          </span>
-        </Link>
-        <nav className="nav">
-          {!user ? (
-            <>
-              {!onLanding && <Link to="/"><Icon name="home" size={14} />Inicio</Link>}
-              <Link to="/auth"><Icon name="user" size={14} />Acceso</Link>
-            </>
-          ) : (
-            <>
-              <Link to={dest(user.rol)} className={location.pathname.startsWith(dest(user.rol)) ? 'active' : ''}>
-                {user.rol === 'admin' ? 'Hub' : user.rol === 'tecnico' ? 'Operativo' : 'Mi espacio'}
-              </Link>
-              {user.rol === 'admin' && <Link to="/reportes" className={location.pathname === '/reportes' ? 'active' : ''}><Icon name="clipboard" size={14} />Reportes</Link>}
-              {user.rol === 'admin' && <Link to="/usuarios" className={location.pathname === '/usuarios' ? 'active' : ''}><Icon name="users" size={14} />Usuarios</Link>}
-              <Link to="/settings" className={location.pathname === '/settings' ? 'active' : ''}><Icon name="gear" size={14} />Ajustes</Link>
-              <button onClick={() => { logout(); navigate('/'); }}><Icon name="logout" size={14} />Salir</button>
-              <span className="userchip" style={{ marginLeft: 4 }}>
-                <span className="avatar">{user.nombre?.slice(0, 1) || 'U'}</span>
-                <span>
-                  <div className="uname">{user.nombre || user.rol}</div>
-                  <div className="urole">{user.rol}</div>
-                </span>
-              </span>
-            </>
-          )}
-        </nav>
-      </div>
-    </header>
   );
 }
 

@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { Link, Navigate, useParams } from 'react-router-dom';
 import { useStore } from '../store/store';
 import { Icon, EstadoPill, OrdenCard, Modal, fmtDate, fmtARS, fmtFecha, nombreActor } from '../components/ui';
 import OrdenDetalle from '../components/OrdenDetalle';
@@ -27,70 +28,6 @@ const ESTADO_LB = {
   in_repair: 'En reparación', testing: 'Prueba final', ready: 'Listas', delivered: 'Entregadas',
   cancelled: 'Canceladas',
 };
-
-function AltasForm({ onClose }) {
-  const crearCliente = useStore((s) => s.crearCliente);
-  const crearTecnico = useStore((s) => s.crearTecnico);
-  const crearInsumo = useStore((s) => s.crearInsumo);
-  const [tipo, setTipo] = useState('cliente');
-  const [cliente, setCliente] = useState({ nombre: '', empresa: '', email: '', telefono: '' });
-  const [tecnico, setTecnico] = useState({ nombre: '', especialidad: '', certificaciones: '' });
-  const [insumo, setInsumo] = useState({ nombre: '', categoria: '', stock: '', precio: '' });
-  const [busy, setBusy] = useState(false);
-
-  const guardar = async () => {
-    setBusy(true);
-    if (tipo === 'cliente') {
-      await crearCliente(cliente);
-    } else if (tipo === 'tecnico') {
-      await crearTecnico({ ...tecnico, certificaciones: tecnico.certificaciones.split(',').map((c) => c.trim()).filter(Boolean) });
-    } else {
-      await crearInsumo({ ...insumo, stock: Number(insumo.stock) || 0, precio: Number(insumo.precio) || 0 });
-    }
-    setBusy(false);
-    onClose();
-  };
-
-  return (
-    <div>
-      <div className="tabs mb16">
-        <button className={`tab ${tipo === 'cliente' ? 'active' : ''}`} onClick={() => setTipo('cliente')}><Icon name="building" size={13} /> Cliente</button>
-        <button className={`tab ${tipo === 'tecnico' ? 'active' : ''}`} onClick={() => setTipo('tecnico')}><Icon name="users" size={13} /> Tecnico</button>
-        <button className={`tab ${tipo === 'insumo' ? 'active' : ''}`} onClick={() => setTipo('insumo')}><Icon name="box" size={13} /> Insumo</button>
-      </div>
-
-      {tipo === 'cliente' && (
-        <div className="col">
-          <div className="field"><label>Nombre</label><input className="input" value={cliente.nombre} onChange={(e) => setCliente({ ...cliente, nombre: e.target.value })} placeholder="Nombre del cliente" /></div>
-          <div className="field"><label>Empresa / flotilla</label><input className="input" value={cliente.empresa} onChange={(e) => setCliente({ ...cliente, empresa: e.target.value })} placeholder="ej. Transportes La Union" /></div>
-          <div className="field"><label>Email</label><input className="input" type="email" value={cliente.email} onChange={(e) => setCliente({ ...cliente, email: e.target.value })} placeholder="cliente@empresa.com" /></div>
-          <div className="field"><label>Teléfono</label><input className="input" value={cliente.telefono} onChange={(e) => setCliente({ ...cliente, telefono: e.target.value })} placeholder="(55) 0000-0000" /></div>
-        </div>
-      )}
-
-      {tipo === 'tecnico' && (
-        <div className="col">
-          <div className="field"><label>Nombre</label><input className="input" value={tecnico.nombre} onChange={(e) => setTecnico({ ...tecnico, nombre: e.target.value })} placeholder="Nombre del tecnico" /></div>
-          <div className="field"><label>Especialidad</label><input className="input" value={tecnico.especialidad} onChange={(e) => setTecnico({ ...tecnico, especialidad: e.target.value })} placeholder="ej. Plomo-Acido" /></div>
-          <div className="field"><label>Certificaciones (separadas por coma)</label><input className="input" value={tecnico.certificaciones} onChange={(e) => setTecnico({ ...tecnico, certificaciones: e.target.value })} placeholder="ej. Cert. Bosch, Seguridad industrial" /></div>
-        </div>
-      )}
-
-      {tipo === 'insumo' && (
-        <div className="col">
-          <div className="field"><label>Nombre</label><input className="input" value={insumo.nombre} onChange={(e) => setInsumo({ ...insumo, nombre: e.target.value })} placeholder="ej. Acido sulfurico" /></div>
-          <div className="field"><label>Categoría</label><input className="input" value={insumo.categoria} onChange={(e) => setInsumo({ ...insumo, categoria: e.target.value })} placeholder="ej. Insumo / Repuesto" /></div>
-          <div className="row">
-            <div className="field"><label>Stock inicial</label><input className="input" type="number" value={insumo.stock} onChange={(e) => setInsumo({ ...insumo, stock: e.target.value })} placeholder="0" /></div>
-            <div className="field"><label>Precio unitario (ARS)</label><input className="input" type="number" value={insumo.precio} onChange={(e) => setInsumo({ ...insumo, precio: e.target.value })} placeholder="0" /></div>
-          </div>
-        </div>
-      )}
-
-      <button className="btn primary block lg" disabled={busy} onClick={guardar}><Icon name="plus" size={15} /> {busy ? 'Guardando...' : 'Dar de alta'}</button>
-    </div>
-  );
-}
 
 function Kanban({ onOpen }) {
   const ordenes = useStore((s) => s.data.ordenes);
@@ -180,83 +117,6 @@ function Dashboard() {
       {pasadasHoy.length > 0 && (
         <div className="banner-green"><Icon name="clock" size={15} /> Entregas programadas para hoy: {pasadasHoy.map((o) => o.bateria_serie).join(' · ')}</div>
       )}
-    </div>
-  );
-}
-
-function NewOrdenForm({ onClose }) {
-  const data = useStore((s) => s.data);
-  const addOrder = useStore((s) => s.addOrder);
-  const [serie, setSerie] = useState('');
-  const [existe, setExiste] = useState(true);
-  const batSel = data.baterias.find((b) => b.numero_serie === serie);
-  const [tipo, setTipo] = useState('Plomo-Acido');
-  const [volt, setVolt] = useState('12V');
-  const [cap, setCap] = useState('');
-  const [aplic, setAplic] = useState('Automotriz');
-  const [maMa, setMarca] = useState('');
-  const [modelo, setModelo] = useState('');
-  const [equipo, setEquipo] = useState('');
-  const [cli, setCli] = useState('');
-  const [falla, setFalla] = useState('');
-
-  const onSerie = (val) => {
-    setSerie(val);
-    const b = data.baterias.find((x) => x.numero_serie === val);
-    setExiste(!!b);
-    if (b) {
-      setTipo(b.tipo); setVolt(b.voltaje); setCap(b.capacidad); setAplic(b.aplicacion);
-      setMarca(b.marca); setModelo(b.modelo); setEquipo(b.equipo);
-      if (!cli) setCli(b.cliente_id);
-    }
-  };
-
-  const batData = batSel || null;
-
-  return (
-    <div className="col">
-      <div className="field"><label>Numero de serie</label><input className="input mono" value={serie} onChange={(e) => onSerie(e.target.value)} placeholder='ej. BAT-AUT-004' /></div>
-      {serie && existe && batData && (
-        <div className="banner-green"><Icon name="battery" size={15} /> Bateria existente: {batData.tipo} {batData.voltaje} {batData.capacidad}Ah · {batData.equipo} · Cliente: {data.clientes.find((c) => c.id === batData.cliente_id)?.nombre}</div>
-      )}
-      {serie && !existe && (
-        <>
-          <div className="banner-warn"><Icon name="warn" size={15} /> Serie nueva: se registrara la bateria en el sistema.</div>
-          <div className="grid2">
-            <div className="field"><label>Tipo</label>
-              <select className="input" value={tipo} onChange={(e) => setTipo(e.target.value)}>
-                {['Plomo-Acido', 'AGM', 'Gel', 'Litio (Ion-Litio)', 'Ni-Cd'].map((t) => <option key={t}>{t}</option>)}
-              </select>
-            </div>
-            <div className="field"><label>Voltaje</label>
-              <select className="input" value={volt} onChange={(e) => setVolt(e.target.value)}>
-                {['6V', '12V', '24V', '36V', '48V', '72V', '96V'].map((v) => <option key={v}>{v}</option>)}
-              </select>
-            </div>
-            <div className="field"><label>Capacidad (Ah)</label><input className="input" value={cap} onChange={(e) => setCap(e.target.value)} placeholder="ej. 60" /></div>
-            <div className="field"><label>Aplicacion</label>
-              <select className="input" value={aplic} onChange={(e) => setAplic(e.target.value)}>
-                {['Automotriz', 'Autoelevador', 'Ferroviario', 'Industrial/UPS', 'Marino'].map((a) => <option key={a}>{a}</option>)}
-              </select>
-            </div>
-            <div className="field"><label>Marca</label><input className="input" value={maMa} onChange={(e) => setMarca(e.target.value)} /></div>
-            <div className="field"><label>Modelo</label><input className="input" value={modelo} onChange={(e) => setModelo(e.target.value)} /></div>
-            <div className="field" style={{ gridColumn: '1 / -1' }}><label>Equipo asociado</label><input className="input" value={equipo} onChange={(e) => setEquipo(e.target.value)} placeholder="ej. Montacargas Toyota 8FGU25 - Unidad 9" /></div>
-          </div>
-        </>
-      )}
-      <div className="field"><label>Cliente</label>
-        <select className="input" value={cli} onChange={(e) => setCli(e.target.value)}>
-          <option value="">— Seleccionar cliente —</option>
-          {data.clientes.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-        </select>
-      </div>
-      <div className="field"><label>Falla reportada / motivo de ingreso</label><textarea className="input" value={falla} onChange={(e) => setFalla(e.target.value)} placeholder="ej. No mantiene carga en operacion" /></div>
-      <button className="btn primary block lg" disabled={!serie || !cli || !falla || (!existe && !cap)} onClick={() => { addOrder({
-        serie, tipo, voltaje: volt, capacidad: cap, aplicacion: aplic, marca: maMa, modelo, equipo, cliente_id: cli, falla,
-      }); onClose(); }}>
-        <Icon name="plus" size={16} /> Crear orden de trabajo
-      </button>
     </div>
   );
 }
@@ -601,13 +461,39 @@ function HistorialSerie() {
   );
 }
 
+// Fase 6: ficha unificada de clientes (contactos, equipos, historial y
+// garantias en una pantalla). Por ahora la sub-ruta muestra un aviso con
+// accesos a lo que ya existe, para que no quede vacia.
+function Clientes() {
+  return (
+    <div className="card">
+      <div className="card-title"><Icon name="users" size={14} /> Clientes</div>
+      <p className="muted" style={{ marginBottom: 10 }}>
+        La ficha unificada de clientes llega en la proxima etapa. Mientras tanto, estos accesos siguen disponibles:
+      </p>
+      <div className="row wrap" style={{ gap: 8 }}>
+        <Link className="btn" to="/hub"><Icon name="battery" size={14} /> Ver el tablero</Link>
+        <Link className="btn" to="/hub/flotillas"><Icon name="building" size={14} /> Flotillas</Link>
+        <Link className="btn" to="/hub/garantias"><Icon name="shield" size={14} /> Garantias</Link>
+        <Link className="btn" to="/hub/whatsapp"><Icon name="mail" size={14} /> WhatsApp</Link>
+      </div>
+    </div>
+  );
+}
+
+// Pestanas del Hub: cada una es una sub-ruta real (/hub/dashboard, /hub/baja...).
+// Un slug desconocido cae en el tablero, asi los enlaces viejos no rompen.
+const HUB_TABS = ['kanban', 'dashboard', 'historial', 'inventario', 'tecnicos', 'flotillas', 'garantias', 'baja', 'cotizador', 'whatsapp', 'clientes'];
+
 export default function Hub() {
   const data = useStore((s) => s.data);
-  const [tab, setTab] = useState('kanban');
+  const { tab: slug } = useParams();
+  const tab = HUB_TABS.includes(slug) ? slug : 'kanban';
   const [sel, setSel] = useState(null);
-  const [nueva, setNueva] = useState(false);
-  const [altas, setAltas] = useState(false);
   const activas = data.ordenes.filter((o) => !['delivered', 'cancelled'].includes(o.estado)).length;
+  // Sub-ruta inexistente: se vuelve al tablero (misma direccion canonica que
+  // muestra el contenido, para que el item activo del sidebar no quede vacio).
+  if (slug && !HUB_TABS.includes(slug)) return <Navigate to="/hub" replace />;
 
   return (
     <div className="wrap page">
@@ -616,23 +502,6 @@ export default function Hub() {
           <h1 className="page-title">Hub administrativo</h1>
           <p className="page-sub">Operacion del taller · {activas} ordenes activas · {fmtARS(data.ordenes.filter((o) => o.estado === 'delivered').reduce((a, o) => a + (o.monto_cobrado || 0), 0))} facturados en total</p>
         </div>
-        <div className="row">
-          <button className="btn primary" onClick={() => setNueva(true)}><Icon name="plus" size={15} /> Nueva orden</button>
-          <button className="btn" onClick={() => setAltas(true)}><Icon name="users" size={15} /> Altas</button>
-        </div>
-      </div>
-
-      <div className="tabs mb16">
-        <button className={`tab ${tab === 'kanban' ? 'active' : ''}`} onClick={() => setTab('kanban')}><Icon name="battery" size={13} /> Kanban</button>
-        <button className={`tab ${tab === 'dashboard' ? 'active' : ''}`} onClick={() => setTab('dashboard')}><Icon name="gauge" size={13} /> Dashboard del día</button>
-        <button className={`tab ${tab === 'historial' ? 'active' : ''}`} onClick={() => setTab('historial')}><Icon name="search" size={13} /> Historial por serie</button>
-        <button className={`tab ${tab === 'inventario' ? 'active' : ''}`} onClick={() => setTab('inventario')}><Icon name="box" size={13} /> Inventario</button>
-        <button className={`tab ${tab === 'tecnicos' ? 'active' : ''}`} onClick={() => setTab('tecnicos')}><Icon name="users" size={13} /> Técnicos</button>
-        <button className={`tab ${tab === 'flotillas' ? 'active' : ''}`} onClick={() => setTab('flotillas')}><Icon name="building" size={13} /> Flotillas</button>
-        <button className={`tab ${tab === 'garantias' ? 'active' : ''}`} onClick={() => setTab('garantias')}><Icon name="shield" size={13} /> Garantías</button>
-        <button className={`tab ${tab === 'baja' ? 'active' : ''}`} onClick={() => setTab('baja')}><Icon name="recycl" size={13} /> Baja / reciclaje</button>
-        <button className={`tab ${tab === 'cotizador' ? 'active' : ''}`} onClick={() => setTab('cotizador')}><Icon name="calculator" size={13} /> Cotizador</button>
-        <button className={`tab ${tab === 'whatsapp' ? 'active' : ''}`} onClick={() => setTab('whatsapp')}><Icon name="mail" size={13} /> WhatsApp</button>
       </div>
 
       {tab === 'kanban' && <Kanban onOpen={setSel} />}
@@ -645,30 +514,7 @@ export default function Hub() {
       {tab === 'baja' && <BajaYReciclaje onAbrirOrden={setSel} />}
       {tab === 'cotizador' && <CotizadorConfig />}
       {tab === 'whatsapp' && <WhatsAppBandeja />}
-
-      {nueva && (
-        <div className="modal-back">
-          <div className="modal">
-            <div className="row between mb16">
-              <div><h3>Crear orden manual</h3><div className="sub">Registra el ingreso de la bateria al taller</div></div>
-              <button className="btn icon sm" onClick={() => setNueva(false)}><Icon name="x" size={14} /></button>
-            </div>
-            <NewOrdenForm onClose={() => setNueva(false)} />
-          </div>
-        </div>
-      )}
-
-      {altas && (
-        <div className="modal-back">
-          <div className="modal">
-            <div className="row between mb16">
-              <div><h3>Altas administrativas</h3><div className="sub">Da de alta clientes, tecnicos e insumos del taller</div></div>
-              <button className="btn icon sm" onClick={() => setAltas(false)}><Icon name="x" size={14} /></button>
-            </div>
-            <AltasForm onClose={() => setAltas(false)} />
-          </div>
-        </div>
-      )}
+      {tab === 'clientes' && <Clientes />}
 
       {sel && <OrdenDetalle orden={sel} role="admin" onClose={() => setSel(null)} />}
     </div>
