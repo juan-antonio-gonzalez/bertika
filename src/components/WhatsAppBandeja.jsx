@@ -6,8 +6,21 @@ import {
   ETAPAS, agruparEmbudo, resumenEmbudo, normalizarMonto, formatearDuracion, formatearTasa,
   MOTIVOS_PERDIDA, TIPOS_CLIENTE, CANALES_ORIGEN,
 } from '../data/crm.js';
+import { aplicarVariables, enlaceSeguimiento, VARIABLES_RESPUESTA } from '../data/respuestas.js';
 
 const listaDe = (texto) => String(texto || '').split(', ').filter(Boolean);
+
+// Escapa un texto para usarlo dentro de una expresion regular.
+const escaparRegex = (t) => String(t || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// Resalta el termino buscado dentro del fragmento.
+const resaltar = (texto, termino) => {
+  const t = String(texto || '');
+  const q = String(termino || '').trim();
+  if (!q) return t;
+  const partes = t.split(new RegExp(`(${escaparRegex(q)})`, 'gi'));
+  return partes.map((parte, i) => (parte.toLowerCase() === q.toLowerCase() ? <mark key={i}>{parte}</mark> : parte));
+};
 
 // Bandeja de WhatsApp del taller: estado del canal, filtros y el CRM de cada
 // conversacion (responsable, etiquetas, notas internas y ficha del cliente).
@@ -331,6 +344,27 @@ export default function WhatsAppBandeja() {
       toastShow(e.message, 'error');
     }
   };
+  const borrarEtiqueta = async (id) => {
+    try {
+      const r = await api(`/whatsapp/etiquetas/${id}`, { method: 'DELETE' });
+      await cargarEtiquetas();
+      cargarEstado();
+      if (hilo) abrir(sel);
+      toastShow(r?.desactivada ? (r.mensaje || 'La etiqueta quedó fuera del catálogo') : 'Etiqueta borrada', 'ok');
+    } catch (e) {
+      toastShow(e.message, 'error');
+    }
+  };
+  const borrarRespuesta = async (id) => {
+    try {
+      await api(`/whatsapp/respuestas/${id}`, { method: 'DELETE' });
+      await cargarRespuestas();
+      toastShow('Respuesta borrada', 'ok');
+    } catch (e) {
+      toastShow(e.message, 'error');
+    }
+  };
+
   const crearRespuesta = async () => {
     const atajo = respuestaForm.atajo.trim();
     const txt = respuestaForm.texto.trim();
@@ -355,14 +389,22 @@ export default function WhatsAppBandeja() {
 
   // ---- Respuestas rápidas: se disparan escribiendo "/" en el compositor ----
   const primerNombre = (n) => (String(n || '').trim().split(/\s+/)[0] || 'cliente');
-  const textoConVariables = (t) => String(t || '')
-    .replace(/\{\{\s*nombre\s*\}\}/gi, primerNombre(hilo?.cliente?.nombre || hilo?.conversacion?.nombre_perfil))
-    .replace(/\{\{\s*serie\s*\}\}/gi, hilo?.ordenes?.[0]?.bateria_serie || 'tu batería');
+  // La última orden del cliente da la serie y el enlace de seguimiento (que va
+  // con el código de 16 dígitos: el detalle público no acepta el id interno).
+  const primeraOrden = hilo?.ordenes?.[0] || null;
+  const linkSeguimiento = primeraOrden ? enlaceSeguimiento(primeraOrden, window.location.origin) : '';
+  const textoConVariables = (t) => aplicarVariables(t, {
+    nombre: primerNombre(hilo?.cliente?.nombre || hilo?.conversacion?.nombre_perfil),
+    serie: primeraOrden?.bateria_serie,
+    link: linkSeguimiento,
+  });
   const usarAtajo = (r) => { setTexto(textoConVariables(r.texto)); setAtajosAbiertos(false); };
+  const filtroAtajo = texto.replace(/^\//, '').toLowerCase().trim();
   const atajosFiltrados = (() => {
     if (!atajosAbiertos) return [];
-    const q = texto.replace(/^\//, '').toLowerCase().trim();
-    return respuestas.filter((r) => !q || r.atajo.toLowerCase().includes(q) || String(r.texto).toLowerCase().includes(q)).slice(0, 6);
+    // Si el texto ya es una respuesta escrita, no se filtra por él.
+    const q = filtroAtajo.length > 24 ? '' : filtroAtajo;
+    return respuestas.filter((r) => !q || r.atajo.toLowerCase().includes(q) || String(r.texto).toLowerCase().includes(q)).slice(0, 8);
   })();
 
   // ---- Buscar dentro de los mensajes (no solo en nombre/teléfono) ----
@@ -753,7 +795,10 @@ export default function WhatsAppBandeja() {
                           <b style={{ fontSize: 12 }}>{m.cliente_nombre || m.nombre_perfil || m.telefono}</b>
                           <span className="muted" style={{ fontSize: 10.5 }}>{fmtFecha(m.fecha)}</span>
                         </div>
-                        <div className="muted" style={{ fontSize: 11.5 }}>{m.direccion === 'in' ? '←' : '→'} {m.texto}</div>
+                        <div className="muted" style={{ fontSize: 11.5 }}>
+                          {m.direccion === 'in' ? '←' : '→'}{' '}
+                          {resaltar(m.texto, buscarMsg.q)}
+                        </div>
                       </button>
                     ))}
                   </div>
@@ -970,8 +1015,12 @@ export default function WhatsAppBandeja() {
               </div>
 
               <div className="row" style={{ padding: 10, gap: 8, borderTop: '1px solid var(--line)', position: 'relative' }}>
-                {atajosAbiertos && atajosFiltrados.length > 0 && (
+                {atajosAbiertos && (
                   <div className="atajos">
+                    <div className="muted" style={{ fontSize: 11, padding: '2px 8px' }}>
+                      Respuestas rápidas · variables: {VARIABLES_RESPUESTA.map((v) => `{{${v.clave}}}`).join(' ')}
+                    </div>
+                    {atajosFiltrados.length === 0 && <span className="muted" style={{ fontSize: 12, padding: '4px 8px' }}>No hay respuestas que coincidan.</span>}
                     {atajosFiltrados.map((r) => (
                       <button key={r.id} type="button" className="atajo" onClick={() => usarAtajo(r)}>
                         <b>/{r.atajo}</b>
@@ -980,6 +1029,10 @@ export default function WhatsAppBandeja() {
                     ))}
                   </div>
                 )}
+                <button
+                  type="button" className={`btn sm${atajosAbiertos ? ' primary' : ''}`} title="Respuestas rápidas (/ en el chat)"
+                  onClick={() => setAtajosAbiertos((a) => !a)}
+                >Respuestas</button>
                 <label className="btn sm" title="Mandar una foto o un PDF" style={{ cursor: 'pointer', margin: 0 }}>
                   📎
                   <input
@@ -1184,7 +1237,12 @@ export default function WhatsAppBandeja() {
                         onChange={(ev) => cambiarEtiqueta(e.id, { color: ev.target.value })}
                         style={{ width: 36, height: 30, padding: 2, borderRadius: 8, border: '1px solid var(--line)' }}
                       />
-                      <button className="btn sm ghost" title="Sacarla del catálogo (deja de ofrecerse)" onClick={() => cambiarEtiqueta(e.id, { activo: false })}>Sacar</button>
+                      <input
+                        className="input" type="number" title="Orden (menor = primero)" defaultValue={e.orden ?? 0}
+                        style={{ width: 62, fontSize: 12 }}
+                        onBlur={(ev) => { const n = Number(ev.target.value); if (Number.isFinite(n) && n !== e.orden) cambiarEtiqueta(e.id, { orden: n }); }}
+                      />
+                      <button className="btn sm ghost" title="Borrarla (si está en uso, se saca del catálogo y se mantiene en las conversaciones)" onClick={() => borrarEtiqueta(e.id)}>Borrar</button>
                     </div>
                   </div>
                 ))}
@@ -1195,8 +1253,10 @@ export default function WhatsAppBandeja() {
             <div className="col" style={{ gap: 6 }}>
               <b style={{ fontSize: 13 }}>Respuestas rápidas</b>
               <p className="muted" style={{ fontSize: 12, margin: 0 }}>
-                En el chat escribís <b>/</b> y elegís la respuesta. Podés usar <span className="mono">{'{{nombre}}'}</span> y{' '}
-                <span className="mono">{'{{serie}}'}</span> y se completan solos.
+                En el chat escribís <b>/</b> (o tocás <b>Respuestas</b>) y elegís la respuesta. Las variables se completan solas:{' '}
+                {VARIABLES_RESPUESTA.map((v) => (
+                  <span key={v.clave} className="mono" title={v.ayuda} style={{ marginRight: 6 }}>{`{{${v.clave}}}`}</span>
+                ))}
               </p>
               <div className="row" style={{ gap: 6 }}>
                 <input
@@ -1218,7 +1278,12 @@ export default function WhatsAppBandeja() {
                       className="input" style={{ flex: 1, fontSize: 12 }} defaultValue={r.texto}
                       onBlur={(ev) => { const v = ev.target.value.trim(); if (v && v !== r.texto) cambiarRespuesta(r.id, { texto: v }); }}
                     />
-                    <button className="btn sm ghost" title="Sacarla de la lista" onClick={() => cambiarRespuesta(r.id, { activo: false })}>Sacar</button>
+                    <input
+                      className="input" type="number" title="Orden (menor = primero)" defaultValue={r.orden ?? 0}
+                      style={{ width: 62, fontSize: 12 }}
+                      onBlur={(ev) => { const n = Number(ev.target.value); if (Number.isFinite(n) && n !== r.orden) cambiarRespuesta(r.id, { orden: n }); }}
+                    />
+                    <button className="btn sm ghost" title="Borrarla" onClick={() => borrarRespuesta(r.id)}>Borrar</button>
                   </div>
                 ))}
                 {respuestas.length === 0 && <span className="muted" style={{ fontSize: 12 }}>Todavía no hay respuestas rápidas.</span>}

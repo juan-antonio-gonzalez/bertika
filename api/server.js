@@ -27,6 +27,7 @@ import {
 } from './crm.js';
 import { generarCodigoUnico, digitar, formatearCodigo } from './codigo.js';
 import { normalizarBooleano } from './validaciones.js';
+import { RESPUESTAS_EJEMPLO, colorDePaleta, normalizarAtajo, fragmentoConTexto } from '../src/data/respuestas.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, 'uploads');
@@ -277,14 +278,40 @@ async function asegurarCodigos() {
       ('wet_flotilla', 'Flotilla', '#7048e8', 50)
     ) AS v(id, nombre, color, orden)
     WHERE NOT EXISTS (SELECT 1 FROM wa_etiquetas)`);
-  await query(`INSERT INTO wa_respuestas (id, atajo, texto)
-    SELECT v.id, v.atajo, v.texto FROM (VALUES
-      ('war_saludo', 'hola', 'Hola {{nombre}}, te escribimos del taller Bertika. ¿En qué te podemos ayudar?'),
-      ('war_recibida', 'recibida', 'Hola {{nombre}}, recibimos tu batería. Apenas tengamos el diagnóstico te avisamos.'),
-      ('war_repuesto', 'repuesto', 'Hola {{nombre}}, estamos esperando un repuesto para tu batería. Te avisamos apenas llegue.'),
-      ('war_lista', 'lista', 'Hola {{nombre}}, tu batería ya está lista para retirar. Te esperamos en el taller.')
-    ) AS v(id, atajo, texto)
+  await query('ALTER TABLE wa_etiquetas ADD COLUMN IF NOT EXISTS orden INTEGER DEFAULT 0');
+  await query('ALTER TABLE wa_etiquetas ALTER COLUMN orden SET DEFAULT 0');
+  await query('ALTER TABLE wa_respuestas ADD COLUMN IF NOT EXISTS orden INTEGER DEFAULT 0');
+  // Respuestas de ejemplo (solo si la tabla esta vacia).
+  const ejemplos = RESPUESTAS_EJEMPLO
+    .map((r, i) => `('war_${r.atajo}', '${r.atajo}', '${String(r.texto).replace(/'/g, "''")}', ${(i + 1) * 10})`)
+    .join(',\n      ');
+  await query(`INSERT INTO wa_respuestas (id, atajo, texto, orden)
+    SELECT v.id, v.atajo, v.texto, v.orden FROM (VALUES
+      ${ejemplos}
+    ) AS v(id, atajo, texto, orden)
     WHERE NOT EXISTS (SELECT 1 FROM wa_respuestas)`);
+  // Las etiquetas que ya estaban escritas a mano en las conversaciones pasan al
+  // catalogo (una sola vez): asi tienen color y se pueden renombrar sin perderlas.
+  const sueltas = await query(`SELECT DISTINCT trim(t) AS nombre FROM wa_conversaciones,
+      unnest(string_to_array(COALESCE(etiquetas, ''), ',')) AS t WHERE trim(t) <> ''`);
+  const yaEnCatalogo = new Set((await query('SELECT lower(nombre) AS n FROM wa_etiquetas')).map((r) => r.n));
+  let ordenMigracion = 100;
+  for (const fila of sueltas) {
+    const nombre = limStr(fila.nombre, 24);
+    if (!nombre || yaEnCatalogo.has(nombre.toLowerCase())) continue;
+    await query('INSERT INTO wa_etiquetas (id, nombre, color, orden) VALUES ($1,$2,$3,$4) ON CONFLICT (nombre) DO NOTHING',
+      [`wet_mig_${ordenMigracion}`, nombre, colorDePaleta(ordenMigracion), ordenMigracion]);
+    yaEnCatalogo.add(nombre.toLowerCase());
+    ordenMigracion += 1;
+  }
+  // Busqueda en mensajes: si la base tiene pg_trgm se usa un indice (mucho mas
+  // rapido con historial largo); si no se puede, se sigue con ILIKE simple.
+  try {
+    await query('CREATE EXTENSION IF NOT EXISTS pg_trgm');
+    await query('CREATE INDEX IF NOT EXISTS idx_wa_mensajes_texto_trgm ON wa_mensajes USING gin (texto gin_trgm_ops)');
+  } catch (e) {
+    console.warn('[migracion] pg_trgm no disponible, la busqueda usa ILIKE simple:', e.message);
+  }
   // Embudo comercial: etapa y monto estimado de la oportunidad.
   // Permisos por usuario (mapa plano de booleanos: que ve y que puede hacer).
   // NULL = plantilla del rol, asi ningun usuario existente cambia de comportamiento.
@@ -1104,7 +1131,7 @@ app.post('/api/ordenes/:id/compartir', authRequired, async (req, res) => {
   const t = hornoSigCot(o.id);
   return res.json({
     cotizacion: `${PUBLIC_URL}/cotizacion/${o.id}?t=${t}`,
-    tracker: `${PUBLIC_URL}/tracker/${o.id}`,
+    tracker: `${PUBLIC_URL}/tracker/${formatearCodigo(o.codigo_seguimiento) || o.id}`,
   });
 });
 
@@ -2173,11 +2200,6 @@ async function renombrarEtiquetaEnConversaciones(anterior, nuevo) {
   return convs.length;
 }
 
-// Atajo de respuesta rapida: sin "/", sin espacios, en minusculas.
-function normalizarAtajo(valor) {
-  return String(valor || '').trim().replace(/^\/+/, '').replace(/\s+/g, '-').replace(/[^A-Za-z0-9._-]/g, '').toLowerCase().slice(0, 20);
-}
-
 // ---------- Catalogo de etiquetas (CRM) ----------
 app.get('/api/whatsapp/etiquetas', authRequired, permisoRequerido('whatsapp'), async (req, res) => {
   const todas = String(req.query?.todas || '') === '1';
@@ -2186,8 +2208,8 @@ app.get('/api/whatsapp/etiquetas', authRequired, permisoRequerido('whatsapp'), a
 });
 
 app.post('/api/whatsapp/etiquetas', authRequired, permisoRequerido('crm_whatsapp'), async (req, res) => {
-  const nombre = limStr(req.body?.nombre, 24);
-  if (!nombre) return res.status(400).json({ error: 'La etiqueta necesita un nombre' });
+  const nombre = normalizarEtiquetas(String(req.body?.nombre || '').replace(/,/g, ' '));
+  if (!nombre || nombre.includes(',')) return res.status(400).json({ error: 'La etiqueta necesita un nombre (sin comas)' });
   const color = /^#[0-9a-fA-F]{6}$/.test(String(req.body?.color || '')) ? req.body.color : '#d98e00';
   const orden = Number.isFinite(Number(req.body?.orden)) ? Math.max(0, Math.min(Number(req.body.orden), 9999)) : 100;
   const ya = await one('SELECT 1 AS x FROM wa_etiquetas WHERE lower(nombre) = lower($1)', [nombre]);
@@ -2203,7 +2225,7 @@ app.patch('/api/whatsapp/etiquetas/:id', authRequired, permisoRequerido('crm_wha
   const args = [];
   let nuevoNombre = null;
   if (req.body?.nombre !== undefined) {
-    nuevoNombre = limStr(req.body.nombre, 24);
+    nuevoNombre = normalizarEtiquetas(String(req.body.nombre || '').replace(/,/g, ' '));
     if (!nuevoNombre) return res.status(400).json({ error: 'La etiqueta necesita un nombre' });
     const repetida = await one('SELECT id FROM wa_etiquetas WHERE lower(nombre) = lower($1) AND id <> $2', [nuevoNombre, et.id]);
     if (repetida) return res.status(409).json({ error: `Ya existe la etiqueta "${nuevoNombre}"` });
@@ -2233,10 +2255,31 @@ app.patch('/api/whatsapp/etiquetas/:id', authRequired, permisoRequerido('crm_wha
   return res.json({ ...actualizada, conversaciones_actualizadas: tocadas });
 });
 
+// Borrar una etiqueta: si esta usada en conversaciones se desactiva (para no
+// perder el historial); si no la usa nadie, se borra de verdad.
+app.delete('/api/whatsapp/etiquetas/:id', authRequired, permisoRequerido('crm_whatsapp'), async (req, res) => {
+  const et = await one('SELECT * FROM wa_etiquetas WHERE id = $1', [req.params.id]);
+  if (!et) return res.status(404).json({ error: 'Etiqueta no encontrada' });
+  const enUso = await one(
+    `SELECT count(*)::int AS n FROM wa_conversaciones
+      WHERE etiquetas = $1 OR etiquetas LIKE $1 || ', %' OR etiquetas LIKE '%, ' || $1 OR etiquetas LIKE '%, ' || $1 || ', %'`,
+    [et.nombre]
+  );
+  if ((enUso?.n || 0) > 0) {
+    await query('UPDATE wa_etiquetas SET activo = false WHERE id = $1', [et.id]);
+    return res.json({
+      ok: true, desactivada: true, conversaciones: enUso.n,
+      mensaje: `La etiqueta estaba en ${enUso.n} conversación(es): se sacó del catálogo pero se mantiene en ellas.`,
+    });
+  }
+  await query('DELETE FROM wa_etiquetas WHERE id = $1', [et.id]);
+  return res.json({ ok: true, borrada: true });
+});
+
 // ---------- Respuestas rapidas del compositor ----------
 app.get('/api/whatsapp/respuestas', authRequired, permisoRequerido('whatsapp'), async (req, res) => {
   const todas = String(req.query?.todas || '') === '1';
-  const rows = await query(`SELECT * FROM wa_respuestas ${todas ? '' : 'WHERE activo = true'} ORDER BY atajo`);
+  const rows = await query(`SELECT * FROM wa_respuestas ${todas ? '' : 'WHERE activo = true'} ORDER BY orden, atajo`);
   return res.json(rows);
 });
 
@@ -2248,7 +2291,8 @@ app.post('/api/whatsapp/respuestas', authRequired, permisoRequerido('responder_w
   const ya = await one('SELECT 1 AS x FROM wa_respuestas WHERE lower(atajo) = lower($1)', [atajo]);
   if (ya) return res.status(409).json({ error: `Ya existe el atajo "/${atajo}"` });
   const id = await nextId('war');
-  return res.json(await one('INSERT INTO wa_respuestas (id, atajo, texto) VALUES ($1,$2,$3) RETURNING *', [id, atajo, texto]));
+  const orden = Number.isFinite(Number(req.body?.orden)) ? Math.max(0, Math.min(Number(req.body.orden), 9999)) : 100;
+  return res.json(await one('INSERT INTO wa_respuestas (id, atajo, texto, orden) VALUES ($1,$2,$3,$4) RETURNING *', [id, atajo, texto, orden]));
 });
 
 app.patch('/api/whatsapp/respuestas/:id', authRequired, permisoRequerido('responder_whatsapp'), async (req, res) => {
@@ -2276,9 +2320,21 @@ app.patch('/api/whatsapp/respuestas/:id', authRequired, permisoRequerido('respon
     args.push(activo);
     campos.push(`activo = $${args.length}`);
   }
+  if (req.body?.orden !== undefined && Number.isFinite(Number(req.body.orden))) {
+    args.push(Math.max(0, Math.min(Number(req.body.orden), 9999)));
+    campos.push(`orden = $${args.length}`);
+  }
   if (!campos.length) return res.status(400).json({ error: 'No hay nada para actualizar' });
   args.push(r.id);
   return res.json(await one(`UPDATE wa_respuestas SET ${campos.join(', ')} WHERE id = $${args.length} RETURNING *`, args));
+});
+
+// Borrar una respuesta rapida (si esta en uso no molesta a nadie: es una ayuda).
+app.delete('/api/whatsapp/respuestas/:id', authRequired, permisoRequerido('responder_whatsapp'), async (req, res) => {
+  const r = await one('SELECT id FROM wa_respuestas WHERE id = $1', [req.params.id]);
+  if (!r) return res.status(404).json({ error: 'Respuesta no encontrada' });
+  await query('DELETE FROM wa_respuestas WHERE id = $1', [r.id]);
+  return res.json({ ok: true });
 });
 
 // ---------- Buscar dentro de los mensajes ----------
@@ -2291,17 +2347,21 @@ app.get('/api/whatsapp/buscar', authRequired, permisoRequerido('whatsapp'), asyn
   const patron = `%${bruto.replace(/[\\%_]/g, (m) => `\\${m}`)}%`;
   const filas = await query(
     `SELECT m.id, m.conversacion_id, m.direccion, m.tipo, m.fecha, m.estado,
-            left(COALESCE(m.texto, ''), 300) AS texto,
+            COALESCE(m.texto, '') AS texto_completo,
             c.telefono, c.nombre_perfil, cl.nombre AS cliente_nombre
        FROM wa_mensajes m
        JOIN wa_conversaciones c ON c.id = m.conversacion_id
        LEFT JOIN clientes cl ON cl.id = c.cliente_id
       WHERE m.texto ILIKE $1
       ORDER BY m.fecha DESC
-      LIMIT 50`,
+      LIMIT 30`,
     [patron]
   );
-  return res.json(filas);
+  // El fragmento se recorta alrededor de lo buscado (y el panel lo resalta).
+  return res.json(filas.map((f) => {
+    const { texto_completo: completo, ...resto } = f;
+    return { ...resto, texto: fragmentoConTexto(completo, bruto) };
+  }));
 });
 
 // Asignar responsable y/o etiquetas (CRM).
@@ -2537,7 +2597,7 @@ app.get('/api/whatsapp/conversaciones/:id', authRequired, permisoRequerido('what
   await query('UPDATE wa_conversaciones SET no_leidos = 0 WHERE id = $1', [conv.id]);
   const cliente = conv.cliente_id ? await one('SELECT * FROM clientes WHERE id = $1', [conv.cliente_id]) : null;
   const ordenes = conv.cliente_id
-    ? await query('SELECT id, bateria_serie, estado, fecha_ingreso FROM ordenes WHERE cliente_id = $1 ORDER BY fecha_ingreso DESC LIMIT 5', [conv.cliente_id])
+    ? await query('SELECT id, bateria_serie, codigo_seguimiento, estado, fecha_ingreso FROM ordenes WHERE cliente_id = $1 ORDER BY fecha_ingreso DESC LIMIT 5', [conv.cliente_id])
     : [];
   const notas = await query('SELECT * FROM wa_notas WHERE conversacion_id = $1 ORDER BY fecha DESC LIMIT 50', [conv.id]);
   // Ficha 360: numeros del cliente para no tener que salir de la bandeja.
