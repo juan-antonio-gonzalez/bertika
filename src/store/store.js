@@ -19,7 +19,9 @@ const fmtARS = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'AR
 // Convierte el usuario de la API (id/uid reales) al shape que usa la UI.
 // id = referencia a cliente/tecnico (o 'admin'); uid = id real del usuario en BD.
 function normalizarUser(apiUser, data) {
-  const ref = { id: 'admin', uid: apiUser.id, rol: apiUser.rol, email: apiUser.email, nombre: 'Administrador' };
+  // permisos: los que el administrador marco en la tabla de casillas (o null =
+  // los del rol). El panel los usa para mostrar solo las secciones habilitadas.
+  const ref = { id: 'admin', uid: apiUser.id, rol: apiUser.rol, email: apiUser.email, nombre: 'Administrador', permisos: apiUser.permisos || null };
   if (apiUser.rol === 'tecnico') {
     ref.id = apiUser.tecnico_id;
     ref.tecnico_id = apiUser.tecnico_id;

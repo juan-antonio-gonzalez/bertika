@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useStore } from '../../store/store';
+import { puedeVer } from '../../data/permisos';
 import { Icon, Modal } from '../ui';
 import { AltasForm, NewOrdenForm } from '../AccionesGlobales';
 import { contarTareasPendientes } from '../../data/crm.js';
@@ -61,54 +62,54 @@ function menuDe(rol, c, esFlotilla) {
   if (rol === 'tecnico') {
     return [
       { grupo: 'Mi trabajo', items: [
-        { to: '/tecnico/mis-ordenes', label: 'Mis órdenes', icon: 'battery', exact: true, contador: c.miasActivas },
-        { to: '/tecnico/sin-asignar', label: 'Sin asignar', icon: 'warn', contador: c.sinAsignar },
-        { to: '/tecnico/completadas', label: 'Completadas', icon: 'check', contador: c.miasCerradas },
-        { to: '/tecnico/tareas', label: 'Mis tareas', icon: 'clock', contador: c.tareas },
+        { to: '/tecnico/mis-ordenes', label: 'Mis órdenes', icon: 'battery', exact: true, contador: c.miasActivas, seccion: 'tablero' },
+        { to: '/tecnico/sin-asignar', label: 'Sin asignar', icon: 'warn', contador: c.sinAsignar, seccion: 'tablero' },
+        { to: '/tecnico/completadas', label: 'Completadas', icon: 'check', contador: c.miasCerradas, seccion: 'tablero' },
+        { to: '/tecnico/tareas', label: 'Mis tareas', icon: 'clock', contador: c.tareas, seccion: 'tareas' },
       ] },
       { grupo: 'Sistema', items: [
-        { to: '/settings', label: 'Mi cuenta', icon: 'gear' },
+        { to: '/settings', label: 'Mi cuenta', icon: 'gear' , seccion: 'mi_cuenta' },
       ] },
     ];
   }
   if (rol === 'cliente') {
     const items = [
-      { to: '/cliente/rastreo', label: 'Rastrear batería', icon: 'battery', exact: true },
-      { to: '/cliente/cotizaciones', label: 'Cotizaciones', icon: 'clipboard', contador: c.cotizaciones },
-      { to: '/cliente/historial', label: 'Historial', icon: 'clock', contador: c.entregadas },
+      { to: '/cliente/rastreo', label: 'Rastrear batería', icon: 'battery', exact: true, seccion: 'mi_espacio' },
+      { to: '/cliente/cotizaciones', label: 'Cotizaciones', icon: 'clipboard', contador: c.cotizaciones, seccion: 'mi_espacio' },
+      { to: '/cliente/historial', label: 'Historial', icon: 'clock', contador: c.entregadas, seccion: 'mi_espacio' },
     ];
-    if (esFlotilla) items.push({ to: '/cliente/flotilla', label: 'Flotilla', icon: 'building' });
-    items.push({ to: '/cliente/garantias', label: 'Garantías', icon: 'shield', contador: c.garantias });
-    items.push({ to: '/cliente/agenda', label: 'Agendar visita', icon: 'calendar' });
+    if (esFlotilla) items.push({ to: '/cliente/flotilla', label: 'Flotilla', icon: 'building', seccion: 'mi_espacio' });
+    items.push({ to: '/cliente/garantias', label: 'Garantías', icon: 'shield', contador: c.garantias, seccion: 'mi_espacio' });
+    items.push({ to: '/cliente/agenda', label: 'Agendar visita', icon: 'calendar', seccion: 'mi_espacio' });
     return [
       { grupo: 'Mi espacio', items },
-      { grupo: 'Sistema', items: [{ to: '/settings', label: 'Mi cuenta', icon: 'gear' }] },
+      { grupo: 'Sistema', items: [{ to: '/settings', label: 'Mi cuenta', icon: 'gear' }] , seccion: 'mi_cuenta' },
     ];
   }
   return [
     { grupo: 'Operación', items: [
-      { to: '/hub', label: 'Tablero', icon: 'battery', exact: true, contador: c.activas },
-      { to: '/hub/dashboard', label: 'Dashboard', icon: 'gauge' },
-      { to: '/hub/historial', label: 'Historial por serie', icon: 'search' },
+      { to: '/hub', label: 'Tablero', icon: 'battery', exact: true, contador: c.activas , seccion: 'tablero' },
+      { to: '/hub/dashboard', label: 'Dashboard', icon: 'gauge' , seccion: 'dashboard' },
+      { to: '/hub/historial', label: 'Historial por serie', icon: 'search' , seccion: 'historial' },
     ] },
     { grupo: 'Comercial', items: [
-      { to: '/hub/clientes', label: 'Clientes', icon: 'users' },
-      { to: '/hub/tareas', label: 'Tareas', icon: 'clock', contador: c.tareas },
-      { to: '/hub/whatsapp', label: 'WhatsApp', icon: 'mail' },
-      { to: '/hub/cotizador', label: 'Cotizador', icon: 'calculator' },
+      { to: '/hub/clientes', label: 'Clientes', icon: 'users' , seccion: 'clientes' },
+      { to: '/hub/tareas', label: 'Tareas', icon: 'clock', contador: c.tareas , seccion: 'tareas' },
+      { to: '/hub/whatsapp', label: 'WhatsApp', icon: 'mail' , seccion: 'whatsapp' },
+      { to: '/hub/cotizador', label: 'Cotizador', icon: 'calculator' , seccion: 'cotizador' },
     ] },
     { grupo: 'Taller', items: [
-      { to: '/hub/inventario', label: 'Inventario', icon: 'box', contador: c.stockCritico },
-      { to: '/hub/tecnicos', label: 'Técnicos', icon: 'users' },
-      { to: '/hub/flotillas', label: 'Flotillas', icon: 'building' },
-      { to: '/hub/garantias', label: 'Garantías', icon: 'shield', contador: c.porVencer },
-      { to: '/hub/baja', label: 'Baja / reciclaje', icon: 'recycl' },
+      { to: '/hub/inventario', label: 'Inventario', icon: 'box', contador: c.stockCritico , seccion: 'inventario' },
+      { to: '/hub/tecnicos', label: 'Técnicos', icon: 'users' , seccion: 'tecnicos' },
+      { to: '/hub/flotillas', label: 'Flotillas', icon: 'building' , seccion: 'flotillas' },
+      { to: '/hub/garantias', label: 'Garantías', icon: 'shield', contador: c.porVencer , seccion: 'garantias' },
+      { to: '/hub/baja', label: 'Baja / reciclaje', icon: 'recycl' , seccion: 'baja' },
     ] },
     { grupo: 'Sistema', items: [
-      { to: '/reportes', label: 'Reportes', icon: 'clipboard' },
-      { to: '/usuarios', label: 'Usuarios', icon: 'users' },
-      { to: '/hub/papelera', label: 'Papelera', icon: 'recycl' },
-      { to: '/settings', label: 'Mi cuenta', icon: 'gear' },
+      { to: '/reportes', label: 'Reportes', icon: 'clipboard' , seccion: 'reportes' },
+      { to: '/usuarios', label: 'Usuarios', icon: 'users' , seccion: 'usuarios' },
+      { to: '/hub/papelera', label: 'Papelera', icon: 'recycl' , seccion: 'papelera' },
+      { to: '/settings', label: 'Mi cuenta', icon: 'gear' , seccion: 'mi_cuenta' },
     ] },
   ];
 }
@@ -119,6 +120,13 @@ const TITULOS_SUELTOS = {
   '/tracker': ['Seguimiento', 'Orden en el taller'],
   '/cotizacion': ['Seguimiento', 'Cotización'],
 };
+
+// Deja solo las secciones que el usuario tiene habilitadas por sus permisos.
+function filtrarMenu(grupos, usuario) {
+  return grupos
+    .map((g) => ({ ...g, items: g.items.filter((it) => !it.seccion || puedeVer(usuario, it.seccion)) }))
+    .filter((g) => g.items.length > 0);
+}
 
 function tituloDe(ruta, grupos) {
   for (const g of grupos) {
@@ -151,7 +159,17 @@ export default function AppShell({ children }) {
   const esFlotilla = data.clientes?.find((c) => c.id === user?.id)?.tipo === 'flotilla_corporativa';
   const c = useMemo(() => contadores(data, user), [data, user]);
   // Sin sesion (el tracker publico entra por aca): menu minimo, sin acciones.
-  const grupos = useMemo(() => (user ? menuDe(user.rol, c, esFlotilla) : [
+  const grupos = useMemo(() => (user ? (() => {
+      const propios = filtrarMenu(menuDe(user.rol, c, esFlotilla), user);
+      if (user.rol !== 'tecnico') return propios;
+      // Un tecnico tambien ve las secciones del taller que el admin le habilito
+      // por permisos (inventario, clientes, whatsapp...), sin repetir las suyas.
+      const yaEstan = new Set(propios.flatMap((g) => g.items.map((i) => i.seccion)));
+      const extra = filtrarMenu(menuDe('admin', c, esFlotilla), user)
+        .map((g) => ({ ...g, items: g.items.filter((i) => !yaEstan.has(i.seccion)) }))
+        .filter((g) => g.items.length > 0);
+      return [...propios, ...extra];
+    })() : [
     { grupo: 'Bertika', items: [
       { to: '/', label: 'Sitio', icon: 'home', exact: true },
       { to: '/seguimiento', label: 'Seguimiento', icon: 'search' },

@@ -11,7 +11,8 @@ import bcrypt from 'bcryptjs';
 import rateLimit from 'express-rate-limit';
 import { query, one, tx } from './db.js';
 import { nextId } from './ids.js';
-import { signToken, authRequired, requireRol, SECRET } from './middleware/auth.js';
+import { signToken, authRequired, requireRol, requierePermiso, requiereSeccion, SECRET } from './middleware/auth.js';
+import { SECCIONES, ACCIONES, PERMISOS_POR_ROL, normalizarPermisos, puedeVer } from './permisos.js';
 import { canTransition, ORDEN_ESTADOS, ESTADO_LABEL, MIN_CAPACIDAD_PCT, esEstadoCerrado } from './reglas.js';
 import { obtenerDolar } from './dolar.js';
 import { calcularVisita, normalizarConfig, CONFIG_DEFAULT, textoFueraCobertura } from '../src/data/cotizadorVisita.js';
@@ -223,6 +224,8 @@ async function asegurarCodigos() {
   // CRM de la bandeja: etiquetas por conversacion y notas internas del taller.
   await query('ALTER TABLE wa_conversaciones ADD COLUMN IF NOT EXISTS etiquetas TEXT');
   // Embudo comercial: etapa y monto estimado de la oportunidad.
+  // Permisos por usuario (que ve y que puede hacer). NULL = los del rol.
+  await query('ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS permisos TEXT');
   await query('ALTER TABLE wa_conversaciones ADD COLUMN IF NOT EXISTS etapa TEXT');
   await query('ALTER TABLE wa_conversaciones ADD COLUMN IF NOT EXISTS monto_estimado NUMERIC');
   await query(`CREATE TABLE IF NOT EXISTS wa_notas (
@@ -486,14 +489,14 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
     return res.status(401).json({ error: 'Credenciales invalidas' });
   }
   const token = signToken(u);
-  const user = { id: u.id, email: u.email, rol: u.rol, tecnico_id: u.tecnico_id, cliente_id: u.cliente_id };
+  const user = { id: u.id, email: u.email, rol: u.rol, tecnico_id: u.tecnico_id, cliente_id: u.cliente_id, permisos: u.permisos || null };
   return res.json({ token, user });
 });
 
 app.get('/api/auth/me', authRequired, async (req, res) => {
   const u = await one('SELECT * FROM usuarios WHERE id = $1', [req.user.sub]);
   if (!u) return res.status(401).json({ error: 'Usuario inexistente' });
-  return res.json({ id: u.id, email: u.email, rol: u.rol, tecnico_id: u.tecnico_id, cliente_id: u.cliente_id });
+  return res.json({ id: u.id, email: u.email, rol: u.rol, tecnico_id: u.tecnico_id, cliente_id: u.cliente_id, permisos: u.permisos || null });
 });
 
 // Cambio de contrasena de la PROPIA cuenta: cualquier rol autenticado.
@@ -525,6 +528,11 @@ app.get('/api/estado', authRequired, async (req, res) => {
     // Los clientes dados de baja (papelera) no se mandan al panel: se recuperan
     // desde /api/clientes?papelera=1 (solo admin).
     out[t] = await query(t === 'clientes' ? 'SELECT * FROM clientes WHERE deleted_at IS NULL' : `SELECT * FROM ${t}`);
+  }
+  // "Que ve": los catalogos de las secciones que el usuario no tiene
+  // habilitadas se mandan vacios, asi el panel no expone datos de mas.
+  for (const [tabla, seccion] of Object.entries({ clientes: 'clientes', tecnicos: 'tecnicos', insumos: 'inventario', bajas: 'baja' })) {
+    if (!puedeVer(req.user, seccion)) out[tabla] = [];
   }
   if (rol === 'tecnico') {
     out.ordenes = out.ordenes.filter((o) => o.tecnico_id === req.user.tecnico_id
@@ -686,7 +694,7 @@ app.post('/api/ordenes/:id/cotizacion/rechazar', publicLimiter, async (req, res)
   return res.json({ ok: true });
 });
 
-app.post('/api/ordenes', authRequired, requireRol('admin'), async (req, res) => {
+app.post('/api/ordenes', authRequired, requierePermiso('crear_orden'), async (req, res) => {
   const { serie, tipo, voltaje, capacidad, aplicacion, marca, modelo, equipo, cliente_id, falla, tecnico_id } = req.body || {};
   const serieT = limStr(serie, 64);
   const fallaT = limStr(falla, 500);
@@ -727,7 +735,7 @@ app.post('/api/ordenes', authRequired, requireRol('admin'), async (req, res) => 
   return res.status(201).json({ id: ordId });
 });
 
-app.patch('/api/ordenes/:id/tecnico', authRequired, requireRol('admin'), async (req, res) => {
+app.patch('/api/ordenes/:id/tecnico', authRequired, requierePermiso('asignar_tecnico'), async (req, res) => {
   const { tecnico_id } = req.body || {};
   if (!tecnico_id) return res.status(400).json({ error: 'Falta tecnico_id' });
   const od = await tx(async (client) => {
@@ -742,7 +750,7 @@ app.patch('/api/ordenes/:id/tecnico', authRequired, requireRol('admin'), async (
   return res.json({ ok: true, tecnico: od.tecnico });
 });
 
-app.post('/api/ordenes/:id/diagnostico', authRequired, async (req, res) => {
+app.post('/api/ordenes/:id/diagnostico', authRequired, requierePermiso('diagnostico'), async (req, res) => {
   const { voltaje, resistencia, pruebaCarga, notas, servicioTipo, fotos } = req.body || {};
   const notasT = limStr(notas, 1000);
   const servicioT = limStr(servicioTipo, 80);
@@ -780,7 +788,7 @@ app.post('/api/ordenes/:id/diagnostico', authRequired, async (req, res) => {
   return res.json({ ok: true });
 });
 
-app.post('/api/ordenes/:id/cotizacion', authRequired, async (req, res) => {
+app.post('/api/ordenes/:id/cotizacion', authRequired, requierePermiso('cotizar'), async (req, res) => {
   const { monto, servicios, insumos } = req.body || {};
   const montoN = Math.max(0, Math.min(Number(monto) || 0, 1e9));
   if (!arrBounded(servicios) || !arrBounded(insumos)) {
@@ -826,7 +834,7 @@ app.get('/api/ordenes/:id/cotizaciones', authRequired, async (req, res) => {
   return res.json(await query('SELECT * FROM cotizaciones_historial WHERE orden_id = $1 ORDER BY fecha DESC', [req.params.id]));
 });
 
-app.post('/api/ordenes/:id/insumos', authRequired, async (req, res) => {
+app.post('/api/ordenes/:id/insumos', authRequired, requierePermiso('cargar_insumos'), async (req, res) => {
   const { insumo_id, cantidad } = req.body || {};
   const cant = numEnRango(cantidad, 0.01, 1000000);
   if (cant === null) return res.status(400).json({ error: 'La cantidad tiene que ser un numero mayor a 0' });
@@ -863,7 +871,7 @@ app.post('/api/ordenes/:id/insumos', authRequired, async (req, res) => {
 
 // Correccion del piso: devuelve al stock un insumo cargado por error y lo quita
 // de la orden (con evento de auditoria). Solo staff con acceso a la orden.
-app.delete('/api/ordenes/:id/insumos/:indice', authRequired, async (req, res) => {
+app.delete('/api/ordenes/:id/insumos/:indice', authRequired, requierePermiso('cargar_insumos'), async (req, res) => {
   const indice = Number(req.params.indice);
   const revertido = await tx(async (client) => {
     // FOR UPDATE: serializa dos reversiones simultaneas de la misma orden (si se
@@ -900,7 +908,7 @@ app.delete('/api/ordenes/:id/insumos/:indice', authRequired, async (req, res) =>
   return res.json({ ok: true, revertido });
 });
 
-app.post('/api/ordenes/:id/prueba-final', authRequired, async (req, res) => {
+app.post('/api/ordenes/:id/prueba-final', authRequired, requierePermiso('prueba_final'), async (req, res) => {
   const { capacidad, resultado, obs } = req.body || {};
   // La capacidad medida es obligatoria: es el respaldo de la aprobacion.
   const capNum = numEnRango(capacidad, 0.1, 1000000);
@@ -939,7 +947,7 @@ app.post('/api/ordenes/:id/prueba-final', authRequired, async (req, res) => {
   return res.json({ ok: true });
 });
 
-app.post('/api/ordenes/:id/entregar', authRequired, requireRol('admin'), async (req, res) => {
+app.post('/api/ordenes/:id/entregar', authRequired, requierePermiso('entregar'), async (req, res) => {
   const { monto_cobrado, garantia_meses, garantia_ciclos, medio_pago } = req.body || {};
   const medioT = limStr(medio_pago, 40);
   await tx(async (client) => {
@@ -965,7 +973,7 @@ app.post('/api/ordenes/:id/entregar', authRequired, requireRol('admin'), async (
   return res.json({ ok: true });
 });
 
-app.post('/api/ordenes/:id/baja', authRequired, requireRol('admin'), async (req, res) => {
+app.post('/api/ordenes/:id/baja', authRequired, requierePermiso('baja_orden'), async (req, res) => {
   const { motivo } = req.body || {};
   const motivoT = limStr(motivo, 300) || 'No reparable / fuera de vida util';
   const baja = await tx(async (client) => {
@@ -996,7 +1004,7 @@ app.post('/api/ordenes/:id/baja', authRequired, requireRol('admin'), async (req,
 });
 
 // Transiciones genericas
-app.post('/api/ordenes/:id/transition', authRequired, async (req, res) => {
+app.post('/api/ordenes/:id/transition', authRequired, requierePermiso('crear_orden','diagnostico','cotizar','cargar_insumos','prueba_final','entregar','baja_orden'), async (req, res) => {
   const { target, detalle } = req.body || {};
   if (!ORDEN_ESTADOS.includes(target)) return res.status(400).json({ error: 'Estado invalido' });
   // Entregar y cancelar son decisiones de administrador: la entrega tiene que
@@ -1028,7 +1036,7 @@ app.post('/api/ordenes/:id/compartir', authRequired, async (req, res) => {
 });
 
 // ---------- Insumos ----------
-app.post('/api/insumos', authRequired, requireRol('admin'), async (req, res) => {
+app.post('/api/insumos', authRequired, requierePermiso('editar_insumos'), async (req, res) => {
   const { nombre, categoria, stock, precio, stock_minimo } = req.body || {};
   const nombreT = limStr(nombre, 120);
   if (!nombreT) return res.status(400).json({ error: 'Falta nombre' });
@@ -1050,7 +1058,7 @@ app.post('/api/insumos', authRequired, requireRol('admin'), async (req, res) => 
 // Editar los datos del insumo (nombre, categoria, precio, umbral de stock
 // critico). El stock NO se toca por aca: se mueve con /stock y /ajuste, que
 // dejan el movimiento auditado.
-app.patch('/api/insumos/:id', authRequired, requireRol('admin'), async (req, res) => {
+app.patch('/api/insumos/:id', authRequired, requierePermiso('editar_insumos'), async (req, res) => {
   const actual = await one('SELECT * FROM insumos WHERE id = $1', [req.params.id]);
   if (!actual) return res.status(404).json({ error: 'Insumo no encontrado' });
   const campos = [];
@@ -1078,7 +1086,7 @@ app.patch('/api/insumos/:id', authRequired, requireRol('admin'), async (req, res
   return res.json(upd);
 });
 
-app.patch('/api/insumos/:id/stock', authRequired, requireRol('admin'), async (req, res) => {
+app.patch('/api/insumos/:id/stock', authRequired, requierePermiso('mover_stock'), async (req, res) => {
   const { cantidad, motivo } = req.body || {};
   const cant = numEnRango(cantidad, 0.01, 1000000);
   if (cant === null) return res.status(400).json({ error: 'La cantidad tiene que ser un numero mayor a 0' });
@@ -1095,7 +1103,7 @@ app.patch('/api/insumos/:id/stock', authRequired, requireRol('admin'), async (re
 });
 
 // Ajuste por recuento fisico: fija el stock real y registra la diferencia con motivo.
-app.post('/api/insumos/:id/ajuste', authRequired, requireRol('admin'), async (req, res) => {
+app.post('/api/insumos/:id/ajuste', authRequired, requierePermiso('mover_stock'), async (req, res) => {
   const { stock_contado, motivo } = req.body || {};
   const contado = numEnRango(stock_contado, 0, 1000000);
   const motivoT = limStr(motivo, 200);
@@ -1115,7 +1123,7 @@ app.post('/api/insumos/:id/ajuste', authRequired, requireRol('admin'), async (re
   return res.json({ ok: true, stock: nuevo, diferencia });
 });
 
-app.get('/api/insumos/:id/movimientos', authRequired, requireRol('admin', 'tecnico'), async (req, res) => {
+app.get('/api/insumos/:id/movimientos', authRequired, requiereSeccion('inventario'), async (req, res) => {
   const i = await one('SELECT id, nombre, stock FROM insumos WHERE id = $1', [req.params.id]);
   if (!i) return res.status(404).json({ error: 'Insumo no encontrado' });
   const movimientos = await query('SELECT * FROM insumos_movimientos WHERE insumo_id = $1 ORDER BY fecha DESC LIMIT 200', [req.params.id]);
@@ -1124,7 +1132,7 @@ app.get('/api/insumos/:id/movimientos', authRequired, requireRol('admin', 'tecni
 
 // ---------- Clientes ----------
 // Listado normal (sin los dados de baja) y papelera (solo admin).
-app.get('/api/clientes', authRequired, requireRol('admin', 'tecnico'), async (req, res) => {
+app.get('/api/clientes', authRequired, requiereSeccion('clientes'), async (req, res) => {
   if (String(req.query?.papelera || '') === '1') {
     if (!esAdmin(req)) return res.status(403).json({ error: 'Solo un administrador puede ver la papelera' });
     return res.json(await query('SELECT * FROM clientes WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC LIMIT 200'));
@@ -1132,7 +1140,7 @@ app.get('/api/clientes', authRequired, requireRol('admin', 'tecnico'), async (re
   return res.json(await query('SELECT * FROM clientes WHERE deleted_at IS NULL ORDER BY nombre'));
 });
 
-app.post('/api/clientes', authRequired, requireRol('admin'), async (req, res) => {
+app.post('/api/clientes', authRequired, requierePermiso('editar_clientes'), async (req, res) => {
   const { nombre, empresa, email, telefono, tipo, contacto, notas } = req.body || {};
   const { direccion, localidad, cuit, condicion_pago, canal_origen, vendedor } = req.body || {};
   const nombreT = limStr(nombre, 120);
@@ -1170,7 +1178,7 @@ app.post('/api/clientes', authRequired, requireRol('admin'), async (req, res) =>
 });
 
 // Editar la ficha: es lo que evita que un telefono mal cargado quede para siempre.
-app.patch('/api/clientes/:id', authRequired, requireRol('admin'), async (req, res) => {
+app.patch('/api/clientes/:id', authRequired, requierePermiso('editar_clientes'), async (req, res) => {
   const actual = await one('SELECT * FROM clientes WHERE id = $1', [req.params.id]);
   if (!actual) return res.status(404).json({ error: 'Cliente no encontrado' });
   if (actual.deleted_at) return res.status(400).json({ error: 'El cliente está dado de baja: restauralo antes de editarlo' });
@@ -1214,7 +1222,7 @@ app.patch('/api/clientes/:id', authRequired, requireRol('admin'), async (req, re
 
 // Baja logica: la ficha se conserva (con quien y cuando la dio de baja) y se
 // puede restaurar. No se da de baja un cliente con trabajo en curso.
-app.delete('/api/clientes/:id', authRequired, requireRol('admin'), async (req, res) => {
+app.delete('/api/clientes/:id', authRequired, requierePermiso('baja_clientes'), async (req, res) => {
   const c = await one('SELECT * FROM clientes WHERE id = $1', [req.params.id]);
   if (!c) return res.status(404).json({ error: 'Cliente no encontrado' });
   if (c.deleted_at) return res.status(400).json({ error: 'El cliente ya estaba dado de baja' });
@@ -1233,7 +1241,7 @@ app.delete('/api/clientes/:id', authRequired, requireRol('admin'), async (req, r
   return res.json(upd);
 });
 
-app.post('/api/clientes/:id/restaurar', authRequired, requireRol('admin'), async (req, res) => {
+app.post('/api/clientes/:id/restaurar', authRequired, requierePermiso('baja_clientes'), async (req, res) => {
   const c = await one('SELECT * FROM clientes WHERE id = $1', [req.params.id]);
   if (!c) return res.status(404).json({ error: 'Cliente no encontrado' });
   if (!c.deleted_at) return res.status(400).json({ error: 'El cliente no está dado de baja' });
@@ -1247,7 +1255,7 @@ app.post('/api/clientes/:id/restaurar', authRequired, requireRol('admin'), async
   return res.json(upd);
 });
 
-app.post('/api/clientes/find-or-create', authRequired, requireRol('admin'), async (req, res) => {
+app.post('/api/clientes/find-or-create', authRequired, requierePermiso('editar_clientes'), async (req, res) => {
   const { nombre, empresa, email, telefono } = req.body || {};
   const emailT = String(email || '').trim();
   if (!validEmail(emailT)) return res.status(400).json({ error: 'Falta email valido' });
@@ -1274,12 +1282,12 @@ app.post('/api/clientes/find-or-create', authRequired, requireRol('admin'), asyn
 
 // ---------- Tecnicos ----------
 // Por defecto solo los activos; con ?todos=1 (admin) vienen tambien los inactivos.
-app.get('/api/tecnicos', authRequired, requireRol('admin', 'tecnico'), async (req, res) => {
+app.get('/api/tecnicos', authRequired, requiereSeccion('tecnicos'), async (req, res) => {
   const todos = String(req.query?.todos || '') === '1' && esAdmin(req);
   return res.json(await query(`SELECT * FROM tecnicos${todos ? '' : ' WHERE activo = true'} ORDER BY nombre`));
 });
 
-app.post('/api/tecnicos', authRequired, requireRol('admin'), async (req, res) => {
+app.post('/api/tecnicos', authRequired, requierePermiso('editar_tecnicos'), async (req, res) => {
   const { nombre, especialidad, certificaciones } = req.body || {};
   const nombreT = limStr(nombre, 120);
   const especialidadT = limStr(especialidad, 80);
@@ -1293,7 +1301,7 @@ app.post('/api/tecnicos', authRequired, requireRol('admin'), async (req, res) =>
 
 // Editar un tecnico: especialidad, certificaciones y alta/baja. Antes solo se
 // podia crear, asi que no habia forma de corregir ni de desactivar a alguien.
-app.patch('/api/tecnicos/:id', authRequired, requireRol('admin'), async (req, res) => {
+app.patch('/api/tecnicos/:id', authRequired, requierePermiso('editar_tecnicos'), async (req, res) => {
   const actual = await one('SELECT * FROM tecnicos WHERE id = $1', [req.params.id]);
   if (!actual) return res.status(404).json({ error: 'Técnico no encontrado' });
   const campos = [];
@@ -1386,27 +1394,37 @@ app.post('/api/reset', authRequired, requireRol('admin'), async (req, res) => {
 });
 
 // ---------- Usuarios (admin) ----------
-app.get('/api/usuarios', authRequired, requireRol('admin'), async (req, res) => {
-  const rows = await query('SELECT id, email, rol, tecnico_id, cliente_id, activo, creado_en FROM usuarios ORDER BY email');
+app.get('/api/usuarios', authRequired, requierePermiso('gestionar_usuarios'), async (req, res) => {
+  const rows = await query('SELECT id, email, rol, tecnico_id, cliente_id, activo, creado_en, permisos FROM usuarios ORDER BY email');
   return res.json(rows);
 });
 
-app.post('/api/usuarios', authRequired, requireRol('admin'), async (req, res) => {
-  const { email, password, rol, tecnico_id, cliente_id } = req.body || {};
+// Catalogo de permisos para dibujar la tabla de casillas del panel.
+app.get('/api/permisos/catalogo', authRequired, requierePermiso('gestionar_usuarios'), async (req, res) => {
+  return res.json({ secciones: SECCIONES, acciones: ACCIONES, porRol: PERMISOS_POR_ROL });
+});
+
+app.post('/api/usuarios', authRequired, requierePermiso('gestionar_usuarios'), async (req, res) => {
+  const { email, password, rol, tecnico_id, cliente_id, permisos } = req.body || {};
   const emailT = String(email || '').trim();
   if (!validEmail(emailT) || !validPassword(password) || !['admin', 'tecnico', 'cliente'].includes(rol)) {
     return res.status(400).json({ error: 'Email, password (min 8 caracteres) y rol valido son obligatorios' });
   }
   const id = await nextId('usr');
+  // Los permisos que manda el panel son los de las casillas; si no vienen, se
+  // guardan los del rol (NULL: se recalculan solos si despues cambia el rol).
+  const permisosT = permisos === undefined || permisos === null
+    ? null
+    : JSON.stringify(normalizarPermisos(permisos, rol));
   await query(
-    'INSERT INTO usuarios (id, email, password_hash, rol, tecnico_id, cliente_id, activo) VALUES ($1,$2,$3,$4,$5,$6,true)',
-    [id, emailT, await bcrypt.hash(String(password), BCRYPT_ROUNDS), rol, tecnico_id ? limStr(tecnico_id, 32) : null, cliente_id ? limStr(cliente_id, 32) : null]
+    'INSERT INTO usuarios (id, email, password_hash, rol, tecnico_id, cliente_id, activo, permisos) VALUES ($1,$2,$3,$4,$5,$6,true,$7)',
+    [id, emailT, await bcrypt.hash(String(password), BCRYPT_ROUNDS), rol, tecnico_id ? limStr(tecnico_id, 32) : null, cliente_id ? limStr(cliente_id, 32) : null, permisosT]
   );
   return res.status(201).json({ id });
 });
 
-app.patch('/api/usuarios/:id', authRequired, requireRol('admin'), async (req, res) => {
-  const { email, password, rol, tecnico_id, cliente_id, activo } = req.body || {};
+app.patch('/api/usuarios/:id', authRequired, requierePermiso('gestionar_usuarios'), async (req, res) => {
+  const { email, password, rol, tecnico_id, cliente_id, activo, permisos } = req.body || {};
   const isSelf = req.params.id === req.user.sub;
   const sets = [];
   const params = [];
@@ -1434,13 +1452,20 @@ app.patch('/api/usuarios/:id', authRequired, requireRol('admin'), async (req, re
     if (!validPassword(password)) return res.status(400).json({ error: 'Password invalido (min 8 caracteres)' });
     params.push(await bcrypt.hash(String(password), BCRYPT_ROUNDS)); sets.push(`password_hash = $${params.length}`);
   }
+  if (permisos !== undefined) {
+    // El rol con el que queda el usuario define los permisos validos (el admin
+    // siempre conserva todo para no quedarse sin administracion).
+    const rolFinal = rol !== undefined ? rol : (await one('SELECT rol FROM usuarios WHERE id = $1', [req.params.id]))?.rol;
+    params.push(JSON.stringify(normalizarPermisos(permisos, rolFinal)));
+    sets.push(`permisos = $${params.length}`);
+  }
   if (!sets.length) return res.status(400).json({ error: 'Sin campos para actualizar' });
   params.push(req.params.id);
   await query(`UPDATE usuarios SET ${sets.join(', ')} WHERE id = $${params.length}`, params);
   return res.json({ ok: true });
 });
 
-app.delete('/api/usuarios/:id', authRequired, requireRol('admin'), async (req, res) => {
+app.delete('/api/usuarios/:id', authRequired, requierePermiso('gestionar_usuarios'), async (req, res) => {
   if (req.params.id === req.user.sub) return res.status(403).json({ error: 'No podes dar de baja tu propio usuario' });
   const u = await one('SELECT * FROM usuarios WHERE id = $1', [req.params.id]);
   if (!u) return res.status(404).json({ error: 'Usuario no encontrado' });
@@ -1452,12 +1477,12 @@ app.delete('/api/usuarios/:id', authRequired, requireRol('admin'), async (req, r
 });
 
 // ---------- Bajas ----------
-app.post('/api/bajas/:id/reciclar', authRequired, requireRol('admin'), async (req, res) => {
+app.post('/api/bajas/:id/reciclar', authRequired, requierePermiso('baja_orden'), async (req, res) => {
   await query('UPDATE bajas SET reciclada = true, fecha_reciclaje = $2 WHERE id = $1', [req.params.id, nowIso()]);
   return res.json({ ok: true });
 });
 
-app.get('/api/bajas', authRequired, requireRol('admin'), async (req, res) => res.json(await query('SELECT * FROM bajas ORDER BY fecha DESC')));
+app.get('/api/bajas', authRequired, requiereSeccion('baja'), async (req, res) => res.json(await query('SELECT * FROM bajas ORDER BY fecha DESC')));
 
 // Configuracion vigente del cotizador de visitas: la que edito el admin desde
 // el panel (tabla cotizador_config) o, si no hay nada guardado todavia, la de
@@ -1490,7 +1515,7 @@ app.get('/api/public/cotizador', publicLimiter, async (req, res) => {
 
 // Edición de la configuración: solo admin. Valida con normalizarConfig() para
 // que nunca quede una tabla de precios inconsistente.
-app.put('/api/cotizador', authRequired, requireRol('admin'), async (req, res) => {
+app.put('/api/cotizador', authRequired, requierePermiso('config_cotizador'), async (req, res) => {
   const entrada = req.body?.config ?? req.body ?? {};
   let config;
   try {
@@ -1517,7 +1542,7 @@ app.put('/api/cotizador', authRequired, requireRol('admin'), async (req, res) =>
   return res.json({ ok: true, config, actualizadoPor: req.user.email });
 });
 
-app.get('/api/cotizador/historial', authRequired, requireRol('admin'), async (req, res) => {
+app.get('/api/cotizador/historial', authRequired, requiereSeccion('cotizador'), async (req, res) => {
   return res.json(await query('SELECT id, fecha, usuario FROM cotizador_config_historial ORDER BY fecha DESC LIMIT 50'));
 });
 
@@ -1540,7 +1565,7 @@ app.post('/api/public/cotizador-evento', publicLimiter, async (req, res) => {
   return res.status(201).json({ ok: true });
 });
 
-app.get('/api/cotizador/metricas', authRequired, requireRol('admin'), async (req, res) => {
+app.get('/api/cotizador/metricas', authRequired, requiereSeccion('cotizador'), async (req, res) => {
   const dias = Math.max(1, Math.min(365, Number(req.query?.dias) || 30));
   const [funnel, cotizaciones, serie] = await Promise.all([
     query(`SELECT tipo, count(*)::int AS eventos, count(DISTINCT sesion)::int AS sesiones
@@ -1861,11 +1886,11 @@ async function avisarOrden(ordenId) {
 }
 
 // Que avisos automaticos existen y cuales estan prendidos.
-app.get('/api/whatsapp/avisos', authRequired, requireRol('admin'), async (req, res) => {
+app.get('/api/whatsapp/avisos', authRequired, requierePermiso('avisos_whatsapp'), async (req, res) => {
   return res.json({ eventos: EVENTOS_AVISO, activos: await configAvisos({ forzar: true }) });
 });
 
-app.put('/api/whatsapp/avisos', authRequired, requireRol('admin'), async (req, res) => {
+app.put('/api/whatsapp/avisos', authRequired, requierePermiso('avisos_whatsapp'), async (req, res) => {
   const activos = normalizarAvisos(req.body?.activos ?? req.body);
   for (const e of EVENTOS_AVISO) {
     await query(
@@ -1921,7 +1946,7 @@ async function avisarGarantias() {
 }
 
 // Revision a mano desde el panel (devuelve cuantas se avisaron).
-app.post('/api/whatsapp/avisos/garantias', authRequired, requireRol('admin'), async (req, res) => {
+app.post('/api/whatsapp/avisos/garantias', authRequired, requierePermiso('avisos_whatsapp'), async (req, res) => {
   return res.json(await avisarGarantias());
 });
 
@@ -1933,7 +1958,7 @@ const primerChequeo = setTimeout(() => { avisarGarantias(); }, 2 * 60 * 1000);
 if (typeof primerChequeo.unref === 'function') primerChequeo.unref();
 
 // Estado del canal para el panel: configurado o no, que falta y los numeros.
-app.get('/api/whatsapp/estado', authRequired, requireRol('admin'), async (req, res) => {
+app.get('/api/whatsapp/estado', authRequired, requiereSeccion('whatsapp'), async (req, res) => {
   const cfg = configPublicaWhatsApp();
   const [tot] = await query(`SELECT
       count(*) FILTER (WHERE direccion = 'in')::int AS recibidos,
@@ -1955,7 +1980,7 @@ app.get('/api/whatsapp/estado', authRequired, requireRol('admin'), async (req, r
 });
 
 // Bandeja con filtros: busqueda libre, etiqueta, responsable y sin leer.
-app.get('/api/whatsapp/conversaciones', authRequired, requireRol('admin', 'tecnico'), async (req, res) => {
+app.get('/api/whatsapp/conversaciones', authRequired, requiereSeccion('whatsapp'), async (req, res) => {
   const q = limStr(req.query?.q, 60);
   const etiqueta = limStr(req.query?.etiqueta, 24);
   const asignado = limStr(req.query?.asignado, 120);
@@ -1990,13 +2015,13 @@ app.get('/api/whatsapp/conversaciones', authRequired, requireRol('admin', 'tecni
 });
 
 // Responsables posibles de una conversacion (admins y tecnicos activos).
-app.get('/api/whatsapp/agentes', authRequired, requireRol('admin', 'tecnico'), async (req, res) => {
+app.get('/api/whatsapp/agentes', authRequired, requiereSeccion('whatsapp'), async (req, res) => {
   const rows = await query("SELECT email, rol FROM usuarios WHERE activo = true AND rol IN ('admin','tecnico') ORDER BY rol, email");
   return res.json(rows);
 });
 
 // Asignar responsable y/o etiquetas (CRM).
-app.patch('/api/whatsapp/conversaciones/:id', authRequired, requireRol('admin', 'tecnico'), async (req, res) => {
+app.patch('/api/whatsapp/conversaciones/:id', authRequired, requierePermiso('crm_whatsapp'), async (req, res) => {
   const conv = await one('SELECT * FROM wa_conversaciones WHERE id = $1', [req.params.id]);
   if (!conv) return res.status(404).json({ error: 'Conversación no encontrada' });
   const campos = [];
@@ -2059,7 +2084,7 @@ app.patch('/api/whatsapp/conversaciones/:id', authRequired, requireRol('admin', 
 
 // Metricas del embudo comercial: conversion, tasa de cierre, tiempo medio en cada
 // etapa y motivos de perdida. El calculo vive en src/data/crm.js (probado aparte).
-app.get('/api/whatsapp/metricas', authRequired, requireRol('admin'), async (req, res) => {
+app.get('/api/whatsapp/metricas', authRequired, requierePermiso('metricas_whatsapp'), async (req, res) => {
   const conversaciones = await query('SELECT id, etapa, monto_estimado, ultima_fecha FROM wa_conversaciones');
   const historial = await query(
     'SELECT conversacion_id, anterior, nueva, monto, motivo, fecha FROM wa_etapa_historial ORDER BY fecha ASC LIMIT 5000'
@@ -2074,7 +2099,7 @@ app.get('/api/whatsapp/metricas', authRequired, requireRol('admin'), async (req,
 });
 
 // Historial de etapas de una conversacion (para ver como se movio la oportunidad).
-app.get('/api/whatsapp/conversaciones/:id/etapas', authRequired, requireRol('admin', 'tecnico'), async (req, res) => {
+app.get('/api/whatsapp/conversaciones/:id/etapas', authRequired, requiereSeccion('whatsapp'), async (req, res) => {
   const filas = await query(
     'SELECT * FROM wa_etapa_historial WHERE conversacion_id = $1 ORDER BY fecha DESC LIMIT 100',
     [req.params.id]
@@ -2090,7 +2115,7 @@ function tareaVisible(req, t) {
   return !t.asignado_a || t.asignado_a === req.user.email;
 }
 
-app.get('/api/whatsapp/tareas', authRequired, requireRol('admin', 'tecnico'), async (req, res) => {
+app.get('/api/whatsapp/tareas', authRequired, requierePermiso('crm_whatsapp'), async (req, res) => {
   const estado = limStr(req.query?.estado, 20);
   const mias = String(req.query?.mias || '') === '1';
   const cond = [];
@@ -2116,7 +2141,7 @@ app.get('/api/whatsapp/tareas', authRequired, requireRol('admin', 'tecnico'), as
   return res.json(filas);
 });
 
-app.post('/api/whatsapp/tareas', authRequired, requireRol('admin', 'tecnico'), async (req, res) => {
+app.post('/api/whatsapp/tareas', authRequired, requierePermiso('crm_whatsapp'), async (req, res) => {
   const titulo = limStr(req.body?.titulo, 160);
   if (!titulo) return res.status(400).json({ error: 'La tarea necesita un título' });
   const vence = limStr(req.body?.vence, 40);
@@ -2141,7 +2166,7 @@ app.post('/api/whatsapp/tareas', authRequired, requireRol('admin', 'tecnico'), a
   return res.status(201).json(tarea);
 });
 
-app.patch('/api/whatsapp/tareas/:id', authRequired, requireRol('admin', 'tecnico'), async (req, res) => {
+app.patch('/api/whatsapp/tareas/:id', authRequired, requierePermiso('crm_whatsapp'), async (req, res) => {
   const tarea = await one('SELECT * FROM wa_tareas WHERE id = $1', [req.params.id]);
   if (!tarea) return res.status(404).json({ error: 'Tarea no encontrada' });
   if (!tareaVisible(req, tarea)) return res.status(403).json({ error: 'Esa tarea es de otra persona' });
@@ -2173,7 +2198,7 @@ app.patch('/api/whatsapp/tareas/:id', authRequired, requireRol('admin', 'tecnico
   return res.json(upd);
 });
 
-app.delete('/api/whatsapp/tareas/:id', authRequired, requireRol('admin', 'tecnico'), async (req, res) => {
+app.delete('/api/whatsapp/tareas/:id', authRequired, requierePermiso('crm_whatsapp'), async (req, res) => {
   const tarea = await one('SELECT * FROM wa_tareas WHERE id = $1', [req.params.id]);
   if (!tarea) return res.status(404).json({ error: 'Tarea no encontrada' });
   if (!esAdmin(req) && tarea.creada_por !== req.user.email) {
@@ -2184,12 +2209,12 @@ app.delete('/api/whatsapp/tareas/:id', authRequired, requireRol('admin', 'tecnic
 });
 
 // Notas internas del taller: no se le mandan al cliente.
-app.get('/api/whatsapp/conversaciones/:id/notas', authRequired, requireRol('admin', 'tecnico'), async (req, res) => {
+app.get('/api/whatsapp/conversaciones/:id/notas', authRequired, requiereSeccion('whatsapp'), async (req, res) => {
   const notas = await query('SELECT * FROM wa_notas WHERE conversacion_id = $1 ORDER BY fecha DESC LIMIT 100', [req.params.id]);
   return res.json(notas);
 });
 
-app.post('/api/whatsapp/conversaciones/:id/notas', authRequired, requireRol('admin', 'tecnico'), async (req, res) => {
+app.post('/api/whatsapp/conversaciones/:id/notas', authRequired, requierePermiso('crm_whatsapp'), async (req, res) => {
   const conv = await one('SELECT id FROM wa_conversaciones WHERE id = $1', [req.params.id]);
   if (!conv) return res.status(404).json({ error: 'Conversación no encontrada' });
   const texto = limStr(req.body?.texto, 1000);
@@ -2201,7 +2226,7 @@ app.post('/api/whatsapp/conversaciones/:id/notas', authRequired, requireRol('adm
 });
 
 // Borrar una nota interna: solo el autor o un administrador.
-app.delete('/api/whatsapp/conversaciones/:id/notas/:notaId', authRequired, requireRol('admin', 'tecnico'), async (req, res) => {
+app.delete('/api/whatsapp/conversaciones/:id/notas/:notaId', authRequired, requierePermiso('crm_whatsapp'), async (req, res) => {
   const nota = await one('SELECT * FROM wa_notas WHERE id = $1 AND conversacion_id = $2', [req.params.notaId, req.params.id]);
   if (!nota) return res.status(404).json({ error: 'Nota no encontrada' });
   const quien = actorDe(req)?.email || 'panel';
@@ -2212,7 +2237,7 @@ app.delete('/api/whatsapp/conversaciones/:id/notas/:notaId', authRequired, requi
   return res.json({ ok: true, id: nota.id });
 });
 
-app.get('/api/whatsapp/conversaciones/:id', authRequired, requireRol('admin', 'tecnico'), async (req, res) => {
+app.get('/api/whatsapp/conversaciones/:id', authRequired, requiereSeccion('whatsapp'), async (req, res) => {
   const conv = await one('SELECT * FROM wa_conversaciones WHERE id = $1', [req.params.id]);
   if (!conv) return res.status(404).json({ error: 'Conversación no encontrada' });
   const mensajes = await query('SELECT * FROM wa_mensajes WHERE conversacion_id = $1 ORDER BY fecha ASC LIMIT 300', [conv.id]);
@@ -2238,7 +2263,7 @@ app.get('/api/whatsapp/conversaciones/:id', authRequired, requireRol('admin', 't
 });
 
 // Mensaje libre: vale dentro de las 24 h desde el ultimo mensaje del cliente.
-app.post('/api/whatsapp/conversaciones/:id/responder', authRequired, requireRol('admin', 'tecnico'), async (req, res) => {
+app.post('/api/whatsapp/conversaciones/:id/responder', authRequired, requierePermiso('responder_whatsapp'), async (req, res) => {
   const conv = await one('SELECT * FROM wa_conversaciones WHERE id = $1', [req.params.id]);
   if (!conv) return res.status(404).json({ error: 'Conversación no encontrada' });
   const texto = limStr(req.body?.texto, 4000);
@@ -2253,7 +2278,7 @@ app.post('/api/whatsapp/conversaciones/:id/responder', authRequired, requireRol(
 });
 
 // Enviar a un numero suelto (prueba del canal o aviso puntual).
-app.post('/api/whatsapp/enviar', authRequired, requireRol('admin', 'tecnico'), async (req, res) => {
+app.post('/api/whatsapp/enviar', authRequired, requierePermiso('enviar_whatsapp'), async (req, res) => {
   const telefono = limStr(req.body?.telefono, 30);
   const texto = limStr(req.body?.texto, 4000);
   if (!telefono || !texto) return res.status(400).json({ error: 'Faltan el teléfono y el mensaje' });

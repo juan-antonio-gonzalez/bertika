@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Toast } from './components/ui';
 import AppShell from './components/layout/AppShell';
+import { puedeVer, seccionDeRuta, inicioDe } from './data/permisos';
 import SiteHeader from './components/SiteHeader';
 import SiteFooter from './components/SiteFooter';
 import Chatbot from './components/Chatbot';
@@ -46,6 +47,17 @@ function CargandoRuta() {
 function Protected({ children }) {
   const user = useStore((s) => s.user);
   if (!user) return <Navigate to="/auth" replace />;
+  return children;
+}
+
+// Guard por permisos: si el usuario no tiene habilitada la seccion de la ruta,
+// se lo manda a la primera pantalla que si puede ver (evita el menu vacio).
+function RequireSeccion({ children }) {
+  const user = useStore((s) => s.user);
+  const { pathname } = useLocation();
+  if (!user) return <Navigate to="/auth" replace />;
+  const seccion = seccionDeRuta(pathname);
+  if (seccion && !puedeVer(user, seccion)) return <Navigate to={inicioDe(user)} replace />;
   return children;
 }
 
@@ -125,16 +137,16 @@ export default function App() {
 
         {/* Plataforma (cada seccion es una sub-ruta real: /hub/dashboard, etc.) */}
         <Route path="/home" element={<AppLayout><Protected><Home /></Protected></AppLayout>} />
-        <Route path="/hub" element={<AppLayout><RequireRol rol="admin"><Hub /></RequireRol></AppLayout>} />
-        <Route path="/hub/:tab" element={<AppLayout><RequireRol rol="admin"><Hub /></RequireRol></AppLayout>} />
+        <Route path="/hub" element={<AppLayout><RequireSeccion><Hub /></RequireSeccion></AppLayout>} />
+        <Route path="/hub/:tab" element={<AppLayout><RequireSeccion><Hub /></RequireSeccion></AppLayout>} />
         <Route path="/tecnico" element={<AppLayout><RequireRol rol="tecnico"><Tecnico /></RequireRol></AppLayout>} />
         <Route path="/tecnico/:tab" element={<AppLayout><RequireRol rol="tecnico"><Tecnico /></RequireRol></AppLayout>} />
         <Route path="/cliente" element={<AppLayout><RequireRol rol="cliente"><Cliente /></RequireRol></AppLayout>} />
         <Route path="/cliente/:tab" element={<AppLayout><RequireRol rol="cliente"><Cliente /></RequireRol></AppLayout>} />
         <Route path="/tracker/:orden_id" element={<AppLayout><Tracker /></AppLayout>} />
         <Route path="/settings" element={<AppLayout><Protected><Settings /></Protected></AppLayout>} />
-        <Route path="/reportes" element={<AppLayout><RequireRol rol="admin"><Reportes /></RequireRol></AppLayout>} />
-        <Route path="/usuarios" element={<AppLayout><RequireRol rol="admin"><Usuarios /></RequireRol></AppLayout>} />
+        <Route path="/reportes" element={<AppLayout><RequireSeccion><Reportes /></RequireSeccion></AppLayout>} />
+        <Route path="/usuarios" element={<AppLayout><RequireSeccion><Usuarios /></RequireSeccion></AppLayout>} />
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
