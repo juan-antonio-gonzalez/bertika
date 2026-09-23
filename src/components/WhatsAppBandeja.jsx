@@ -377,6 +377,27 @@ export default function WhatsAppBandeja() {
     }
   };
 
+  // Mandar una foto o un PDF dentro de la conversación.
+  const enviarAdjunto = async (archivo) => {
+    if (!sel || !archivo) return;
+    if (archivo.size > 8 * 1024 * 1024) return toastShow('El archivo es muy pesado (máximo 8 MB)', 'warn');
+    setEnviando(true);
+    try {
+      const form = new FormData();
+      form.append('archivo', archivo);
+      if (texto.trim()) form.append('texto', texto.trim());
+      await api(`/whatsapp/conversaciones/${sel}/adjunto`, { method: 'POST', form });
+      setTexto('');
+      await abrir(sel);
+      cargarConvs(filtro);
+      toastShow('Archivo enviado', 'ok');
+    } catch (e) {
+      toastShow(e.message, 'error');
+    } finally {
+      setEnviando(false);
+    }
+  };
+
   const guardarNota = async () => {
     const t = nota.trim();
     if (!t || !sel) return;
@@ -838,7 +859,15 @@ export default function WhatsAppBandeja() {
               <div className="wa-mensajes">
                 {hilo.mensajes.map((m) => (
                   <div key={m.id} className={`wa-msg ${m.direccion}`}>
-                    <div>{m.texto}</div>
+                    {m.media_url && String(m.media_tipo || '').toLowerCase() === 'documento' ? (
+                      <a href={m.media_url} target="_blank" rel="noreferrer">📄 {m.media_nombre || 'Documento'}</a>
+                    ) : m.media_url ? (
+                      <a href={m.media_url} target="_blank" rel="noreferrer">
+                        <img src={m.media_url} alt={m.media_nombre || 'foto'} className="wa-foto" />
+                      </a>
+                    ) : null}
+                    {(m.texto && (!m.media_url || !String(m.texto).startsWith('['))) && <div>{m.texto}</div>}
+                    {!m.texto && !m.media_url && <div>—</div>}
                     <div className="wa-meta">
                       {fmtFecha(m.fecha)}{m.estado ? ` · ${m.estado}` : ''}{m.error ? ` · ${m.error}` : ''}
                     </div>
@@ -894,6 +923,14 @@ export default function WhatsAppBandeja() {
                     ))}
                   </div>
                 )}
+                <label className="btn sm" title="Mandar una foto o un PDF" style={{ cursor: 'pointer', margin: 0 }}>
+                  📎
+                  <input
+                    type="file" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf"
+                    style={{ display: 'none' }}
+                    onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) enviarAdjunto(f); }}
+                  />
+                </label>
                 <input
                   className="input" style={{ flex: 1 }} placeholder="Escribí una respuesta (o / para respuestas rápidas)…"
                   value={texto}

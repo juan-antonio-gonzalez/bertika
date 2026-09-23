@@ -16,7 +16,10 @@ import { PERMISOS, COLUMNAS, agruparPermisos, permisosPorDefecto, normalizarPerm
 import { canTransition, ORDEN_ESTADOS, ESTADO_LABEL, MIN_CAPACIDAD_PCT, esEstadoCerrado } from './reglas.js';
 import { obtenerDolar } from './dolar.js';
 import { calcularVisita, normalizarConfig, CONFIG_DEFAULT, textoFueraCobertura } from '../src/data/cotizadorVisita.js';
-import { enviarTexto, enviarPlantilla, configPublicaWhatsApp, normalizarTelefono, normalizarEtiquetas, verificarFirma, ESTADO_ENTREGA } from './whatsapp.js';
+import {
+  enviarTexto, enviarPlantilla, configPublicaWhatsApp, normalizarTelefono, normalizarEtiquetas, verificarFirma, ESTADO_ENTREGA,
+  descargarMedia, subirMedia, enviarImagen, enviarDocumento,
+} from './whatsapp.js';
 import { EVENTOS as EVENTOS_AVISO, PLANTILLA_POR_ESTADO, PLANTILLA_GARANTIA, normalizarAvisos, parametrosAviso, resumenAviso, debeAvisarGarantia, parametrosGarantia } from './avisos.js';
 import {
   normalizarEtapa, normalizarMonto, normalizarTipoCliente, faltaMotivoPerdida,
@@ -221,6 +224,10 @@ async function asegurarCodigos() {
   )`);
   await query('CREATE INDEX IF NOT EXISTS idx_wa_mensajes_conv ON wa_mensajes (conversacion_id, fecha DESC)');
   await query('CREATE INDEX IF NOT EXISTS idx_wa_mensajes_wamid ON wa_mensajes (wa_message_id)');
+  // Archivos del chat (fotos y documentos): se guardan como los de diagnostico.
+  await query('ALTER TABLE wa_mensajes ADD COLUMN IF NOT EXISTS media_url TEXT');
+  await query('ALTER TABLE wa_mensajes ADD COLUMN IF NOT EXISTS media_tipo TEXT');
+  await query('ALTER TABLE wa_mensajes ADD COLUMN IF NOT EXISTS media_nombre TEXT');
   // CRM de la bandeja: etiquetas por conversacion y notas internas del taller.
   await query('ALTER TABLE wa_conversaciones ADD COLUMN IF NOT EXISTS etiquetas TEXT');
   // Catalogo de etiquetas (antes eran texto libre: se duplicaban y no se podian
@@ -1849,7 +1856,7 @@ async function conversacionDe(telefono, nombrePerfil = null) {
   return conv;
 }
 
-async function guardarMensaje({ conversacion, direccion, tipo, texto, plantilla = null, waMessageId = null, estado = null, error = null, fecha = null }) {
+async function guardarMensaje({ conversacion, direccion, tipo, texto, plantilla = null, waMessageId = null, estado = null, error = null, fecha = null, mediaUrl = null, mediaTipo = null, mediaNombre = null }) {
   // Mensaje + resumen de la conversacion en UNA transaccion: antes podia quedar
   // el mensaje guardado sin actualizar el ultimo texto o los no leidos.
   // Si viene wa_message_id y existe el indice unico, la reserva es atomica: un
@@ -1859,11 +1866,11 @@ async function guardarMensaje({ conversacion, direccion, tipo, texto, plantilla 
     const id = await nextId('wams', client);
     const dedupe = Boolean(waMessageId) && indiceWamid;
     const ins = await client.query(
-      `INSERT INTO wa_mensajes (id, conversacion_id, wa_message_id, direccion, telefono, tipo, texto, plantilla, estado, error, fecha)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, COALESCE($11::timestamptz, now()))
+      `INSERT INTO wa_mensajes (id, conversacion_id, wa_message_id, direccion, telefono, tipo, texto, plantilla, estado, error, fecha, media_url, media_tipo, media_nombre)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, COALESCE($11::timestamptz, now()), $12, $13, $14)
        ${dedupe ? 'ON CONFLICT (wa_message_id) WHERE wa_message_id IS NOT NULL DO NOTHING' : ''}
        RETURNING id`,
-      [id, conversacion.id, waMessageId, direccion, conversacion.telefono, tipo, texto, plantilla, estado, error, fecha]
+      [id, conversacion.id, waMessageId, direccion, conversacion.telefono, tipo, texto, plantilla, estado, error, fecha, mediaUrl, mediaTipo, mediaNombre]
     );
     if (!ins.rows.length) return null; // ya estaba cargado: no se duplica
     if (direccion === 'in') {
@@ -2509,6 +2516,31 @@ app.post('/api/whatsapp/conversaciones/:id/responder', authRequired, permisoRequ
   return res.json({ ok: true, id: envio.id });
 });
 
+// Mandar una foto o un PDF dentro de la conversacion.
+app.post('/api/whatsapp/conversaciones/:id/adjunto', authRequired, permisoRequerido('responder_whatsapp'), uploadChat.single('archivo'), async (req, res) => {
+  const conv = await one('SELECT * FROM wa_conversaciones WHERE id = $1', [req.params.id]);
+  if (!conv) return res.status(404).json({ error: 'Conversación no encontrada' });
+  if (!req.file?.buffer?.length) return res.status(400).json({ error: 'No se recibió el archivo' });
+  const texto = limStr(req.body?.texto, 1000);
+  const esPdf = req.file.buffer.subarray(0, 4).toString('latin1') === '%PDF';
+  const nombre = limStr(req.file.originalname, 120) || (esPdf ? 'documento.pdf' : 'foto.jpg');
+  const subida = await subirMedia({ buffer: req.file.buffer, mime: esPdf ? 'application/pdf' : req.file.mimetype, nombre });
+  if (!subida.ok) return res.status(400).json({ error: subida.error });
+  const envio = esPdf
+    ? await enviarDocumento({ to: conv.telefono, mediaId: subida.id, texto, nombre })
+    : await enviarImagen({ to: conv.telefono, mediaId: subida.id, texto });
+  // Se guarda la copia local para poder mostrarla en la bandeja.
+  const local = guardarArchivoChat({ buffer: req.file.buffer, mime: req.file.mimetype, nombre });
+  await guardarMensaje({
+    conversacion: conv, direccion: 'out', tipo: esPdf ? 'document' : 'image',
+    texto: texto || (esPdf ? `[documento: ${nombre}]` : '[foto]'),
+    waMessageId: envio.id || null, estado: envio.ok ? 'enviado' : 'error', error: envio.ok ? null : envio.error,
+    mediaUrl: local?.url || null, mediaTipo: local?.tipo || null, mediaNombre: local?.nombre || null,
+  });
+  if (!envio.ok) return res.status(400).json({ error: envio.error });
+  return res.json({ ok: true, id: envio.id, media_url: local?.url || null, media_tipo: local?.tipo || null });
+});
+
 // Enviar a un numero suelto (prueba del canal o aviso puntual).
 app.post('/api/whatsapp/enviar', authRequired, permisoRequerido('enviar_whatsapp'), async (req, res) => {
   const telefono = limStr(req.body?.telefono, 30);
@@ -2561,14 +2593,24 @@ app.post('/api/whatsapp/webhook', async (req, res) => {
         const conv = await conversacionDe(m.from, perfil);
         if (!conv) continue;
         const tipo = limStr(m.type, 20) || 'desconocido';
+        // Fotos y documentos: se bajan de Meta y se guardan (si falla, el mensaje
+        // igual queda con su texto para no perder el aviso).
+        const adjunto = m.image || m.document || null;
+        let media = null;
+        if (adjunto?.id) {
+          const bajado = await descargarMedia({ mediaId: adjunto.id });
+          if (bajado.ok) media = guardarArchivoChat({ buffer: bajado.buffer, mime: bajado.mime || adjunto.mime_type, nombre: bajado.nombre || adjunto.filename });
+          else console.warn('[whatsapp] no se pudo bajar el archivo entrante:', bajado.error);
+        }
         const texto = m.text?.body
           || m.button?.text
           || m.interactive?.list_reply?.title
           || m.interactive?.button_reply?.title
-          || (m.image ? '[imagen]' : m.audio ? '[audio]' : m.document ? '[documento]' : m.video ? '[video]' : m.location ? '[ubicación]' : `[${tipo}]`);
+          || (m.image ? (media ? '[foto]' : '[imagen]') : m.audio ? '[audio]' : m.document ? (media ? `[documento: ${media.nombre}]` : '[documento]') : m.video ? '[video]' : m.location ? '[ubicación]' : `[${tipo}]`);
         const fecha = m.timestamp ? new Date(Number(m.timestamp) * 1000).toISOString() : null;
         const guardado = await guardarMensaje({
           conversacion: conv, direccion: 'in', tipo, texto, waMessageId: m.id || null, estado: 'recibido', fecha,
+          mediaUrl: media?.url || null, mediaTipo: media?.tipo || null, mediaNombre: media?.nombre || null,
         });
         if (!guardado) continue; // ya estaba cargado: no se duplica ni suma no leidos
         // Escribirnos es el consentimiento implicito para poder responderle.
@@ -2607,6 +2649,28 @@ function detectImg(buf) {
   if (b.length > 11 && b.toString('latin1', 0, 4) === 'RIFF' && b.toString('latin1', 8, 12) === 'WEBP') return '.webp';
   return null;
 }
+
+// Guarda un archivo del chat (foto o PDF) con nombre aleatorio, validando el
+// contenido real y no lo que dice el remitente.
+function guardarArchivoChat({ buffer, mime, nombre = '' }) {
+  if (!buffer?.length) return null;
+  const ext = detectImg(buffer) || (buffer.subarray(0, 4).toString('latin1') === '%PDF' ? '.pdf' : null);
+  if (!ext) return null;
+  const archivo = `chat-${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
+  writeFileSync(path.join(UPLOAD_DIR, archivo), buffer);
+  const tipo = ext === '.pdf' ? 'documento' : (String(mime || '').split('/')[1] || 'imagen');
+  return { url: `${PUBLIC_URL}/uploads/${archivo}`, tipo, nombre: limStr(nombre, 120) || `archivo${ext}` };
+}
+
+// Subida de adjuntos del chat: fotos o PDF, hasta 8 MB.
+const uploadChat = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 8 * 1024 * 1024, files: 1 },
+  fileFilter: (req, file, cb) => {
+    if (/^(image\/(jpeg|png|webp|gif)|application\/pdf)$/.test(file.mimetype)) return cb(null, true);
+    cb(new Error('Solo se permiten fotos (jpg, png, webp, gif) o PDF'));
+  },
+});
 
 const upload = multer({
   storage: multer.memoryStorage(),

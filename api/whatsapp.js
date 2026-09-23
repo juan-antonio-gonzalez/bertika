@@ -165,3 +165,71 @@ export function verificarFirma(cuerpoCrudo, header, appSecret = process.env.WHAT
 
 // Nombres legibles de los estados de entrega que manda Meta.
 export const ESTADO_ENTREGA = { sent: 'enviado', delivered: 'entregado', read: 'leído', failed: 'error', deleted: 'borrado' };
+
+// ---------- Fotos y documentos (media de la Cloud API) ----------
+
+// Baja un archivo de Meta: primero se pide la informacion (GET /{media-id}) y
+// despues se descarga el binario de la URL que devuelve.
+export async function descargarMedia({ mediaId, fetchImpl = fetch } = {}) {
+  const { token, version } = configWhatsApp();
+  if (!token) return { ok: false, error: 'WhatsApp no está configurado (falta la clave).' };
+  if (!mediaId) return { ok: false, error: 'Falta el id del archivo.' };
+  try {
+    const info = await fetchImpl(`${BASE}/${version}/${mediaId}`, { headers: { Authorization: `Bearer ${token}` } });
+    const meta = await info.json().catch(() => null);
+    if (!info.ok || !meta?.url) return { ok: false, error: mensajeDeError(meta?.error || meta) };
+    const archivo = await fetchImpl(meta.url, { headers: { Authorization: `Bearer ${token}` } });
+    if (!archivo.ok) return { ok: false, error: `Meta no entregó el archivo (${archivo.status}).` };
+    const buffer = Buffer.from(await archivo.arrayBuffer());
+    const mime = String(meta.mime_type || archivo.headers?.get?.('content-type') || '').split(';')[0].trim();
+    return { ok: true, buffer, mime, nombre: String(meta.filename || '') };
+  } catch (e) {
+    return { ok: false, error: `No se pudo bajar el archivo: ${e.message}` };
+  }
+}
+
+// Sube un archivo a Meta y devuelve su id (despues se manda por id).
+export async function subirMedia({ buffer, mime, nombre = 'archivo', fetchImpl = fetch } = {}) {
+  const { token, phoneId, version } = configWhatsApp();
+  if (!token || !phoneId) return { ok: false, error: 'WhatsApp no está configurado (falta la clave o el número).' };
+  if (!buffer?.length) return { ok: false, error: 'El archivo está vacío.' };
+  try {
+    const form = new FormData();
+    form.append('messaging_product', 'whatsapp');
+    form.append('type', mime);
+    form.append('file', new Blob([buffer], { type: mime }), nombre);
+    const res = await fetchImpl(`${BASE}/${version}/${phoneId}/media`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: form,
+    });
+    const json = await res.json().catch(() => null);
+    if (!res.ok || !json?.id) return { ok: false, error: mensajeDeError(json?.error || json) };
+    return { ok: true, id: json.id };
+  } catch (e) {
+    return { ok: false, error: `No se pudo subir el archivo: ${e.message}` };
+  }
+}
+
+// Manda una imagen ya subida (con texto opcional).
+export async function enviarImagen({ to, mediaId, texto = '', fetchImpl } = {}) {
+  const destino = normalizarTelefono(to);
+  if (!destino) return { ok: false, error: 'Falta el teléfono del cliente.' };
+  if (!mediaId) return { ok: false, error: 'Falta el archivo.' };
+  return llamarMeta(`${configWhatsApp().phoneId}/messages`, {
+    messaging_product: 'whatsapp', recipient_type: 'individual', to: destino,
+    type: 'image', image: { id: mediaId, ...(texto ? { caption: String(texto).slice(0, 1024) } : {}) },
+  }, { fetchImpl });
+}
+
+// Manda un documento (PDF y similares).
+export async function enviarDocumento({ to, mediaId, texto = '', nombre = 'documento.pdf', fetchImpl } = {}) {
+  const destino = normalizarTelefono(to);
+  if (!destino) return { ok: false, error: 'Falta el teléfono del cliente.' };
+  if (!mediaId) return { ok: false, error: 'Falta el archivo.' };
+  return llamarMeta(`${configWhatsApp().phoneId}/messages`, {
+    messaging_product: 'whatsapp', recipient_type: 'individual', to: destino,
+    type: 'document',
+    document: { id: mediaId, filename: String(nombre).slice(0, 120), ...(texto ? { caption: String(texto).slice(0, 1024) } : {}) },
+  }, { fetchImpl });
+}

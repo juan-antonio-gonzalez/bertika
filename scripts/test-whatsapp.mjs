@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
 import {
   configWhatsApp, configPublicaWhatsApp, normalizarTelefono, enviarTexto, enviarPlantilla, verificarFirma, mensajeDeError,
-  normalizarEtiquetas, listaEtiquetas,
+  normalizarEtiquetas, listaEtiquetas, descargarMedia, subirMedia, enviarImagen, enviarDocumento,
 } from '../api/whatsapp.js';
 
 let pasaron = 0;
@@ -156,4 +156,64 @@ test('acepta la firma correcta y rechaza la alterada', () => {
   assert.equal(verificarFirma(Buffer.from('otro cuerpo'), firma, secreto).ok, false);
 });
 
+console.log('\nFotos y documentos (media)');
+await asyncTest('baja un archivo de Meta en dos pasos (info + binario)', async () => {
+  process.env.WHATSAPP_TOKEN = 'token-de-prueba';
+  const bytes = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]);
+  const llamadas = [];
+  const fetchImpl = async (url, opts) => {
+    llamadas.push({ url, auth: opts?.headers?.Authorization });
+    if (url.includes('/media-id-1')) return { ok: true, json: async () => ({ url: 'https://lookaside.fbsbx.com/whatsapp/x', mime_type: 'image/jpeg' }) };
+    return { ok: true, arrayBuffer: async () => bytes, headers: { get: () => 'image/jpeg' } };
+  };
+  const r = await descargarMedia({ mediaId: 'media-id-1', fetchImpl });
+  assert.equal(r.ok, true);
+  assert.equal(r.mime, 'image/jpeg');
+  assert.equal(r.buffer.length, bytes.length);
+  assert.match(llamadas[0].url, /graph\.facebook\.com\/v.+\/media-id-1$/);
+  assert.match(llamadas[1].url, /lookaside\.fbsbx\.com/);
+  assert.equal(llamadas.every((l) => l.auth === 'Bearer token-de-prueba'), true, 'las dos llamadas llevan la clave');
+});
+
+await asyncTest('si Meta no da el archivo, avisa sin romper', async () => {
+  process.env.WHATSAPP_TOKEN = 'token-de-prueba';
+  const r1 = await descargarMedia({ mediaId: '', fetchImpl: async () => ({ ok: true, json: async () => ({}) }) });
+  assert.equal(r1.ok, false);
+  const r2 = await descargarMedia({ mediaId: 'x', fetchImpl: async () => ({ ok: false, json: async () => ({ error: { code: 190, message: 'Invalid OAuth' } }) }) });
+  assert.equal(r2.ok, false);
+  assert.match(r2.error, /token|clave/i);
+});
+
+await asyncTest('sube un archivo y devuelve el id de Meta', async () => {
+  process.env.WHATSAPP_TOKEN = 'token-de-prueba';
+  process.env.WHATSAPP_PHONE_ID = '999';
+  let capturado = null;
+  const fetchImpl = async (url, opts) => { capturado = { url, opts }; return { ok: true, json: async () => ({ id: 'media-subida-1' }) }; };
+  const r = await subirMedia({ buffer: Buffer.from([1, 2, 3]), mime: 'image/jpeg', nombre: 'foto.jpg', fetchImpl });
+  assert.equal(r.ok, true);
+  assert.equal(r.id, 'media-subida-1');
+  assert.match(capturado.url, /\/999\/media$/);
+  assert.equal(capturado.opts.method, 'POST');
+  assert.equal(capturado.opts.body instanceof FormData, true, 'va como formulario');
+});
+
+await asyncTest('manda la imagen y el documento con el formato que pide Meta', async () => {
+  process.env.WHATSAPP_TOKEN = 'token-de-prueba';
+  process.env.WHATSAPP_PHONE_ID = '999';
+  let cuerpo = null;
+  const fetchImpl = async (url, opts) => { cuerpo = JSON.parse(opts.body); return respuestaOk('wamid.IMG'); };
+  const img = await enviarImagen({ to: '11 5555-0101', mediaId: 'm1', texto: 'Mirá la batería', fetchImpl });
+  assert.equal(img.ok, true);
+  assert.equal(cuerpo.type, 'image');
+  assert.equal(cuerpo.image.id, 'm1');
+  assert.equal(cuerpo.image.caption, 'Mirá la batería');
+  assert.equal(cuerpo.to, '5491155550101');
+  const doc = await enviarDocumento({ to: '1155550101', mediaId: 'm2', nombre: 'informe.pdf', fetchImpl });
+  assert.equal(doc.ok, true);
+  assert.equal(cuerpo.type, 'document');
+  assert.equal(cuerpo.document.filename, 'informe.pdf');
+  assert.equal(cuerpo.document.caption, undefined, 'sin texto no manda caption');
+});
+
 console.log(`\n${pasaron} tests OK${process.exitCode ? ' (con fallas)' : ''}\n`);
+
