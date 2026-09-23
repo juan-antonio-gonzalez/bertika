@@ -171,6 +171,27 @@ if [ "$HAY_APP_CFG" = "1" ]; then
   fi
 fi
 
+# La clave que da el panel de Meta dura 24 h. Se puede cambiar por una de 60
+# dias (misma cuenta, mismos permisos) sin pasar por el "Usuario del sistema",
+# que es el tramite que mas se traba. Si se puede, se guarda la larga.
+if [ "$TIPO_CLAVE" = "USER" ] && [ "$HAY_APP_CFG" = "1" ]; then
+  echo "== 1b. Hago que la clave dure 60 días =="
+  llamar "$TMP/app.cfg" GET "oauth/access_token?grant_type=fb_exchange_token&client_id=$APP_ID&client_secret=$SECRET&fb_exchange_token=$(urlenc "$TOKEN")"
+  LARGA="$(campo "$CUERPO" access_token)"
+  SEG="$(campo "$CUERPO" expires_in)"
+  case "$SEG" in ''|*[!0-9]*) SEG=0;; esac
+  if [ -n "$LARGA" ] && [ "$SEG" -gt 86400 ]; then
+    TOKEN="$LARGA"
+    guardar_var WHATSAPP_TOKEN "$TOKEN"
+    printf 'header = "Authorization: Bearer %s"\n' "$TOKEN" > "$TMP/t.cfg"
+    GUARDE=1
+    ok "Ahora la clave dura $(( (SEG + 43200) / 86400 )) días en vez de 24 h."
+  else
+    dato "No se pudo alargar: la clave sigue valiendo 24 h. Para probar alcanza,"
+    dato "pero conviene generar el token permanente (Paso 5 de la guía)."
+  fi
+fi
+
 # ------------------------------------------------------- 2. Cuenta (WABA)
 echo "== 2. La cuenta de WhatsApp (WABA) =="
 if [ -n "$WABA_ID" ]; then
