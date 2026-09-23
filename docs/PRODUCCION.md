@@ -141,18 +141,45 @@ cd /var/www/bertika/api && node seed.js   # crea tablas y carga datos demo
 
 ## 8. Backups
 
-Cron diario a las 03:17 (host): `/etc/cron.d/bertika-backup` → `/usr/local/bin/bertika-backup.sh`.
+**Estado real (23/09/2026): los respaldos estuvieron rotos desde el 16/09.** El cron
+corría todos los días pero `pg_dump` fallaba por falta de contraseña y dejaba archivos
+de **0 bytes**; nadie lo notaba porque el cron no avisa y no había log. El respaldo
+bueno más viejo que quedaba era del 15/09.
+
+Ahora el respaldo vive en el repo y se instala con un comando:
 
 ```bash
-pg_dump -h 127.0.0.1 -U bertika bertika > /var/backups/bertika/bertika_$(date +%F_%H%M).sql
-gzip —f ... ; find … -mtime +14 -delete   # retención 14 días
+bash scripts/backup-db.sh --instalar    # lo copia al VPS y arma el cron diario 03:17
+bash scripts/backup-db.sh               # corre un respaldo ahora
+bash scripts/backup-db.sh --verificar   # RESTAURA el último respaldo en una base de
+                                        # prueba y cuenta filas (no toca la real)
 ```
 
-Restaurar:
+Qué hace distinto del anterior:
+
+1. usa la cadena de conexión de la app (`/etc/bertika/bertika-api.env`), así no depende
+   de que la contraseña esté en el entorno del cron;
+2. **valida** que el dump pese más de 2 KB y traiga las tablas del taller (si no, falla
+   y no guarda un archivo vacío que parezca bueno);
+3. borra los respaldos viejos (14 días) **y** los `.sql` vacíos que quedaron del script roto;
+4. deja el resultado en `/var/log/bertika-backup.log` (el cron redirige ahí).
+
+Cron diario a las 03:17 (host): `/etc/cron.d/bertika-backup` → `/usr/local/bin/bertika-backup.sh --en-servidor`.
+
+Restaurar a mano (reemplaza la base real: parar el servicio antes):
 
 ```bash
-gunzip -c /var/backups/bertika/bertika_YYYY-MM-DD_HHMM.sql.gz | psql -h 127.0.0.1 -U bertika bertika
+systemctl stop bertika-api
+gunzip -c /var/backups/bertika/bertika_YYYY-MM-DD_HHMM.sql.gz | psql "$DATABASE_URL"
+systemctl start bertika-api
 ```
+
+> **Las fotos de diagnóstico NO están en el respaldo.** Viven en `/var/www/bertika/uploads`
+> (`UPLOAD_DIR`) y solo se respalda la base. Conviene copiarlas aparte (rsync a otra
+> máquina o incluirlas en el respaldo).
+
+> **Pendiente recomendado:** correr `--verificar` una vez por mes y anotarlo. Un respaldo
+> que nunca se probó no es un respaldo.
 
 ## 9. Troubleshooting
 
