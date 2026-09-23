@@ -24,6 +24,36 @@ DESTINO="/var/backups/bertika"
 RETENCION_DIAS=14
 MIN_BYTES=2048
 
+subir_a_nube() {
+  local db="$1" fotos="$2"
+  local cfg=/etc/bertika/backup-nube.env
+  [ -f "$cfg" ] || { echo "   (nube: sin configurar; ver bash scripts/backup-db.sh --configurar-nube)"; return 0; }
+  # shellcheck disable=SC1090
+  . "$cfg"
+  if [ -z "${NUBE_DESTINO:-}" ]; then echo "   (nube: NUBE_DESTINO vacio en $cfg)"; return 0; fi
+  if ! command -v rclone >/dev/null 2>&1; then
+    echo "   (nube: falta rclone en el servidor: apt-get install -y rclone)"
+    return 0
+  fi
+  local ok=1
+  for f in "$db" "$fotos"; do
+    [ -f "$f" ] || continue
+    if rclone copy "$f" "$NUBE_DESTINO" --no-traverse >/dev/null 2>&1; then
+      echo "   nube OK: $(basename "$f") -> $NUBE_DESTINO"
+    else
+      ok=0
+      echo "   AVISO: no se pudo subir $(basename "$f") a $NUBE_DESTINO"
+    fi
+  done
+  # Retencion en la nube: 30 dias.
+  rclone delete "$NUBE_DESTINO" --min-age 30d >/dev/null 2>&1 || true
+  [ "$ok" = "1" ] || echo "   (revisá 'rclone config' y el destino en $cfg)"
+}
+
+# La copia a la nube se hace DESDE EL SERVIDOR (asi el respaldo diario de las
+# 03:17 se sube solo, sin depender de que tu Mac este encendida). Ver mas abajo
+# los modos --configurar-nube y --nube.
+
 # ----------------------------- se ejecuta en el VPS -----------------------------
 if [ "${1:-}" = "--en-servidor" ]; then
   DB="$(grep -E '^DATABASE_URL=' "$ENV_REMOTO" | cut -d= -f2-)"
@@ -55,30 +85,14 @@ if [ "${1:-}" = "--en-servidor" ]; then
   find "$DESTINO" -name 'uploads_*.tar.gz' -mtime "+$RETENCION_DIAS" -delete
   find "$DESTINO" -name 'bertika_*.sql' -size 0 -delete
   echo "OK respaldo: $ARCHIVO ($(du -h "$ARCHIVO" | cut -f1)), fotos: $(ls -la "$DESTINO"/uploads_*.tar.gz 2>/dev/null | tail -1 | awk '{print $5" bytes"}' || echo 'sin fotos'), quedan $(ls "$DESTINO"/*.sql.gz 2>/dev/null | wc -l | tr -d ' ') respaldos"
+  # Copia fuera del VPS (si esta configurada): sin esto, si se pierde el
+  # servidor se pierden tambien los respaldos.
+  subir_a_nube "$ARCHIVO" "$DESTINO/uploads_$STAMP.tar.gz"
   exit 0
 fi
 
-# ------------------- copia en la nube (opcional, con rclone) -------------------
-# Si algun dia contratan un almacenamiento en la nube (Google Drive, S3, Backblaze,
-# etc.), alcanza con configurar rclone (`rclone config`, un "remote" llamado
-# bertika-nube) y esto sube el ultimo respaldo. Sin rclone, avisa y no hace nada.
-if [ "${1:-}" = "--nube" ]; then
-  if ! command -v rclone >/dev/null 2>&1; then
-    echo "rclone no esta instalado. Para respaldar en la nube:"
-    echo "  1) brew install rclone"
-    echo "  2) rclone config   (crear un remote llamado: bertika-nube)"
-    echo "  3) bash scripts/backup-db.sh --nube"
-    exit 1
-  fi
-  ULTIMO="$(ssh "${SSH_ARGS[@]}" "root@$SSH_HOST" "ls -t $DESTINO/bertika_*.sql.gz 2>/dev/null | head -1" || true)"
-  [ -n "$ULTIMO" ] || { echo "No hay respaldos en el servidor"; exit 1; }
-  TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
-  scp -q "${SSH_ARGS[@]}" "root@$SSH_HOST:$ULTIMO" "$TMP/"
-  rclone copy "$TMP" bertika-nube:bertika-backups/ --include '*.sql.gz' --verbose
-  echo "Subido a la nube: $(basename "$ULTIMO")"
-  exit 0
-fi
-
+# Sube el respaldo a la nube si hay destino configurado. Nunca corta el respaldo:
+# si la nube falla, el respaldo local ya quedo hecho y se avisa en el log.
 # ------------------- copia local (fuera del servidor) -------------------
 if [ "${1:-}" = "--traer" ]; then
   DESTINO_LOCAL="${2:-$HOME/Desktop/Proyecto/Taller-reparación/backups}"
@@ -94,6 +108,63 @@ if [ "${1:-}" = "--traer" ]; then
 fi
 
 [ -f "$SSH_KEY" ] || { echo "No encuentro la llave $SSH_KEY"; exit 1; }
+
+# ------------------------- copia en la nube (opcional) -------------------------
+if [ "${1:-}" = "--configurar-nube" ]; then
+  DESTINO_NUBE="${2:-}"
+  if [ -z "$DESTINO_NUBE" ]; then
+    echo "Uso:  bash scripts/backup-db.sh --configurar-nube <destino de rclone>"
+    echo "Ejemplos:  gdrive:bertika-backups   ·   s3:mi-bucket/bertika   ·   onedrive:bertika"
+    echo "Antes, en el servidor, hay que conectar el destino:  rclone config"
+    exit 1
+  fi
+  ssh "${SSH_ARGS[@]}" "root@$SSH_HOST" "bash -s -- '$DESTINO_NUBE'" <<'REMOTO'
+set -euo pipefail
+DESTINO="$1"
+if ! command -v rclone >/dev/null 2>&1; then
+  echo "Falta rclone en el servidor. Instalalo con: apt-get update && apt-get install -y rclone"
+  exit 1
+fi
+printf 'NUBE_DESTINO=%s\n' "$DESTINO" > /etc/bertika/backup-nube.env
+chmod 600 /etc/bertika/backup-nube.env
+echo "Destino guardado en /etc/bertika/backup-nube.env"
+echo "== Prueba de conexion =="
+if rclone lsd "$DESTINO" >/dev/null 2>&1 || rclone lsd "$(dirname "$DESTINO")" >/dev/null 2>&1; then
+  echo "OK: el destino responde"
+else
+  echo "AVISO: el destino no responde todavia. Revisá 'rclone config' (¿esta creado el remoto?)"
+fi
+REMOTO
+  echo
+  echo "Listo: el respaldo diario de las 03:17 va a copiarse tambien a la nube."
+  exit 0
+fi
+
+if [ "${1:-}" = "--nube" ]; then
+  echo "== Probando la copia a la nube =="
+  ssh "${SSH_ARGS[@]}" "root@$SSH_HOST" "bash -s" <<'REMOTO'
+set -euo pipefail
+cfg=/etc/bertika/backup-nube.env
+if [ ! -f "$cfg" ]; then
+  echo "Todavia no hay destino configurado."
+  echo "En el servidor hay que conectar la cuenta (rclone config) y despues correr:"
+  echo "  bash scripts/backup-db.sh --configurar-nube <destino>"
+  exit 0
+fi
+. "$cfg"
+ULTIMO="$(ls -t /var/backups/bertika/bertika_*.sql.gz 2>/dev/null | head -1 || true)"
+FOTOS="$(ls -t /var/backups/bertika/uploads_*.tar.gz 2>/dev/null | head -1 || true)"
+[ -n "$ULTIMO" ] || { echo "No hay respaldos locales para subir"; exit 1; }
+command -v rclone >/dev/null 2>&1 || { echo "Falta rclone en el servidor"; exit 1; }
+for f in "$ULTIMO" "$FOTOS"; do
+  [ -f "$f" ] || continue
+  if rclone copy "$f" "$NUBE_DESTINO" --no-traverse; then echo "OK: $(basename "$f") -> $NUBE_DESTINO"; else echo "FALLO: no se pudo subir $(basename "$f")"; exit 1; fi
+done
+echo "== Que hay en la nube =="
+rclone ls "$NUBE_DESTINO" | tail -5
+REMOTO
+  exit 0
+fi
 
 # ------------------------------- instalacion en el VPS -------------------------------
 if [ "${1:-}" = "--instalar" ]; then

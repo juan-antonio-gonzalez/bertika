@@ -178,6 +178,29 @@ systemctl start bertika-api
 > (`UPLOAD_DIR`) y solo se respalda la base. Conviene copiarlas aparte (rsync a otra
 > máquina o incluirlas en el respaldo).
 
+### Copias fuera del servidor
+
+Un respaldo en el mismo servidor no protege contra perder el servidor. Hay dos copias:
+
+```bash
+bash scripts/backup-db.sh --traer                    # trae la última copia a tu Mac (backups/)
+bash scripts/backup-db.sh --configurar-nube <destino>  # copia automática en la nube
+bash scripts/backup-db.sh --nube                     # prueba la copia a la nube ahora
+```
+
+La copia a la nube se hace **desde el servidor**, así el respaldo de las 03:17 se sube solo
+(sin depender de que tu Mac esté encendida). Necesita [rclone](https://rclone.org) instalado
+en el VPS y un destino conectado:
+
+```bash
+apt-get install -y rclone      # en el VPS
+rclone config                  # crear el remoto (Drive, S3, Backblaze, OneDrive…)
+bash scripts/backup-db.sh --configurar-nube gdrive:bertika-backups
+```
+
+Sin destino configurado, el respaldo local funciona igual y el log aclara que la nube no está
+configurada (no falla). En la nube se guardan 30 días.
+
 > **Pendiente recomendado:** correr `--verificar` una vez por mes y anotarlo. Un respaldo
 > que nunca se probó no es un respaldo.
 
