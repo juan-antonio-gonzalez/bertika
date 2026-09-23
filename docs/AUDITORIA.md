@@ -6,6 +6,31 @@ producción de los hallazgos graves (solo lecturas). Nada se modificó sin decir
 
 ---
 
+## 0. Estado de las correcciones (actualizado 23/09/2026 20:30)
+
+Todo lo de acá abajo **ya está implementado, deployado y verificado en producción**:
+
+| Fase | Qué se hizo | Commit |
+|---|---|---|
+| Urgente | **Fuga pública de órdenes cerrada** (solo por código de 16 dígitos; sin comodines, sin id crudo, sin datos del personal). Verificado en vivo: `?q=%` → `[]`, detalle por id → 403, seguimiento con el código → OK | `ef734b9` |
+| Urgente | **Un técnico ya no puede entregar ni cancelar** (403 con mensaje). Verificado con la cuenta de técnico | `ef734b9` |
+| Urgente | **El token muere al desactivar/borrar un usuario** (chequeo de `activo` en cada request). Verificado: token válido de usuario inexistente → 401 | `ef734b9` |
+| Urgente | **`seed.js` con doble llave** en producción y **reset con confirmación escrita** (`BORRAR TODO`) | `ef734b9` |
+| Urgente | **Respaldo arreglado e instalado**: cron 03:17 con validación del dump, fotos incluidas, retención y prueba de restauración (`scripts/backup-db.sh`), más copia fuera del VPS (`--traer`) | — |
+| Integridad | **Guardias de estado** (no se cotiza/carga insumo/saca fotos en órdenes entregadas o canceladas), **baja validada y única**, **stock atómico** (no puede quedar negativo), **avisos y webhooks sin duplicados**, **transacciones** en cotización/stock/mensajes/config, **control optimista** de estado, `connectionTimeoutMillis`, **índices UNIQUE** (email de cliente, `wa_message_id`, bajas) | `de3c817` |
+| CRUD | **Clientes, técnicos e insumos editables**; **papelera** de clientes con restaurar; **baja lógica de usuarios** (ya no se borran); notas de WhatsApp y notificaciones borrables | `b0e018d` |
+| CRM | **Campos comerciales del cliente** (dirección, localidad, CUIT, condición de pago, canal de origen, vendedor); **vincular/crear cliente desde la bandeja**; **motivo de pérdida obligatorio + historial de etapas + métricas del embudo**; **tareas con vencimiento y responsable** | `1498c17` |
+
+**Verificado en producción después del deploy:** servicio activo y sin errores, migraciones aplicadas
+(tablas `wa_etapa_historial` y `wa_tareas`, columnas comerciales de `clientes`), endpoints nuevos
+respondiendo (métricas, tareas CRUD, papelera, `PATCH` de cliente, motivo obligatorio) y las
+validaciones de seguridad rechazando lo que tienen que rechazar.
+
+**Lo que sigue pendiente** (todo de menor urgencia, §6 y §7): etiquetas administrables, respuestas
+rápidas, búsqueda dentro de los mensajes, adjuntos/fotos en el chat, consentimiento y baja de
+WhatsApp (opt-out), exportación de conversaciones, papelera para el resto de las tablas, auditoría
+genérica de cambios, copia de respaldo a otro proveedor y el ensayo de restauración mensual.
+
 ## 1. Resumen ejecutivo
 
 | # | Problema | Severidad | Estado |
