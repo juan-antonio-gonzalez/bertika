@@ -18,6 +18,14 @@
 - `deploy.sh` aborta solo si el dist contiene "Vertika" o no lleva la marca Bertika (guard anti-regresion). No deshabilitar ese guard.
 - No revelar secretos en logs ni mensajes. Los secretos viven en el Llavero de macOS (service `bertika`) y en `/etc/bertika/bertika-api.env` de la VPS, nunca en el repo.
 
+## Reglas de negocio (no cambiar sin pedido explicito)
+- **No se asignan clientes a los tecnicos.** Cualquier tecnico trabaja con cualquier
+  orden/bateria, sin importar de que cliente sea (`tecnico_id` es solo informativo:
+  indica quien la esta haciendo, no un permiso). Lo unico reservado al admin es
+  **entregar** (cobra y carga la garantia), **cancelar** y **dar de baja**.
+- Los permisos por usuario se manejan con la matriz de `src/data/permisos.js`
+  (panel Usuarios): secciones visibles + capacidades crear/editar/borrar.
+
 ## Contacto / datos reales
 - Datos de contacto centralizados en `src/data/siteData.js` (no hardcodear).
 - Marca: `BERTIKA®` (sin `.S.R.L.`). No usar "Vertika"/"BateriaOS".

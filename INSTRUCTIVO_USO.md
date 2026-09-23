@@ -186,9 +186,13 @@ le corresponde, ve un cartel claro en vez de la pantalla.
 
 ## 5. Vista operativa del tecnico (`/tecnico`)
 
-Tres pestañas de trabajo: **Activas** (lo asignado a vos), **Sin asignar** (lo que entro
-al taller y todavia no tiene tecnico: podes diagnosticarlo; para repararlo el admin debe
-asignartelo) y **Completadas**. Arriba hay un **buscador** por serie, equipo, cliente,
+**No hay cartera de clientes asignada: cualquier tecnico puede trabajar con cualquier
+orden** (de cualquier cliente). La pestaña **Ordenes del taller** muestra todas las
+activas; **Sin asignar** filtra las que todavia no tienen tecnico (util para saber que
+nadie tomo); **Completadas** lista las entregadas y canceladas. El campo "tecnico" indica
+quien la esta haciendo, no un permiso: no hace falta que te la asignen para trabajar.
+Lo unico reservado al administrador es **entregar** (registra el cobro y la garantia),
+**cancelar** y **dar de baja**. Arriba hay un **buscador** por serie, equipo, cliente,
 falla o N° de orden, y cada tarjeta muestra **hace cuanto esta en el estado actual**
 (verde hasta 2 dias, ambar 3-6, rojo 7 o mas); la lista se ordena por antiguedad, lo mas
 viejo primero.

@@ -146,6 +146,11 @@ Los clientes dados de baja no aparecen en `GET /estado`.
 
 ## Técnicos (admin para escritura)
 
+> **Regla del taller:** no se asignan clientes a los técnicos. Cualquier técnico puede
+> leer y escribir cualquier orden (`puedeLeerOrden` / `puedeEscribirOrden` devuelven true
+> para el rol `tecnico`); `tecnico_id` es informativo. Entregar, cancelar y dar de baja
+> siguen siendo solo de admin.
+
 | Método | Ruta | Body |
 | --- | --- | --- |
 | `GET` | `/tecnicos` | Por defecto solo los activos; `?todos=1` (admin) incluye los inactivos |
@@ -193,6 +198,13 @@ Limpia todas las tablas de demo y re-siembra desde `src/data/seed.js` (corre `no
 | `DELETE` | `/whatsapp/conversaciones/:id/notas/:notaId` | Admin/técnico. Borra una nota: **solo el autor o un admin**. |
 | `GET` | `/whatsapp/webhook` | Público. Verificación del webhook de Meta (`hub.verify_token` → `hub.challenge`). |
 | `POST` | `/whatsapp/webhook` | Público. Avisos de Meta: mensajes entrantes y estados de entrega. Valida la firma `X-Hub-Signature-256` con `WHATSAPP_APP_SECRET` antes de procesar. |
+| `GET/POST/PATCH/DELETE` | `/whatsapp/etiquetas` | Admin (lectura admin/técnico). Catálogo de etiquetas con color; el `DELETE` es baja lógica (`activo=false`). |
+| `GET/POST/PATCH/DELETE` | `/whatsapp/respuestas` | Admin. Respuestas rápidas con atajo y variables `{{nombre}}`, `{{telefono}}`, `{{serie}}`, `{{link}}`. |
+| `GET` | `/whatsapp/buscar?q=` | Admin/técnico. Busca dentro del texto de los mensajes (escapando `%` y `_`) y devuelve fragmento, fecha y conversación. |
+| `GET` | `/whatsapp/export?desde=&hasta=&conversacion=` | Admin. CSV (con BOM) de las conversaciones; deja registro de quién exportó en el log. |
+| `GET` | `/whatsapp/metricas` | Admin. Embudo: conversión por etapa, tasa de cierre, tiempo medio y motivos de pérdida. |
+| `GET/POST/PATCH/DELETE` | `/whatsapp/tareas` | Admin/técnico. Tareas con vencimiento y responsable. |
+| `GET` | `/permisos/catalogo` | Admin. Filas agrupadas, columnas y plantillas para la matriz de permisos. |
 
 Configuración: `WHATSAPP_APP_ID`, `WHATSAPP_BUSINESS_ID`, `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID`, `WHATSAPP_WABA_ID`,
 `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_APP_SECRET` y (opcional) `WHATSAPP_API_VERSION`. Se cargan con

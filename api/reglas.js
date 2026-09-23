@@ -16,4 +16,5 @@ export {
   ESTADOS_CERRADOS,
   esEstadoCerrado,
   canTransition,
+  puedeTrabajarEnOrden,
 } from '../src/data/reglas.js';

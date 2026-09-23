@@ -39,16 +39,16 @@ function contadores(data, user) {
     const dias = Math.round((new Date(o.garantia.vence) - Date.now()) / 86400000);
     return dias >= 0 && dias <= 30;
   }).length;
-  const mias = ordenes.filter((o) => o.tecnico_id === user?.id);
+  // Sin cartera asignada: el tecnico ve todas las ordenes, no solo las suyas.
   const sinAsignar = ordenes.filter((o) => !o.tecnico_id && ['received', 'diagnosing'].includes(o.estado));
   const delCliente = ordenes.filter((o) => o.cliente_id === user?.id);
   return {
     activas: ordenes.filter(ACTIVAS).length,
     stockCritico: contarCriticos(insumos),
     porVencer,
-    miasActivas: mias.filter(ACTIVAS).length,
+    miasActivas: ordenes.filter(ACTIVAS).length,
     sinAsignar: sinAsignar.length,
-    miasCerradas: mias.filter((o) => ['delivered', 'cancelled'].includes(o.estado)).length,
+    miasCerradas: ordenes.filter((o) => ['delivered', 'cancelled'].includes(o.estado)).length,
     cotizaciones: delCliente.filter((o) => o.estado === 'quoted').length,
     entregadas: delCliente.filter((o) => o.estado === 'delivered').length,
     garantias: delCliente.filter((o) => o.garantia).length,
@@ -62,7 +62,7 @@ function menuDe(rol, c, esFlotilla) {
   if (rol === 'tecnico') {
     return [
       { grupo: 'Mi trabajo', items: [
-        { to: '/tecnico/mis-ordenes', label: 'Mis órdenes', icon: 'battery', exact: true, contador: c.miasActivas, seccion: 'tablero' },
+        { to: '/tecnico/mis-ordenes', label: 'Órdenes del taller', icon: 'battery', exact: true, contador: c.miasActivas, seccion: 'tablero' },
         { to: '/tecnico/sin-asignar', label: 'Sin asignar', icon: 'warn', contador: c.sinAsignar, seccion: 'tablero' },
         { to: '/tecnico/completadas', label: 'Completadas', icon: 'check', contador: c.miasCerradas, seccion: 'tablero' },
         { to: '/tecnico/tareas', label: 'Mis tareas', icon: 'clock', contador: c.tareas, seccion: 'tareas' },

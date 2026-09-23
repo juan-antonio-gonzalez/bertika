@@ -12,24 +12,19 @@ const TECNICO_TABS = { 'mis-ordenes': 'activas', 'sin-asignar': 'sin_asignar', c
 export default function Tecnico() {
   const navigate = useNavigate();
   const data = useStore((s) => s.data);
-  const user = useStore((s) => s.user);
   const { tab: slug } = useParams();
   const tab = TECNICO_TABS[slug] || 'activas';
   const [sel, setSel] = useState(null);
   const [filtro, setFiltro] = useState('todas');
   const [q, setQ] = useState('');
 
-  const miId = data.tecnicos.find((t) => t.id === user?.id)?.id || user?.id;
-  const misOrdenes = useMemo(
-    () => data.ordenes.filter((o) => o.tecnico_id === miId),
-    [data, miId]
-  );
-  const activas = misOrdenes.filter((o) => !['delivered', 'cancelled'].includes(o.estado));
-  const completadas = misOrdenes.filter((o) => ['delivered', 'cancelled'].includes(o.estado));
+  // Sin cartera asignada: el tecnico ve y trabaja con TODAS las ordenes.
+  const todas = data.ordenes;
+  const activas = todas.filter((o) => !['delivered', 'cancelled'].includes(o.estado));
+  const completadas = todas.filter((o) => ['delivered', 'cancelled'].includes(o.estado));
   const reproceso = activas.filter((o) => o.prueba_final?.estado === 'failed');
 
-  // La API tambien le entrega al tecnico las recibidas/en diagnostico SIN asignar:
-  // el piso puede diagnosticarlas sin esperar la asignacion del admin.
+  // Las que todavia no tienen tecnico (el piso las puede tomar sin esperar al admin).
   const sinAsignar = useMemo(
     () => data.ordenes.filter((o) => !o.tecnico_id && ['received', 'diagnosing'].includes(o.estado)),
     [data]

@@ -1,6 +1,6 @@
 // Tests de la fase 2 de integridad (logica pura). Sin base de datos:  npm test
 import assert from 'node:assert/strict';
-import { ESTADOS_CERRADOS, TRANSITIONS, esEstadoCerrado } from '../src/data/reglas.js';
+import { puedeTrabajarEnOrden, ESTADOS_CERRADOS, TRANSITIONS, esEstadoCerrado } from '../src/data/reglas.js';
 import { normalizarBooleano } from '../api/validaciones.js';
 
 let pasaron = 0;
@@ -63,6 +63,13 @@ test('cualquier otra cosa devuelve null (el endpoint responde 400)', () => {
   for (const raro of [null, undefined, '', 'si', 'no', 'activo', {}, [], 2, -1, NaN]) {
     assert.equal(normalizarBooleano(raro), null, `${JSON.stringify(raro)} deberia ser invalido`);
   }
+});
+
+test('sin cartera asignada: cualquier tecnico trabaja con cualquier orden', () => {
+  assert.equal(puedeTrabajarEnOrden('admin'), true);
+  assert.equal(puedeTrabajarEnOrden('tecnico'), true, 'el tecnico trabaja con ordenes de cualquier cliente');
+  assert.equal(puedeTrabajarEnOrden('cliente'), false, 'el cliente no escribe ordenes');
+  assert.equal(puedeTrabajarEnOrden(undefined), false);
 });
 
 console.log(`\n${pasaron} tests OK${process.exitCode ? ' (con fallas)' : ''}\n`);

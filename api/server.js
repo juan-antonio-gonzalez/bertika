@@ -457,17 +457,21 @@ const esCliente = (req) => req.user.rol === 'cliente';
 
 function puedeLeerOrden(req, orden) {
   if (esAdmin(req)) return true;
-  if (esTecnico(req)) return orden.tecnico_id === req.user.tecnico_id;
+  // Regla del taller: NO hay cartera de clientes asignada. Cualquier tecnico
+  // trabaja con cualquier orden (de cualquier cliente): la asignacion
+  // (tecnico_id) es solo informativa, para saber quien la esta haciendo.
+  if (esTecnico(req)) return puedeTrabajarEnOrden(req.user?.rol);
   if (esCliente(req)) return orden.cliente_id === req.user.cliente_id;
   return false;
 }
 
-function puedeEscribirOrden(req, orden) {
+function puedeEscribirOrden(req, _orden) {
   if (esAdmin(req)) return true;
-  if (esTecnico(req)) {
-    return orden.tecnico_id === req.user.tecnico_id
-      || (!orden.tecnico_id && ['received', 'diagnosing'].includes(orden.estado));
-  }
+  // Mismo criterio: cualquier tecnico puede cargar diagnostico, cotizacion,
+  // insumos y prueba final en cualquier orden. Lo que sigue reservado al admin
+  // es entregar, cancelar y dar de baja (y las guardias de estado impiden tocar
+  // ordenes ya entregadas o canceladas).
+  if (esTecnico(req)) return puedeTrabajarEnOrden(req.user?.rol);
   return false;
 }
 
@@ -639,10 +643,6 @@ app.get('/api/estado', authRequired, async (req, res) => {
   // habilitadas se mandan vacios, asi el panel no expone datos de mas.
   for (const [tabla, seccion] of Object.entries({ clientes: 'clientes', tecnicos: 'tecnicos', insumos: 'inventario', bajas: 'baja' })) {
     if (!puedeVer(req.user, seccion)) out[tabla] = [];
-  }
-  if (rol === 'tecnico') {
-    out.ordenes = out.ordenes.filter((o) => o.tecnico_id === req.user.tecnico_id
-      || (o.tecnico_id === null && ['received', 'diagnosing'].includes(o.estado)));
   }
   if (rol === 'cliente') {
     const propias = out.ordenes.filter((o) => o.cliente_id === req.user.cliente_id);

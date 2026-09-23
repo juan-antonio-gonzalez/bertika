@@ -109,3 +109,11 @@ export function canTransition(orden, target) {
   }
   return { ok: true };
 }
+
+// Regla del taller: NO se asignan clientes a los tecnicos. Cualquier tecnico
+// trabaja con cualquier orden/bateria, sin importar de que cliente sea (la
+// asignacion `tecnico_id` es solo informativa). Lo unico reservado al admin es
+// entregar, cancelar y dar de baja.
+export function puedeTrabajarEnOrden(rol) {
+  return rol === 'admin' || rol === 'tecnico';
+}

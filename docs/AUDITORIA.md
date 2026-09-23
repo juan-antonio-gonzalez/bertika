@@ -19,12 +19,20 @@ Todo lo de acá abajo **ya está implementado, deployado y verificado en producc
 | Urgente | **Respaldo arreglado e instalado**: cron 03:17 con validación del dump, fotos incluidas, retención y prueba de restauración (`scripts/backup-db.sh`), más copia fuera del VPS (`--traer`) | — |
 | Integridad | **Guardias de estado** (no se cotiza/carga insumo/saca fotos en órdenes entregadas o canceladas), **baja validada y única**, **stock atómico** (no puede quedar negativo), **avisos y webhooks sin duplicados**, **transacciones** en cotización/stock/mensajes/config, **control optimista** de estado, `connectionTimeoutMillis`, **índices UNIQUE** (email de cliente, `wa_message_id`, bajas) | `de3c817` |
 | CRUD | **Clientes, técnicos e insumos editables**; **papelera** de clientes con restaurar; **baja lógica de usuarios** (ya no se borran); notas de WhatsApp y notificaciones borrables | `b0e018d` |
+| CRM+ | **Etiquetas administrables, respuestas rápidas (`/` en el compositor), búsqueda dentro de los mensajes, exportar conversaciones a CSV** y **matriz de permisos por usuario** (qué ve y qué puede hacer cada cuenta, respetada por la API en 53 endpoints) | `a8f0d78` |
 | CRM | **Campos comerciales del cliente** (dirección, localidad, CUIT, condición de pago, canal de origen, vendedor); **vincular/crear cliente desde la bandeja**; **motivo de pérdida obligatorio + historial de etapas + métricas del embudo**; **tareas con vencimiento y responsable** | `1498c17` |
 
 **Verificado en producción después del deploy:** servicio activo y sin errores, migraciones aplicadas
 (tablas `wa_etapa_historial` y `wa_tareas`, columnas comerciales de `clientes`), endpoints nuevos
 respondiendo (métricas, tareas CRUD, papelera, `PATCH` de cliente, motivo obligatorio) y las
 validaciones de seguridad rechazando lo que tienen que rechazar.
+
+**Cambio de regla de negocio (23/09, pedido del dueño):** *no se asignan clientes a los
+técnicos*. Cualquier técnico trabaja con cualquier orden/batería (`puedeTrabajarEnOrden()`
+en `src/data/reglas.js`), así que los hallazgos de alcance por técnico (B1 y M1 de la
+sección de permisos) **dejan de aplicar por decisión de negocio**; `tecnico_id` queda como
+dato informativo. Los hallazgos A2 (entregar/cancelar) siguen vigentes y ya están
+corregidos: esas acciones son solo de admin.
 
 **Lo que sigue pendiente** (todo de menor urgencia, §6 y §7): etiquetas administrables, respuestas
 rápidas, búsqueda dentro de los mensajes, adjuntos/fotos en el chat, consentimiento y baja de
