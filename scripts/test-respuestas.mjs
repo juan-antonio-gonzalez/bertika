@@ -13,10 +13,12 @@ const test = (nombre, fn) => {
 console.log('\nRespuestas rápidas');
 
 test('las variables declaradas son las que se reemplazan', () => {
-  assert.deepEqual(VARIABLES_RESPUESTA.map((v) => v.clave), ['nombre', 'serie', 'link']);
+  assert.deepEqual(VARIABLES_RESPUESTA.map((v) => v.clave), ['nombre', 'telefono', 'serie', 'link']);
   const t = 'Hola {{nombre}}, tu {{serie}} está lista: {{link}}';
   assert.equal(aplicarVariables(t, { nombre: 'Juan', serie: 'BAT-AUT-001', link: 'https://x/tracker/1' }),
     'Hola Juan, tu BAT-AUT-001 está lista: https://x/tracker/1');
+  assert.equal(aplicarVariables('Cualquier duda al {{telefono}}', { telefono: '5491155550101' }), 'Cualquier duda al 5491155550101');
+  assert.equal(aplicarVariables('Tel: {{ TELEFONO }}', { telefono: '111' }), 'Tel: 111');
 });
 
 test('las variables se completan aunque falten datos (sin huecos vacíos)', () => {

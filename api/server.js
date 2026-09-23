@@ -412,6 +412,14 @@ async function asegurarCodigos() {
     await query('CREATE UNIQUE INDEX IF NOT EXISTS uq_wa_mensajes_wamid ON wa_mensajes (wa_message_id) WHERE wa_message_id IS NOT NULL');
     indiceWamid = true;
   } catch (e) { console.error(`[migracion] indice unico de mensajes: ${e.message}`); }
+  // Catalogo del CRM: nombre de etiqueta y atajo de respuesta no se repiten,
+  // ni cambiando mayusculas (el chequeo de la aplicacion queda igual).
+  try {
+    await query('CREATE UNIQUE INDEX IF NOT EXISTS uq_wa_etiquetas_nombre ON wa_etiquetas (LOWER(nombre))');
+  } catch (e) { console.error(`[migracion] indice unico de etiquetas: ${e.message}`); }
+  try {
+    await query('CREATE UNIQUE INDEX IF NOT EXISTS uq_wa_respuestas_atajo ON wa_respuestas (LOWER(atajo))');
+  } catch (e) { console.error(`[migracion] indice unico de respuestas: ${e.message}`); }
   console.log('[migracion] esquema asegurado (codigos, medio de pago, historial de cotizaciones, movimientos de insumos, cotizador configurable, whatsapp, crm de whatsapp, avisos automaticos, embudo comercial, integridad, papelera de clientes)');
 }
 
@@ -2255,8 +2263,9 @@ app.patch('/api/whatsapp/etiquetas/:id', authRequired, permisoRequerido('crm_wha
   return res.json({ ...actualizada, conversaciones_actualizadas: tocadas });
 });
 
-// Borrar una etiqueta: si esta usada en conversaciones se desactiva (para no
-// perder el historial); si no la usa nadie, se borra de verdad.
+// Dar de baja una etiqueta: es una baja LOGICA (activo=false), nunca se borra la
+// fila, asi el historial de las conversaciones que la usan sigue teniendo sentido
+// y se puede volver a activar. Devuelve en cuantas conversaciones estaba.
 app.delete('/api/whatsapp/etiquetas/:id', authRequired, permisoRequerido('crm_whatsapp'), async (req, res) => {
   const et = await one('SELECT * FROM wa_etiquetas WHERE id = $1', [req.params.id]);
   if (!et) return res.status(404).json({ error: 'Etiqueta no encontrada' });
@@ -2265,15 +2274,13 @@ app.delete('/api/whatsapp/etiquetas/:id', authRequired, permisoRequerido('crm_wh
       WHERE etiquetas = $1 OR etiquetas LIKE $1 || ', %' OR etiquetas LIKE '%, ' || $1 OR etiquetas LIKE '%, ' || $1 || ', %'`,
     [et.nombre]
   );
-  if ((enUso?.n || 0) > 0) {
-    await query('UPDATE wa_etiquetas SET activo = false WHERE id = $1', [et.id]);
-    return res.json({
-      ok: true, desactivada: true, conversaciones: enUso.n,
-      mensaje: `La etiqueta estaba en ${enUso.n} conversación(es): se sacó del catálogo pero se mantiene en ellas.`,
-    });
-  }
-  await query('DELETE FROM wa_etiquetas WHERE id = $1', [et.id]);
-  return res.json({ ok: true, borrada: true });
+  await query('UPDATE wa_etiquetas SET activo = false WHERE id = $1', [et.id]);
+  return res.json({
+    ok: true, desactivada: true, conversaciones: enUso?.n || 0,
+    mensaje: (enUso?.n || 0) > 0
+      ? `La etiqueta estaba en ${enUso.n} conversación(es): se dio de baja del catálogo pero se mantiene en ellas.`
+      : 'Etiqueta dada de baja (se puede volver a activar).',
+  });
 });
 
 // ---------- Respuestas rapidas del compositor ----------
@@ -2354,7 +2361,7 @@ app.get('/api/whatsapp/buscar', authRequired, permisoRequerido('whatsapp'), asyn
        LEFT JOIN clientes cl ON cl.id = c.cliente_id
       WHERE m.texto ILIKE $1
       ORDER BY m.fecha DESC
-      LIMIT 30`,
+      LIMIT 50`,
     [patron]
   );
   // El fragmento se recorta alrededor de lo buscado (y el panel lo resalta).
@@ -2655,12 +2662,14 @@ app.get('/api/whatsapp/consentimiento', authRequired, permisoRequerido('whatsapp
 app.get('/api/whatsapp/export', authRequired, requireRol('admin'), async (req, res) => {
   const desde = req.query?.desde ? new Date(String(req.query.desde)) : null;
   const hasta = req.query?.hasta ? new Date(String(req.query.hasta)) : null;
+  const conversacion = limStr(req.query?.conversacion, 32);
   const cond = [];
   const args = [];
   if (desde && !Number.isNaN(desde.getTime())) { args.push(desde.toISOString()); cond.push(`m.fecha >= $${args.length}`); }
   if (hasta && !Number.isNaN(hasta.getTime())) { args.push(hasta.toISOString()); cond.push(`m.fecha <= $${args.length}`); }
+  if (conversacion) { args.push(conversacion); cond.push(`m.conversacion_id = $${args.length}`); }
   const filas = await query(
-    `SELECT m.fecha, m.direccion, c.telefono, COALESCE(cl.nombre, c.nombre_perfil, '') AS cliente,
+    `SELECT m.fecha, m.conversacion_id, m.direccion, c.telefono, COALESCE(cl.nombre, c.nombre_perfil, '') AS cliente,
             m.tipo, m.texto, m.estado, m.plantilla, m.media_url
        FROM wa_mensajes m
        JOIN wa_conversaciones c ON c.id = m.conversacion_id
@@ -2671,10 +2680,11 @@ app.get('/api/whatsapp/export', authRequired, requireRol('admin'), async (req, r
     args
   );
   const escapar = (v) => `"${String(v ?? '').replace(/"/g, '""').replace(/[\r\n]+/g, ' ')}"`;
-  const encabezado = ['fecha', 'direccion', 'telefono', 'cliente', 'tipo', 'texto', 'estado', 'plantilla', 'archivo'].join(';');
+  const encabezado = ['conversacion', 'fecha', 'direccion', 'telefono', 'cliente', 'tipo', 'texto', 'estado', 'plantilla', 'archivo'].join(';');
   const csv = [
     encabezado,
     ...filas.map((f) => [
+      f.conversacion_id,
       f.fecha instanceof Date ? f.fecha.toISOString() : f.fecha,
       f.direccion === 'in' ? 'recibido' : 'enviado',
       f.telefono, f.cliente, f.tipo, f.texto, f.estado, f.plantilla, f.media_url,
@@ -2684,6 +2694,8 @@ app.get('/api/whatsapp/export', authRequired, requireRol('admin'), async (req, r
     'INSERT INTO wa_export_log (id, usuario, desde, hasta, filas) VALUES ($1,$2,$3,$4,$5)',
     [await nextId('wex'), actorDe(req)?.email || 'panel', desde, hasta, filas.length]
   );
+  // Auditoria minima en el log del servidor: quien exporto y con que filtros.
+  console.log(`[whatsapp] export CSV por ${actorDe(req)?.email || 'panel'}: desde=${desde ? desde.toISOString() : '-'} hasta=${hasta ? hasta.toISOString() : '-'} conversacion=${conversacion || '-'} filas=${filas.length}`);
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="bertika-whatsapp-${new Date().toISOString().slice(0, 10)}.csv"`);
   return res.send(`\uFEFF${csv}`);

@@ -49,6 +49,10 @@ export default function WhatsAppBandeja() {
   const [vista, setVista] = useState('bandeja');
   const [embudo, setEmbudo] = useState([]);
   const [revisando, setRevisando] = useState(false);
+  // Rango y alcance de la exportación a CSV (admin).
+  const [exportDesde, setExportDesde] = useState('');
+  const [exportHasta, setExportHasta] = useState('');
+  const [exportSoloAbierta, setExportSoloAbierta] = useState(false);
   const [metricas, setMetricas] = useState(null);
   const [motivoPerdida, setMotivoPerdida] = useState(null);
   const [motivo, setMotivo] = useState('');
@@ -395,6 +399,7 @@ export default function WhatsAppBandeja() {
   const linkSeguimiento = primeraOrden ? enlaceSeguimiento(primeraOrden, window.location.origin) : '';
   const textoConVariables = (t) => aplicarVariables(t, {
     nombre: primerNombre(hilo?.cliente?.nombre || hilo?.conversacion?.nombre_perfil),
+    telefono: hilo?.conversacion?.telefono,
     serie: primeraOrden?.bateria_serie,
     link: linkSeguimiento,
   });
@@ -454,10 +459,15 @@ export default function WhatsAppBandeja() {
     }
   };
 
-  // Descarga de todas las conversaciones en CSV (admin).
+  // Descarga de las conversaciones en CSV (admin), con el rango de fechas elegido.
   const exportarConversaciones = async () => {
     try {
-      const res = await fetch(`${BASE_URL}/whatsapp/export`, { headers: { Authorization: `Bearer ${getToken()}` } });
+      const p = new URLSearchParams();
+      if (exportDesde) p.set('desde', `${exportDesde}T00:00:00`);
+      if (exportHasta) p.set('hasta', `${exportHasta}T23:59:59`);
+      if (exportSoloAbierta && sel) p.set('conversacion', sel);
+      const qs = p.toString();
+      const res = await fetch(`${BASE_URL}/whatsapp/export${qs ? `?${qs}` : ''}`, { headers: { Authorization: `Bearer ${getToken()}` } });
       if (!res.ok) throw new Error('No se pudo exportar (¿tenés permisos?)');
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
@@ -562,10 +572,18 @@ export default function WhatsAppBandeja() {
         )}
         {estado?.configurado && esAdmin && (
           <div className="row wrap" style={{ gap: 8, marginTop: 10, alignItems: 'center' }}>
+            <span className="muted" style={{ fontSize: 12 }}>Exportar conversaciones (CSV):</span>
+            <input type="date" className="input" style={{ width: 145 }} value={exportDesde} onChange={(e) => setExportDesde(e.target.value)} title="Desde" />
+            <span className="muted" style={{ fontSize: 12 }}>a</span>
+            <input type="date" className="input" style={{ width: 145 }} value={exportHasta} onChange={(e) => setExportHasta(e.target.value)} title="Hasta" />
+            <label className="row" style={{ gap: 6, fontSize: 12.5, opacity: sel ? 1 : 0.5 }}>
+              <input type="checkbox" checked={exportSoloAbierta} disabled={!sel} onChange={(e) => setExportSoloAbierta(e.target.checked)} />
+              solo la conversación abierta
+            </label>
             <button className="btn sm" onClick={exportarConversaciones}>
-              <Icon name="clipboard" size={12} /> Exportar conversaciones (CSV)
+              <Icon name="clipboard" size={12} /> Exportar
             </button>
-            <span className="muted" style={{ fontSize: 11.5 }}>Baja todo lo hablado; queda registrado quién lo pidió.</span>
+            <span className="muted" style={{ fontSize: 11.5 }}>Sin fechas baja todo; queda registrado quién lo pidió.</span>
           </div>
         )}
         {estado?.configurado && estado?.falta?.length > 0 && (

@@ -7,15 +7,17 @@
 // Variables que se pueden escribir en una respuesta rapida.
 export const VARIABLES_RESPUESTA = [
   { clave: 'nombre', ayuda: 'Nombre del cliente' },
+  { clave: 'telefono', ayuda: 'Teléfono de la conversación' },
   { clave: 'serie', ayuda: 'Serie de la última batería del cliente' },
   { clave: 'link', ayuda: 'Enlace de seguimiento de la orden' },
 ];
 
-// Reemplaza {{nombre}}, {{serie}} y {{link}} con los datos de la conversacion.
-// Si falta un dato, deja algo razonable en vez de un hueco vacio.
-export function aplicarVariables(texto, { nombre = '', serie = '', link = '' } = {}) {
+// Reemplaza {{nombre}}, {{telefono}}, {{serie}} y {{link}} con los datos de la
+// conversacion. Si falta un dato, deja algo razonable en vez de un hueco vacio.
+export function aplicarVariables(texto, { nombre = '', telefono = '', serie = '', link = '' } = {}) {
   return String(texto || '')
     .replace(/\{\{\s*nombre\s*\}\}/gi, String(nombre || '').trim() || 'cliente')
+    .replace(/\{\{\s*telefono\s*\}\}/gi, String(telefono || '').trim())
     .replace(/\{\{\s*serie\s*\}\}/gi, String(serie || '').trim() || 'tu batería')
     .replace(/\{\{\s*link\s*\}\}/gi, String(link || '').trim());
 }
