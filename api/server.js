@@ -16,7 +16,8 @@ import { canTransition, ORDEN_ESTADOS, ESTADO_LABEL, MIN_CAPACIDAD_PCT } from '.
 import { obtenerDolar } from './dolar.js';
 import { calcularVisita, normalizarConfig, CONFIG_DEFAULT, textoFueraCobertura } from '../src/data/cotizadorVisita.js';
 import { enviarTexto, enviarPlantilla, configPublicaWhatsApp, normalizarTelefono, normalizarEtiquetas, verificarFirma, ESTADO_ENTREGA } from './whatsapp.js';
-import { EVENTOS as EVENTOS_AVISO, PLANTILLA_POR_ESTADO, normalizarAvisos, parametrosAviso, resumenAviso } from './avisos.js';
+import { EVENTOS as EVENTOS_AVISO, PLANTILLA_POR_ESTADO, PLANTILLA_GARANTIA, normalizarAvisos, parametrosAviso, resumenAviso, debeAvisarGarantia, parametrosGarantia } from './avisos.js';
+import { ETAPAS, normalizarEtapa, normalizarMonto } from './crm.js';
 import { generarCodigoUnico, digitar, formatearCodigo } from './codigo.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -200,6 +201,9 @@ async function asegurarCodigos() {
   await query('CREATE INDEX IF NOT EXISTS idx_wa_mensajes_wamid ON wa_mensajes (wa_message_id)');
   // CRM de la bandeja: etiquetas por conversacion y notas internas del taller.
   await query('ALTER TABLE wa_conversaciones ADD COLUMN IF NOT EXISTS etiquetas TEXT');
+  // Embudo comercial: etapa y monto estimado de la oportunidad.
+  await query('ALTER TABLE wa_conversaciones ADD COLUMN IF NOT EXISTS etapa TEXT');
+  await query('ALTER TABLE wa_conversaciones ADD COLUMN IF NOT EXISTS monto_estimado NUMERIC');
   await query(`CREATE TABLE IF NOT EXISTS wa_notas (
     id TEXT PRIMARY KEY,
     conversacion_id TEXT,
@@ -244,7 +248,7 @@ async function asegurarCodigos() {
   try {
     await query('ALTER TABLE ordenes ADD CONSTRAINT uq_ordenes_codigo UNIQUE (codigo_seguimiento)');
   } catch { /* ya existe */ }
-  console.log('[migracion] esquema asegurado (codigos, medio de pago, historial de cotizaciones, movimientos de insumos, cotizador configurable, whatsapp, crm de whatsapp, avisos automaticos)');
+  console.log('[migracion] esquema asegurado (codigos, medio de pago, historial de cotizaciones, movimientos de insumos, cotizador configurable, whatsapp, crm de whatsapp, avisos automaticos, embudo comercial)');
 }
 
 async function enviarMailContacto(d) {
@@ -1437,6 +1441,65 @@ app.put('/api/whatsapp/avisos', authRequired, requireRol('admin'), async (req, r
   return res.json({ eventos: EVENTOS_AVISO, activos: await configAvisos({ forzar: true }) });
 });
 
+// Revision de garantias: avisa a los clientes cuya garantia vence en los
+// proximos 30 dias. Se corre sola una vez por dia y tambien a mano desde el panel.
+async function avisarGarantias() {
+  const resumen = { revisadas: 0, enviadas: 0, errores: 0, sinTelefono: 0, apagado: false, detalle: [] };
+  try {
+    const activos = await configAvisos();
+    if (!activos.garantia) return { ...resumen, apagado: true };
+    // Se filtra la fecha en JS (no en SQL): hay garantias viejas sin "vence" y
+    // castear texto vacio a timestamptz romperia la consulta.
+    const ordenes = await query(`SELECT o.id, o.bateria_serie, o.garantia, c.nombre AS cliente_nombre, c.telefono AS cliente_telefono
+      FROM ordenes o LEFT JOIN clientes c ON c.id = o.cliente_id
+      WHERE o.garantia IS NOT NULL AND o.estado = 'delivered'
+      ORDER BY o.fecha_entrega DESC NULLS LAST LIMIT 500`);
+    for (const o of ordenes) {
+      if (!debeAvisarGarantia(o.garantia?.vence)) continue;
+      resumen.revisadas += 1;
+      const ya = await one("SELECT 1 AS x FROM wa_avisos_log WHERE orden_id = $1 AND plantilla = $2 AND estado = 'enviado'", [o.id, PLANTILLA_GARANTIA]);
+      if (ya) continue;
+      if (!o.cliente_telefono) { resumen.sinTelefono += 1; continue; }
+      const conv = await conversacionDe(o.cliente_telefono);
+      if (!conv) continue;
+      const parametros = parametrosGarantia({ cliente: { nombre: o.cliente_nombre }, orden: o });
+      const envio = await enviarPlantilla({ to: o.cliente_telefono, nombre: PLANTILLA_GARANTIA, idioma: 'es_AR', parametros });
+      await guardarMensaje({
+        conversacion: conv, direccion: 'out', tipo: 'template', plantilla: PLANTILLA_GARANTIA,
+        texto: resumenAviso('garantia', { orden: o }),
+        waMessageId: envio.id || null, estado: envio.ok ? 'enviado' : 'error', error: envio.ok ? null : envio.error,
+      });
+      await query(
+        `INSERT INTO wa_avisos_log (orden_id, plantilla, estado, error) VALUES ($1,$2,$3,$4)
+         ON CONFLICT (orden_id, plantilla) DO UPDATE SET estado = EXCLUDED.estado, error = EXCLUDED.error, fecha = now()`,
+        [o.id, PLANTILLA_GARANTIA, envio.ok ? 'enviado' : 'error', envio.ok ? null : envio.error]
+      );
+      if (envio.ok) {
+        resumen.enviadas += 1;
+        resumen.detalle.push(`${o.bateria_serie} (${o.id})`);
+      } else {
+        resumen.errores += 1;
+      }
+    }
+  } catch (e) {
+    console.error('[whatsapp] error revisando garantias:', e.message);
+    resumen.error = e.message;
+  }
+  return resumen;
+}
+
+// Revision a mano desde el panel (devuelve cuantas se avisaron).
+app.post('/api/whatsapp/avisos/garantias', authRequired, requireRol('admin'), async (req, res) => {
+  return res.json(await avisarGarantias());
+});
+
+// Tarea diaria: a los 2 minutos de arrancar el servicio y cada 24 h.
+// No frena el proceso (unref) y no rompe nada si Meta no responde.
+const tareaGarantias = setInterval(() => { avisarGarantias(); }, 24 * 3600 * 1000);
+if (typeof tareaGarantias.unref === 'function') tareaGarantias.unref();
+const primerChequeo = setTimeout(() => { avisarGarantias(); }, 2 * 60 * 1000);
+if (typeof primerChequeo.unref === 'function') primerChequeo.unref();
+
 // Estado del canal para el panel: configurado o no, que falta y los numeros.
 app.get('/api/whatsapp/estado', authRequired, requireRol('admin'), async (req, res) => {
   const cfg = configPublicaWhatsApp();
@@ -1464,6 +1527,7 @@ app.get('/api/whatsapp/conversaciones', authRequired, requireRol('admin', 'tecni
   const q = limStr(req.query?.q, 60);
   const etiqueta = limStr(req.query?.etiqueta, 24);
   const asignado = limStr(req.query?.asignado, 120);
+  const etapa = limStr(req.query?.etapa, 24);
   const soloSinLeer = String(req.query?.sin_leer || '') === '1';
   const cond = [];
   const args = [];
@@ -1480,6 +1544,10 @@ app.get('/api/whatsapp/conversaciones', authRequired, requireRol('admin', 'tecni
   if (asignado) {
     args.push(asignado);
     cond.push(`c.asignado_a = $${args.length}`);
+  }
+  if (etapa) {
+    args.push(normalizarEtapa(etapa));
+    cond.push(`COALESCE(c.etapa, 'nuevo') = $${args.length}`);
   }
   if (soloSinLeer) cond.push('c.no_leidos > 0');
   const convs = await query(`SELECT c.*, cl.nombre AS cliente_nombre, cl.email AS cliente_email
@@ -1508,6 +1576,15 @@ app.patch('/api/whatsapp/conversaciones/:id', authRequired, requireRol('admin', 
   if (req.body?.etiquetas !== undefined) {
     args.push(normalizarEtiquetas(req.body.etiquetas) || null);
     campos.push(`etiquetas = $${args.length}`);
+  }
+  // Embudo comercial: mover la oportunidad de etapa y guardar el monto.
+  if (req.body?.etapa !== undefined) {
+    args.push(normalizarEtapa(req.body.etapa));
+    campos.push(`etapa = $${args.length}`);
+  }
+  if (req.body?.monto_estimado !== undefined) {
+    args.push(normalizarMonto(req.body.monto_estimado));
+    campos.push(`monto_estimado = $${args.length}`);
   }
   if (!campos.length) return res.status(400).json({ error: 'No hay nada para actualizar' });
   args.push(conv.id);

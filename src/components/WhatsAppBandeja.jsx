@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Icon, fmtFecha } from './ui';
 import { api } from '../store/api';
 import { useStore } from '../store/store';
+import { ETAPAS, agruparEmbudo, resumenEmbudo, normalizarMonto } from '../data/crm.js';
 
 const listaDe = (texto) => String(texto || '').split(', ').filter(Boolean);
 
@@ -23,6 +24,9 @@ export default function WhatsAppBandeja() {
   const [verNotas, setVerNotas] = useState(false);
   const [prueba, setPrueba] = useState({ telefono: '', texto: 'Hola, esta es una prueba del canal de WhatsApp de Bertika.' });
   const [avisos, setAvisos] = useState(null);
+  const [vista, setVista] = useState('bandeja');
+  const [embudo, setEmbudo] = useState([]);
+  const [revisando, setRevisando] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [cargando, setCargando] = useState(true);
   const finRef = useRef(null);
@@ -47,6 +51,44 @@ export default function WhatsAppBandeja() {
     } catch (e) {
       toastShow(e.message, 'error');
       cargarAvisos();
+    }
+  };
+
+  // Embudo comercial: se carga aparte (sin los filtros de la bandeja).
+  const cargarEmbudo = async () => {
+    try { setEmbudo(await api('/whatsapp/conversaciones')); } catch (e) { toastShow(e.message, 'error'); }
+  };
+  const moverEtapa = async (id, etapa) => {
+    setEmbudo((cs) => cs.map((c) => (c.id === id ? { ...c, etapa } : c)));
+    try {
+      await api(`/whatsapp/conversaciones/${id}`, { method: 'PATCH', body: { etapa } });
+    } catch (e) {
+      toastShow(e.message, 'error');
+      cargarEmbudo();
+    }
+  };
+  const guardarMonto = async (id, valor) => {
+    const monto = normalizarMonto(valor);
+    try {
+      await api(`/whatsapp/conversaciones/${id}`, { method: 'PATCH', body: { monto_estimado: monto } });
+      setEmbudo((cs) => cs.map((c) => (c.id === id ? { ...c, monto_estimado: monto } : c)));
+    } catch (e) {
+      toastShow(e.message, 'error');
+    }
+  };
+  const revisarGarantias = async () => {
+    setRevisando(true);
+    try {
+      const r = await api('/whatsapp/avisos/garantias', { method: 'POST' });
+      const texto = r.apagado
+        ? 'El aviso de garantía está apagado'
+        : `Garantías por vencer: ${r.revisadas}. Avisadas: ${r.enviadas}${r.errores ? `, con error: ${r.errores}` : ''}${r.sinTelefono ? `, sin teléfono: ${r.sinTelefono}` : ''}`;
+      toastShow(texto, r.apagado || r.errores ? 'warn' : 'ok');
+      cargarConvs(filtro);
+    } catch (e) {
+      toastShow(e.message, 'error');
+    } finally {
+      setRevisando(false);
     }
   };
   const cargarConvs = async (f = filtro) => {
@@ -90,6 +132,11 @@ export default function WhatsAppBandeja() {
     }, 10000);
     return () => clearInterval(t);
   }, [sel]);
+
+  useEffect(() => {
+    if (vista === 'embudo') cargarEmbudo();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vista]);
 
   useEffect(() => {
     finRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -175,6 +222,8 @@ export default function WhatsAppBandeja() {
   if (cargando) return <p className="muted">Cargando el canal de WhatsApp...</p>;
 
   const hayFiltro = Boolean(filtro.q || filtro.etiqueta || filtro.asignado || filtro.sinLeer);
+  const embudoResumen = resumenEmbudo(embudo);
+  const columnas = agruparEmbudo(embudo);
   const etiquetasHilo = listaDe(hilo?.conversacion?.etiquetas);
   const porVencer = (hilo?.ficha?.garantias || []).filter((g) => {
     const v = g.garantia?.vence;
@@ -263,10 +312,73 @@ export default function WhatsAppBandeja() {
               </label>
             ))}
           </div>
+          <div className="row wrap" style={{ gap: 8, marginTop: 10, alignItems: 'center' }}>
+            <button className="btn sm" disabled={revisando} onClick={revisarGarantias}>
+              <Icon name="refresh" size={12} /> {revisando ? 'Revisando...' : 'Revisar garantías ahora'}
+            </button>
+            <span className="muted" style={{ fontSize: 11.5 }}>
+              Avisa a los clientes cuya garantía vence en los próximos 30 días. También se corre solo una vez por día.
+            </span>
+          </div>
         </div>
       )}
 
-      {/* Bandeja */}
+      {/* Bandeja / Embudo comercial */}
+      <div className="row wrap" style={{ gap: 8, alignItems: 'center' }}>
+        <button className={`chip${vista === 'bandeja' ? ' on' : ''}`} onClick={() => setVista('bandeja')}>
+          <Icon name="mail" size={12} /> Bandeja
+        </button>
+        <button className={`chip${vista === 'embudo' ? ' on' : ''}`} onClick={() => setVista('embudo')}>
+          <Icon name="bolt" size={12} /> Embudo comercial
+        </button>
+        {vista === 'embudo' && (
+          <span className="muted" style={{ fontSize: 12 }}>
+            Oportunidades abiertas: {embudoResumen.abiertos.cantidad} · $ {Number(embudoResumen.abiertos.monto).toLocaleString('es-AR')}
+            {' · '}Ganadas: {embudoResumen.ganado.cantidad}
+          </span>
+        )}
+      </div>
+      {vista === 'embudo' ? (
+        <div className="embudo">
+          {columnas.map((col) => (
+            <div key={col.key} className="embudo-col">
+              <div className="embudo-head">
+                <b style={{ fontSize: 12.5 }}>{col.label}</b>
+                <span className="muted" style={{ fontSize: 11 }}>
+                  {col.conversaciones.length} · $ {Number(embudoResumen.porEtapa[col.key].monto).toLocaleString('es-AR')}
+                </span>
+              </div>
+              {col.conversaciones.map((c) => (
+                <div key={c.id} className="embudo-card">
+                  <div className="row between" style={{ gap: 6 }}>
+                    <b style={{ fontSize: 12.5 }}>{c.cliente_nombre || c.nombre_perfil || c.telefono}</b>
+                    {c.no_leidos > 0 && <span className="badge amber">{c.no_leidos}</span>}
+                  </div>
+                  <div className="muted" style={{ fontSize: 11.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {c.ultimo_texto || '—'}
+                  </div>
+                  <div className="row wrap" style={{ gap: 6, marginTop: 6 }}>
+                    <input
+                      className="input" style={{ width: 92, fontSize: 12 }} placeholder="$ monto"
+                      defaultValue={c.monto_estimado ?? ''}
+                      onBlur={(e) => guardarMonto(c.id, e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
+                    />
+                    <select
+                      className="input" style={{ width: 128, fontSize: 11.5 }} value={c.etapa || 'nuevo'}
+                      onChange={(e) => moverEtapa(c.id, e.target.value)}
+                    >
+                      {ETAPAS.map((e) => <option key={e.key} value={e.key}>{e.label}</option>)}
+                    </select>
+                    <button className="btn sm ghost" onClick={() => { setVista('bandeja'); abrir(c.id); }}>Abrir</button>
+                  </div>
+                </div>
+              ))}
+              {col.conversaciones.length === 0 && <p className="muted" style={{ fontSize: 11.5, padding: '4px 2px' }}>—</p>}
+            </div>
+          ))}
+        </div>
+      ) : (
       <div className="wa-panel">
         <div className="wa-lista">
           <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--line)', display: 'grid', gap: 7 }}>
@@ -431,6 +543,7 @@ export default function WhatsAppBandeja() {
           )}
         </div>
       </div>
+      )}
     </div>
   );
 }

@@ -17,9 +17,14 @@ export const EVENTOS = [
   { evento: 'received', etiqueta: 'Batería recibida', detalle: 'Cuando la batería ingresa al taller (con el enlace de seguimiento).' },
   { evento: 'quoted', etiqueta: 'Presupuesto listo', detalle: 'Cuando el técnico genera la cotización.' },
   { evento: 'ready', etiqueta: 'Lista para retirar', detalle: 'Cuando la prueba final se aprueba.' },
+  { evento: 'garantia', etiqueta: 'Garantía por vencer', detalle: 'Revisión diaria: avisa 30 días antes del vencimiento de la garantía.' },
 ];
 
-export const AVISOS_DEFAULT = { received: true, quoted: true, ready: true };
+// La garantia no depende del estado actual: la manda la revision diaria.
+export const PLANTILLA_GARANTIA = 'garantia_por_vencer';
+export const DIAS_AVISO_GARANTIA = 30;
+
+export const AVISOS_DEFAULT = { received: true, quoted: true, ready: true, garantia: true };
 
 // Deja solo las claves conocidas y con valor booleano.
 export function normalizarAvisos(valor) {
@@ -55,5 +60,40 @@ export function resumenAviso(evento, { orden } = {}) {
   if (evento === 'received') return `Aviso automático: batería recibida (${serie}).`;
   if (evento === 'quoted') return `Aviso automático: presupuesto listo (${serie}).`;
   if (evento === 'ready') return `Aviso automático: lista para retirar (${serie}).`;
+  if (evento === 'garantia') return `Aviso automático: garantía por vencer (${serie}).`;
   return 'Aviso automático.';
+}
+
+// ---------- Garantías por vencer ----------
+
+// Dias que faltan para el vencimiento (null si no hay fecha valida).
+export function diasHastaVencimiento(vence, ahora = Date.now()) {
+  if (!vence) return null;
+  const t = new Date(vence).getTime();
+  if (!Number.isFinite(t) || Number.isNaN(t)) return null;
+  return Math.ceil((t - ahora) / 86400000);
+}
+
+// Se avisa si la garantia vence entre hoy y los proximos `dias` (30 por defecto).
+export function debeAvisarGarantia(vence, ahora = Date.now(), dias = DIAS_AVISO_GARANTIA) {
+  const d = diasHastaVencimiento(vence, ahora);
+  return d !== null && d >= 0 && d <= dias;
+}
+
+// dd/mm/aaaa para el texto de la plantilla (en UTC, para que no cambie de dia
+// segun la zona horaria del servidor).
+export function formatoFecha(vence) {
+  const t = new Date(vence);
+  if (!Number.isFinite(t.getTime()) || Number.isNaN(t.getTime())) return '';
+  const dd = String(t.getUTCDate()).padStart(2, '0');
+  const mm = String(t.getUTCMonth() + 1).padStart(2, '0');
+  return `${dd}/${mm}/${t.getUTCFullYear()}`;
+}
+
+// Variables de la plantilla de garantia: nombre, serie y fecha de vencimiento.
+export function parametrosGarantia({ cliente, orden } = {}) {
+  const nombre = primerNombre(cliente?.nombre);
+  const serie = String(orden?.bateria_serie || 'tu batería').slice(0, 60);
+  const vence = formatoFecha(orden?.garantia?.vence);
+  return [nombre, serie, vence || '-'];
 }
