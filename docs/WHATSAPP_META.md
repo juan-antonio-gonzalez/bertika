@@ -47,6 +47,25 @@ Casi todo el trámite técnico lo hace un script por vos. Vos solo tenés que
 > El **WABA ID** y el **Phone number ID** ya no hace falta buscarlos: si los dejás
 > vacíos, el script los averigua solo con el token.
 
+### Cómo sacar el token (la parte que se complica)
+
+El token **no es la clave de la app**: la clave de la app (la que tiene un palito
+`|` en el medio y es corta) sirve para leer datos de la app, pero Meta **no deja**
+mandar ni recibir mensajes con ella. Hace falta una **clave de usuario**, que es
+larga y empieza con `EAA`. La forma más estable de sacarla:
+
+1. Entrá a <https://developers.facebook.com/tools/explorer/> (Explorador de la API Graph).
+2. Arriba a la derecha, en **Aplicación de Meta**, elegí tu app (`Bertika Mensajeria`).
+3. Al lado, en **Permisos**, marcá estos tres:
+   - `whatsapp_business_messaging` (mandar y recibir mensajes)
+   - `whatsapp_business_management` (ver la cuenta de WhatsApp)
+   - `business_management` (que el script pueda encontrar la cuenta solo)
+4. Botón **Generar token de acceso** → aparece un aviso → **Continuar**.
+5. Copiá el texto largo de la caja. **Ese** es el token.
+
+Ese token dura 1-2 horas: alcanza para dejar todo funcionando hoy. Para el que no
+vence nunca, ver el Paso 5.
+
 ## Paso 3 — Un solo comando (2 min)
 
 En la carpeta del proyecto, en la Terminal:
@@ -140,8 +159,9 @@ Mientras estés en el número de prueba, **solo se puede escribir a los 5 númer
 
 | Mensaje | Qué significa | Qué hacer |
 | --- | --- | --- |
-| *La clave (token) de WhatsApp venció o es inválida* | El token temporal duró 24 h. | Generar el permanente (Paso 5) y recargarlo. |
-| *No pude encontrar el ID de la cuenta de WhatsApp (WABA)* | El token no tiene permiso sobre esa cuenta. | Revisar que el token sea de la app correcta y que tenga los permisos del Paso 1. |
+| *Esa clave es la de la APLICACIÓN, no la de WhatsApp Business* | Pegaste la clave de la app (corta, con un palito `\|` en el medio). Meta no deja mandar ni recibir mensajes con esa. | Generar la clave de usuario: Paso 2 → "Cómo sacar el token". |
+| *La clave (token) de WhatsApp venció o es inválida* | El token temporal duró 24 h (o 1-2 h si es del Explorador). | Generar el permanente (Paso 5) y recargarlo. |
+| *No pude encontrar el ID de la cuenta de WhatsApp (WABA)* | Al token le falta el permiso `business_management`, o la cuenta todavía no tiene ningún número. | Marcá `business_management` al generar el token. Si sigue igual, revisá en Meta que el número de prueba exista (**WhatsApp → Números de teléfono**). |
 | *No hubo respuesta de Meta* | El servidor no salió a internet. | Probar de nuevo en unos minutos; si sigue, avisar. |
 | *El cliente tiene que escribirnos primero (pasaron más de 24 h)* | Quisiste mandar un mensaje libre fuera de la ventana de 24 h. | Usar una plantilla aprobada (Paso 6.5). |
 | *Ese número no puede recibir mensajes* | El número no tiene WhatsApp, está mal escrito o no está autorizado. | Revisar el teléfono y la lista **To** del Paso 2. |

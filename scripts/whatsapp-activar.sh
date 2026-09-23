@@ -79,6 +79,11 @@ process.stdin.on("data",c=>d+=c).on("end",()=>{
 });' "$2"
 }
 
+# Para meter valores en una dirección (los tokens traen caracteres especiales).
+urlenc() {
+  printf '%s' "$1" | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>process.stdout.write(encodeURIComponent(d)))'
+}
+
 # Devuelve el cuerpo en $CUERPO y el codigo HTTP en $CODIGO.
 llamar() { # $1 = archivo de auth, $2 = metodo, $3 = ruta, $4 = json opcional
   local cfg="$1" metodo="$2" ruta="$3" datos="${4:-}" salida
@@ -141,6 +146,29 @@ else
   echo "Sin clave no se puede seguir. Generá una nueva en Meta y volvé a correr"
   echo "scripts/whatsapp-env.sh."
   exit 1
+fi
+
+# Que clase de clave es. La clave "de la aplicacion" (APP) sirve para leer la
+# app, pero NO para mandar ni recibir mensajes: conviene avisarlo al toque y no
+# dejar que el resto de los pasos fallen uno por uno sin explicacion.
+TIPO_CLAVE=""
+if [ "$HAY_APP_CFG" = "1" ]; then
+  llamar "$TMP/app.cfg" GET "debug_token?input_token=$(urlenc "$TOKEN")"
+  TIPO_CLAVE="$(campo "$CUERPO" data.type)"
+  case "$CUERPO" in *whatsapp_business_messaging*) TIENE_PERMISO=1;; *) TIENE_PERMISO="";; esac
+  if [ "$TIPO_CLAVE" = "APP" ]; then
+    FALLOS=$((FALLOS+1))
+    no "Esa clave es la de la APLICACIÓN, no la de WhatsApp Business."
+    dato "Alcanza para leer datos de la app, pero Meta NO deja mandar ni recibir"
+    dato "mensajes con ella: hay que generar una clave de usuario (Paso 2 de"
+    dato "docs/WHATSAPP_META.md, en el Explorador de la API Graph)."
+  elif [ -z "$TIENE_PERMISO" ]; then
+    FALLOS=$((FALLOS+1))
+    no "La clave es de usuario pero no trae el permiso whatsapp_business_messaging."
+    dato "Generala otra vez marcando los permisos de WhatsApp."
+  else
+    ok "La clave es de usuario y trae los permisos de WhatsApp."
+  fi
 fi
 
 # ------------------------------------------------------- 2. Cuenta (WABA)
@@ -321,6 +349,18 @@ else
     echo "== Quedó 1 cosa por resolver (ver arriba) =="
   else
     echo "== Quedaron $FALLOS cosas por resolver (ver arriba) =="
+  fi
+  if [ "$TIPO_CLAVE" = "APP" ]; then
+    echo
+    echo "Lo principal: la clave que está cargada es la de la aplicación."
+    echo "Generá una clave de usuario (docs/WHATSAPP_META.md, Paso 2):"
+    echo "  1. Entrá a https://developers.facebook.com/tools/explorer/"
+    echo "  2. Arriba a la derecha, elegí la app Bertika Mensajeria."
+    echo "  3. En Permisos marcá: whatsapp_business_messaging, whatsapp_business_management"
+    echo "     y business_management."
+    echo "  4. Botón 'Generar token de acceso' → Continuar."
+    echo "  5. Copiá el texto largo (empieza con EAA) y corré:"
+    echo "     bash scripts/whatsapp-token.sh"
   fi
 fi
 exit 0
