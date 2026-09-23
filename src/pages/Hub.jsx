@@ -30,13 +30,17 @@ const ESTADO_LB = {
   cancelled: 'Canceladas',
 };
 
+// Los NUMERIC de Postgres llegan como texto: hay que convertirlos antes de sumar
+// (si no, "25000" + "95000" concatena y el total sale con ceros de mas).
+const num = (v) => Number(v) || 0;
+
 function Kanban({ onOpen }) {
   const ordenes = useStore((s) => s.data.ordenes);
   const grupos = ESTADOS.map((e) => [e, ordenes.filter((o) => o.estado === e)]);
   return (
     <div className="kanban">
       {grupos.map(([estado, list]) => (
-        <div key={estado} className="kcol">
+        <div key={estado} className="kcol" style={{ '--kcol': ESTADO_COLOR[estado][0] }}>
           <div className="kcol-head" style={{ color: ESTADO_COLOR[estado][0] }}>
             <span className="row" style={{ gap: 6 }}><span className="dot" style={{ width: 8, height: 8, borderRadius: '50%', background: ESTADO_COLOR[estado][0] }} /> {ESTADO_LB[estado]}</span>
             <span className="count">{list.length}</span>
@@ -56,7 +60,7 @@ function Dashboard() {
   const hoy = new Date().toDateString();
   const activas = data.ordenes.filter((o) => !['delivered', 'cancelled'].includes(o.estado));
   const cerradasHoy = data.ordenes.filter((o) => o.estado === 'delivered' && new Date(o.fecha_entrega).toDateString() === hoy);
-  const ingresosHoy = cerradasHoy.reduce((a, o) => a + (o.monto_cobrado || o.cotizacion?.monto || 0), 0);
+  const ingresosHoy = cerradasHoy.reduce((a, o) => a + (num(o.monto_cobrado) || num(o.cotizacion?.monto)), 0);
   const stockCritico = data.insumos.filter((i) => i.stock < 3);
   const reproceso = data.ordenes.filter((o) => o.estado === 'in_repair' && o.prueba_final?.estado === 'failed');
   const gPorVencer = [];
@@ -481,7 +485,7 @@ export default function Hub() {
       <div className="row between wrap mb24">
         <div>
           <h1 className="page-title">Hub administrativo</h1>
-          <p className="page-sub">Operacion del taller · {activas} ordenes activas · {fmtARS(data.ordenes.filter((o) => o.estado === 'delivered').reduce((a, o) => a + (o.monto_cobrado || 0), 0))} facturados en total</p>
+          <p className="page-sub">Operacion del taller · {activas} ordenes activas · {fmtARS(data.ordenes.filter((o) => o.estado === 'delivered').reduce((a, o) => a + num(o.monto_cobrado), 0))} facturados en total</p>
         </div>
       </div>
 
