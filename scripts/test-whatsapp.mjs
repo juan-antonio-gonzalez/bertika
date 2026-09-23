@@ -115,6 +115,11 @@ await asyncTest('traduce token vencido y número inválido', async () => {
   assert.match(mensajeDeError({ code: 131026 }), /no puede recibir/i);
   assert.match(mensajeDeError({ code: 132000 }), /plantilla/i);
 });
+await asyncTest('explica que el número no está en la lista de autorizados', async () => {
+  const r = mensajeDeError({ code: 131030, message: 'Recipient phone number not in allowed list' });
+  assert.match(r, /no está autorizado/i);
+  assert.match(r, /lista de destinatarios/i);
+});
 await asyncTest('si Meta no responde, avisa sin romper', async () => {
   const fetchImpl = async () => { const e = new Error('boom'); e.name = 'AbortError'; throw e; };
   const r = await enviarTexto({ to: '1155550101', texto: 'hola', fetchImpl });

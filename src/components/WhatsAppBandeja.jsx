@@ -9,6 +9,7 @@ export default function WhatsAppBandeja() {
   const toastShow = useStore((s) => s.toastShow);
   const [estado, setEstado] = useState(null);
   const [convs, setConvs] = useState([]);
+  const [errorConvs, setErrorConvs] = useState(null);
   const [sel, setSel] = useState(null);
   const [hilo, setHilo] = useState(null);
   const [texto, setTexto] = useState('');
@@ -21,7 +22,8 @@ export default function WhatsAppBandeja() {
     try { setEstado(await api('/whatsapp/estado')); } catch (e) { toastShow(e.message, 'error'); }
   };
   const cargarConvs = async () => {
-    try { setConvs(await api('/whatsapp/conversaciones')); } catch { /* sin permiso o caido */ }
+    try { setConvs(await api('/whatsapp/conversaciones')); setErrorConvs(null); }
+    catch (e) { setErrorConvs(e.message || 'No se pudo cargar la bandeja'); }
   };
   const abrir = async (id) => {
     setSel(id);
@@ -147,7 +149,12 @@ export default function WhatsAppBandeja() {
             <b style={{ fontSize: 13 }}>Conversaciones</b>
             <button className="btn sm ghost" onClick={cargarConvs}><Icon name="refresh" size={12} /> Actualizar</button>
           </div>
-          {convs.length === 0 && <p className="muted" style={{ padding: 14, fontSize: 12.5 }}>Todavía no hay conversaciones. Cuando un cliente escriba, aparece acá.</p>}
+          {errorConvs && (
+            <p style={{ padding: 14, fontSize: 12.5, color: 'var(--red)' }}>
+              No pude cargar las conversaciones: {errorConvs}
+            </p>
+          )}
+          {convs.length === 0 && !errorConvs && <p className="muted" style={{ padding: 14, fontSize: 12.5 }}>Todavía no hay conversaciones. Cuando un cliente escriba, aparece acá.</p>}
           {convs.map((c) => (
             <button key={c.id} className={`wa-conv${sel === c.id ? ' on' : ''}`} onClick={() => abrir(c.id)}>
               <div className="row between" style={{ gap: 6 }}>

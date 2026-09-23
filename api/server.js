@@ -1360,7 +1360,7 @@ app.get('/api/whatsapp/estado', authRequired, requireRol('admin'), async (req, r
 app.get('/api/whatsapp/conversaciones', authRequired, requireRol('admin', 'tecnico'), async (req, res) => {
   const convs = await query(`SELECT c.*, cl.nombre AS cliente_nombre, cl.email AS cliente_email
     FROM wa_conversaciones c LEFT JOIN clientes cl ON cl.id = c.cliente_id
-    ORDER BY COALESCE(c.ultima_fecha, c.id) DESC LIMIT 100`);
+    ORDER BY c.ultima_fecha DESC NULLS LAST, c.id DESC LIMIT 100`);
   return res.json(convs);
 });
 

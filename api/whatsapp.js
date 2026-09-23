@@ -65,6 +65,7 @@ export function mensajeDeError(err) {
   const sub = Number(err?.error_subcode || err?.error?.error_subcode || 0);
   const msg = String(err?.message || err?.error?.message || err || '').trim();
   if (code === 131047 || sub === 131047) return 'El cliente tiene que escribirnos primero (pasaron más de 24 h). Para iniciar vos, hay que usar una plantilla aprobada.';
+  if (code === 131030) return 'Ese número no está autorizado para recibir mensajes del número de prueba. Agregalo en Meta (WhatsApp → Configuración de la API → lista de destinatarios) y confirmá el código que te llega.';
   if (code === 131026) return 'Ese número no puede recibir mensajes de WhatsApp (o no existe).';
   if (code === 132000 || code === 132001) return 'La plantilla no está aprobada todavía o el nombre/idioma no coinciden.';
   if (code === 190 || code === 102) return 'La clave (token) de WhatsApp venció o es inválida: hay que regenerarla en Meta.';
