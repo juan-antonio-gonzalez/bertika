@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useStore } from '../store/store';
+import { useStore, usePermiso } from '../store/store';
 import { api } from '../store/api';
 import { Modal, EstadoPill, Timeline, Icon, fmtDate, fmtARS, appIconName, fmtFecha, diasEnEstado, etiquetaAntiguedad, tonoAntiguedad, waNumero, numeroEnRango, nombreActor } from './ui';
 import { MIN_CAPACIDAD_PCT } from '../data/reglas';
@@ -350,6 +350,9 @@ function PruebaFinalForm({ orden }) {
 }
 
 export default function OrdenDetalle({ orden, role, onClose, onEntregado, onBaja }) {
+  // Solo se muestran las acciones que el usuario tiene habilitadas.
+  const puedeEntregar = usePermiso('entregar');
+  const puedeBaja = usePermiso('baja_orden');
   const data = useStore((s) => s.data);
   const asignarTecnico = useStore((s) => s.asignarTecnico);
   const startRepair = useStore((s) => s.startRepair);
@@ -701,13 +704,13 @@ export default function OrdenDetalle({ orden, role, onClose, onEntregado, onBaja
             <p className="muted">Tecnico asignado: <b>{tecnico?.nombre || '—'}</b> ({tecnico?.especialidad})</p>
           )}
 
-          {orden.estado === 'received' && role === 'admin' && (
+          {orden.estado === 'received' && puedeBaja && (
             <button className="btn danger block" onClick={() => setConfirm({ type: 'baja', motivo: 'Capacidad por debajo del 40% / no reparable' })}><Icon name="recycl" size={15} /> Dar de baja (no reparable / cancelar)</button>
           )}
           {orden.estado === 'quoted' && role === 'admin' && (
             <button className="btn danger block" onClick={() => { rechazarCotizacion(orden.id); onClose(); }}><Icon name="x" size={15} /> Cancelar orden (cliente rechaza)</button>
           )}
-          {orden.estado === 'ready' && role === 'admin' && (
+          {orden.estado === 'ready' && puedeEntregar && (
             <button className="btn primary block lg" onClick={() => setEntregar(true)}><Icon name="truck" size={16} /> Entregar y cobrar</button>
           )}
           <button className="btn block" onClick={abrirCompartir}><Icon name="mail" size={15} /> Compartir seguimiento y cotización</button>

@@ -78,7 +78,11 @@ export const useStore = create()((set, get) => ({
     set((s) => ({
       data: estado,
       lastSync: new Date().toISOString(),
-      user: s.user ? normalizarUser({ ...s.user, id: s.user.uid }, estado) : null,
+      // Los permisos efectivos vienen tambien en /estado: si el administrador
+      // los cambio, el panel se entera en el proximo sync sin re-login.
+      user: s.user
+        ? normalizarUser({ ...s.user, id: s.user.uid, permisos: estado.permisos || s.user.permisos }, estado)
+        : null,
     }));
     return estado;
   },
@@ -452,3 +456,8 @@ export const useStore = create()((set, get) => ({
     return get().data.ordenes.filter((o) => o.bateria_serie === serie);
   },
 }));
+// ¿El usuario tiene este permiso? Sirve para ocultar o deshabilitar botones
+// peligrosos (entregar, dar de baja, cambiar precios...).
+export function usePermiso(clave) {
+  return useStore((s) => Boolean(s.user?.permisos?.[clave]));
+}

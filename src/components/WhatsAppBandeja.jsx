@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Icon, Modal, fmtFecha } from './ui';
 import { api } from '../store/api';
-import { useStore } from '../store/store';
+import { useStore, usePermiso } from '../store/store';
 import {
   ETAPAS, agruparEmbudo, resumenEmbudo, normalizarMonto, formatearDuracion, formatearTasa,
   MOTIVOS_PERDIDA, TIPOS_CLIENTE, CANALES_ORIGEN,
@@ -16,6 +16,7 @@ export default function WhatsAppBandeja() {
   const clientes = useStore((s) => s.data.clientes) || [];
   const sync = useStore((s) => s.sync);
   const yo = useStore((s) => s.user);
+  const puedeAvisos = usePermiso('avisos_whatsapp');
   const [estado, setEstado] = useState(null);
   const [convs, setConvs] = useState([]);
   const [agentes, setAgentes] = useState([]);
@@ -400,7 +401,7 @@ export default function WhatsAppBandeja() {
       )}
 
       {/* Avisos automáticos (solo admin) */}
-      {estado?.configurado && avisos?.eventos && (
+      {estado?.configurado && avisos?.eventos && puedeAvisos && (
         <div className="card">
           <div className="card-title"><Icon name="bolt" size={14} /> Avisos automáticos al cliente</div>
           <p className="muted" style={{ fontSize: 12, margin: '4px 0 8px' }}>

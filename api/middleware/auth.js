@@ -3,7 +3,7 @@
 import { randomBytes } from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import { one } from '../db.js';
-import { puedeHacer, puedeVer } from '../../src/data/permisos.js';
+import { permisosEfectivos, tienePermiso } from '../../src/data/permisos.js';
 
 // En produccion JWT_SECRET debe estar definido (fail-fast al firmar si no).
 // En desarrollo sin .env se genera un secreto efimero: los tokens dejan de
@@ -47,12 +47,15 @@ export async function authRequired(req, res, next) {
     if (!u || u.activo !== true) {
       return res.status(401).json({ error: 'Tu acceso fue desactivado. Pedile al administrador que lo reactive.' });
     }
+    // Se resuelven los permisos EFECTIVOS (plantilla del rol + lo que el
+    // administrador haya marcado) en cada request: asi un cambio de permisos
+    // rige al instante y no hay que esperar a que venza el token.
     req.user = {
       ...payload,
       rol: u.rol,
       tecnico_id: u.tecnico_id,
       cliente_id: u.cliente_id,
-      permisos: u.permisos || null,
+      permisos: permisosEfectivos({ rol: u.rol, permisos: u.permisos }),
     };
   } catch (e) {
     console.error('[auth] no se pudo verificar el usuario:', e.message);
@@ -69,24 +72,18 @@ export function requireRol(...roles) {
   };
 }
 
-// Exige que el usuario pueda HACER algo (ver el catalogo en src/data/permisos.js).
-// Se puede pasar mas de una clave: alcanza con tener una.
-export function requierePermiso(...claves) {
+// Exige un permiso del catalogo (ver src/data/permisos.js). Se puede pasar mas
+// de una clave: alcanza con tener una.
+//
+// El administrador siempre pasa (sus permisos efectivos son todos true), asi no
+// se puede auto-bloquear ni dejar el sistema sin administracion.
+export function permisoRequerido(...claves) {
   return (req, res, next) => {
     if (!req.user) return res.status(401).json({ error: 'Autenticacion requerida' });
-    if (!claves.some((c) => puedeHacer(req.user, c))) {
-      return res.status(403).json({ error: 'Tu usuario no tiene permiso para esta acción. Pedile al administrador que te lo habilite.' });
-    }
-    return next();
-  };
-}
-
-// Exige que el usuario pueda VER una seccion de la plataforma.
-export function requiereSeccion(...secciones) {
-  return (req, res, next) => {
-    if (!req.user) return res.status(401).json({ error: 'Autenticacion requerida' });
-    if (!secciones.some((s) => puedeVer(req.user, s))) {
-      return res.status(403).json({ error: 'Tu usuario no tiene acceso a esta sección.' });
+    if (!claves.some((c) => tienePermiso(req.user.permisos, c))) {
+      return res.status(403).json({
+        error: 'Tu usuario no tiene permiso para esta acción. Pedile al administrador que te lo habilite.',
+      });
     }
     return next();
   };

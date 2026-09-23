@@ -1,11 +1,15 @@
 import { useEffect, useState } from 'react';
 import { Icon, Modal } from '../components/ui';
 import { api } from '../store/api';
-import { useStore } from '../store/store';
+import { useStore, usePermiso } from '../store/store';
+import { Fragment } from 'react';
 import {
-  SECCIONES, SECCIONES_CLIENTE, ACCIONES, TODAS_SECCIONES, TODAS_ACCIONES,
-  permisosDeRol, normalizarPermisos, resumenPermisos,
+  COLUMNAS, PERMISOS, CLAVES, agruparPermisos, permisosPorDefecto, normalizarPermisos, resumenPermisos,
 } from '../data/permisos';
+
+// El catalogo es estatico: se agrupa una sola vez.
+const GRUPOS_PERMISOS = agruparPermisos();
+const MAPA_VACIO = Object.fromEntries(CLAVES.map((k) => [k, false]));
 
 const ROL_LABEL = { admin: 'Administrador', tecnico: 'Técnico', cliente: 'Cliente' };
 
@@ -23,18 +27,22 @@ function FormUsuariosModal({ mode, user, tecnicos, clientes, busy, onGuardar, on
   const [permisos, setPermisos] = useState(() => normalizarPermisos(esEdicion ? user.permisos : null, esEdicion ? user.rol : 'cliente'));
   const rolFinal = edicionPropia ? user.rol : rol;
 
-  const alternar = (familia, clave) => setPermisos((p) => ({
-    ...p,
-    [familia]: p[familia].includes(clave) ? p[familia].filter((k) => k !== clave) : [...p[familia], clave],
-  }));
-  const marcarGrupo = (familia, items, valor) => setPermisos((p) => {
-    const claves = items.map((i) => i.key);
-    return {
-      ...p,
-      [familia]: valor ? [...new Set([...p[familia], ...claves])] : p[familia].filter((k) => !claves.includes(k)),
-    };
+  const alternar = (clave) => setPermisos((p) => ({ ...p, [clave]: !p[clave] }));
+  const marcarGrupo = (items, valor) => setPermisos((p) => {
+    const nuevo = { ...p };
+    for (const it of items) nuevo[it.clave] = valor;
+    return nuevo;
   });
-  const cambiarRol = (nuevo) => { setRol(nuevo); setPermisos(permisosDeRol(nuevo)); };
+  // Tilde por columna: si ya estaba todo marcado, lo apaga.
+  const marcarColumna = (op) => setPermisos((p) => {
+    const items = PERMISOS.filter((x) => x.op === op);
+    const todos = items.every((x) => p[x.clave]);
+    const nuevo = { ...p };
+    for (const it of items) nuevo[it.clave] = !todos;
+    return nuevo;
+  });
+  const cambiarRol = (nuevo) => { setRol(nuevo); setPermisos(permisosPorDefecto(nuevo)); };
+  const criticos = PERMISOS.filter((x) => x.critica && permisos[x.clave]);
 
   const submit = (e) => {
     e.preventDefault();
@@ -107,73 +115,85 @@ function FormUsuariosModal({ mode, user, tecnicos, clientes, busy, onGuardar, on
         )}
         {rolFinal === 'admin' ? (
           <p className="muted" style={{ fontSize: 12.5 }}>
-            El administrador tiene acceso total a la plataforma: no se le pueden quitar permisos, así nunca se
-            pierde la administración del sistema.
+            El administrador tiene todos los permisos y no se le pueden quitar: así nunca se pierde la
+            administración de la plataforma.
+          </p>
+        ) : rolFinal === 'cliente' ? (
+          <p className="muted" style={{ fontSize: 12.5 }}>
+            Un cliente ve solo su portal (sus baterías, cotizaciones, historial y garantías) y no puede
+            recibir permisos internos del taller.
           </p>
         ) : (
           <div className="permisos">
             <div className="row between wrap" style={{ gap: 8, marginBottom: 8 }}>
               <div>
-                <b style={{ fontSize: 13 }}>Qué puede ver y hacer</b>
+                <b style={{ fontSize: 13 }}>Qué ve y qué puede hacer</b>
                 <div className="muted" style={{ fontSize: 11.5 }}>
-                  Marcá las secciones y las acciones que le habilitás a este usuario.
+                  Los permisos rigen al instante: no hace falta que el usuario vuelva a entrar.
                 </div>
               </div>
-              <div className="row wrap" style={{ gap: 6 }}>
-                <button type="button" className="chip" onClick={() => setPermisos(permisosDeRol(rolFinal))}>
-                  Como {ROL_LABEL[rolFinal] || rolFinal}
-                </button>
-                <button type="button" className="chip" onClick={() => setPermisos({ ver: [], hacer: [] })}>Nada</button>
-                <button
-                  type="button" className="chip"
-                  onClick={() => setPermisos({ ver: [...TODAS_SECCIONES], hacer: [...TODAS_ACCIONES] })}
-                >Todo</button>
+              <div className="row wrap" style={{ gap: 6, alignItems: 'center' }}>
+                <span className="muted" style={{ fontSize: 11.5 }}>Aplicar plantilla:</span>
+                <button type="button" className="chip" onClick={() => setPermisos(permisosPorDefecto('tecnico'))}>Técnico</button>
+                <button type="button" className="chip" onClick={() => setPermisos(permisosPorDefecto('admin'))}>Todo</button>
+                <button type="button" className="chip" onClick={() => setPermisos({ ...MAPA_VACIO })}>Nada</button>
               </div>
             </div>
-            <div className={`permisos-grid${rolFinal === 'cliente' ? ' sola' : ''}`}>
-              <div className="permisos-col">
-                <div className="permisos-titulo">Secciones que puede ver</div>
-                {[...SECCIONES, ...SECCIONES_CLIENTE].map((g) => (
-                  <div key={g.grupo} className="permisos-grupo">
-                    <div className="row between" style={{ gap: 6 }}>
-                      <span className="permisos-grupo-nombre">{g.grupo}</span>
-                      <span className="row" style={{ gap: 4 }}>
-                        <button type="button" className="chip" onClick={() => marcarGrupo('ver', g.items, true)}>todos</button>
-                        <button type="button" className="chip" onClick={() => marcarGrupo('ver', g.items, false)}>ninguno</button>
-                      </span>
-                    </div>
-                    {g.items.map((i) => (
-                      <label key={i.key} className="permiso-item" title={i.detalle}>
-                        <input type="checkbox" checked={permisos.ver.includes(i.key)} onChange={() => alternar('ver', i.key)} />
-                        <span><b>{i.label}</b><small>{i.detalle}</small></span>
-                      </label>
+            <div className="permisos-tabla-wrap">
+              <table className="permisos-tabla">
+                <thead>
+                  <tr>
+                    <th>Permiso</th>
+                    {COLUMNAS.map((c) => (
+                      <th key={c.op}>
+                        <button type="button" className="permisos-col-todos" onClick={() => marcarColumna(c.op)}>
+                          {c.label}
+                        </button>
+                      </th>
                     ))}
-                  </div>
-                ))}
-              </div>
-              {rolFinal !== 'cliente' && (
-                <div className="permisos-col">
-                  <div className="permisos-titulo">Acciones que puede hacer</div>
-                  {ACCIONES.map((g) => (
-                    <div key={g.grupo} className="permisos-grupo">
-                      <div className="row between" style={{ gap: 6 }}>
-                        <span className="permisos-grupo-nombre">{g.grupo}</span>
-                        <span className="row" style={{ gap: 4 }}>
-                          <button type="button" className="chip" onClick={() => marcarGrupo('hacer', g.items, true)}>todas</button>
-                          <button type="button" className="chip" onClick={() => marcarGrupo('hacer', g.items, false)}>ninguna</button>
-                        </span>
-                      </div>
-                      {g.items.map((i) => (
-                        <label key={i.key} className="permiso-item" title={i.detalle}>
-                          <input type="checkbox" checked={permisos.hacer.includes(i.key)} onChange={() => alternar('hacer', i.key)} />
-                          <span><b>{i.label}</b><small>{i.detalle}</small></span>
-                        </label>
+                  </tr>
+                </thead>
+                <tbody>
+                  {GRUPOS_PERMISOS.map((g) => (
+                    <Fragment key={g.grupo}>
+                      <tr className="permisos-fila-grupo">
+                        <td colSpan={COLUMNAS.length + 1}>
+                          <span className="permisos-grupo-nombre">{g.grupo}</span>
+                          <button type="button" className="chip" onClick={() => marcarGrupo(g.items, true)}>todos</button>
+                          <button type="button" className="chip" onClick={() => marcarGrupo(g.items, false)}>ninguno</button>
+                        </td>
+                      </tr>
+                      {g.items.map((it) => (
+                        <tr key={it.clave} className={it.critica ? 'permisos-critica' : ''}>
+                          <td>
+                            <b>{it.etiqueta}</b>
+                            <small>{it.detalle}</small>
+                          </td>
+                          {COLUMNAS.map((c) => (
+                            <td key={c.op} className="permisos-celda">
+                              {it.op === c.op ? (
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(permisos[it.clave])}
+                                  onChange={() => alternar(it.clave)}
+                                  aria-label={it.etiqueta}
+                                />
+                              ) : null}
+                            </td>
+                          ))}
+                        </tr>
                       ))}
-                    </div>
+                    </Fragment>
                   ))}
-                </div>
-              )}
+                </tbody>
+              </table>
             </div>
+            {criticos.length > 0 && (
+              <p className="muted" style={{ fontSize: 11.5, marginTop: 8 }}>
+                <span className="badge amber" style={{ marginRight: 6 }}>Atención</span>
+                Con estos permisos este usuario puede {criticos.map((c) => c.etiqueta.toLowerCase()).join(', ')}.
+              </p>
+            )}
           </div>
         )}
         <button className="btn primary block" disabled={busy}>
@@ -186,6 +206,9 @@ function FormUsuariosModal({ mode, user, tecnicos, clientes, busy, onGuardar, on
 
 export default function Usuarios() {
   const currentUid = useStore((s) => s.user?.uid);
+  // Los botones de alta/baja solo aparecen si el usuario puede hacerlo.
+  const puedeBorrar = usePermiso('borrar_usuarios');
+  const puedeCrear = usePermiso('crear_usuarios');
   const tecnicos = useStore((s) => s.data.tecnicos);
   const clientes = useStore((s) => s.data.clientes);
   const toastShow = useStore((s) => s.toastShow);
@@ -263,11 +286,13 @@ export default function Usuarios() {
       <div className="row between wrap mb24">
         <div>
           <h1 className="page-title">Usuarios y accesos</h1>
-          <p className="page-sub">Cuentas de la plataforma y permisos por rol. Solo el administrador edita esto.</p>
+          <p className="page-sub">Cuentas de la plataforma y permisos por usuario. Solo el administrador (o quien tenga el permiso) edita esto.</p>
         </div>
-        <button className="btn primary" onClick={() => setModal({ mode: 'crear' })}>
-          <Icon name="plus" size={14} /> Crear usuario
-        </button>
+        {puedeCrear && (
+          <button className="btn primary" onClick={() => setModal({ mode: 'crear' })}>
+            <Icon name="plus" size={14} /> Crear usuario
+          </button>
+        )}
       </div>
 
       <div className="col" style={{ maxWidth: 860 }}>
@@ -296,7 +321,7 @@ export default function Usuarios() {
                 </div>
                 <div className="row" style={{ gap: 8 }}>
                   <button className="btn sm" onClick={() => setModal({ mode: 'editar', user: u })}><Icon name="gear" size={13} /> Editar</button>
-                  {u.activo ? (
+                  {u.activo && puedeBorrar ? (
                     <button className="btn sm danger" onClick={() => setABaja(u)} disabled={u.id === currentUid}>
                       <Icon name="x" size={13} /> Dar de baja
                     </button>
