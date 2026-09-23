@@ -124,23 +124,31 @@ la base y viceversa.
 
 ## 4. Hub administrativo (`/hub`)
 
-Panel principal para administrar la operacion. Pestañas:
+Panel principal para administrar la operacion. Cada seccion tiene **su propia
+direccion** (se puede guardar en favoritos y el menu marca donde estas):
 
-| Pestaña | Funcion |
-| --- | --- |
-| **Kanban** | Tablero con **una columna por estado** (Recibidas, Diagnostico, Cotizadas, Aprobadas, En reparacion, Prueba final, Listas, Entregadas, Canceladas). KPIs arriba y boton **+ Crear orden de trabajo**. |
-| **Dashboard** | Indicadores del taller: baterias activas, cierres e ingresos del dia, stock critico, reprocesos, garantias por vencer, **tiempo medio de reparacion**, **tasa de reproceso** y **entregas en fecha**. |
-| **Historial por serie** | Busca todas las ordenes de una bateria por su numero de serie. |
-| **Inventario** | Stock de insumos con valorizacion; **agregar stock** a cada insumo. El stock se descuenta en tiempo real cuando un tecnico registra un insumo. Cada insumo tiene **Movimientos** (auditoria completa: alta, ingreso, consumo, devolucion, ajuste, con autor y motivo) y **Ajustar** (recuento fisico: fija el stock real y exige un motivo). |
-| **Tecnicos** | Catalogo de tecnicos, especialidad, certificaciones y carga de trabajo. |
-| **Flotillas** | Baterias activas de clientes corporativos + estado de garantia. |
-| **Garantias** | Tabla de garantias vigentes y por vencer. |
-| **Baja / reciclaje** | Baterias dadas de baja con motivo y disposicion; trazabilidad para reciclaje responsable. |
-| **Cotizador** | Tarifas del cotizador de visitas: franjas de traslado, viaticos, precios por tipo de bateria, descuentos, extras, recargos, IVA, vigencia y limites. Vista previa en vivo y valores de fabrica. |
-| **WhatsApp** | Canal oficial de WhatsApp: estado de la conexion, envio de prueba y la bandeja de conversaciones (con la ficha del cliente y sus ultimas ordenes al lado). Se conecta con Meta corriendo `bash scripts/whatsapp-env.sh` (un solo comando hace todo el tramite). Guia: `docs/WHATSAPP_META.md`. |
+| Seccion | Direccion | Funcion |
+| --- | --- | --- |
+| **Tablero (Kanban)** | `/hub` | Una columna por estado, KPIs arriba y boton **+ Crear orden de trabajo**. |
+| **Dashboard** | `/hub/dashboard` | Indicadores del taller: baterias activas, cierres e ingresos, stock critico, reprocesos, garantias por vencer, tiempo medio de reparacion, tasa de reproceso y entregas en fecha. |
+| **Historial por serie** | `/hub/historial` | Todas las ordenes de una bateria por su numero de serie. |
+| **Clientes (CRM)** | `/hub/clientes` | Cartera con KPIs por cliente (ordenes activas, entregadas, flotilla, garantias, cobrado), buscador, orden por columna, **Editar**, **Dar de baja** y la ficha con ordenes, equipos, garantias y datos comerciales (direccion, CUIT, condicion de pago, como nos conocio, vendedor). |
+| **WhatsApp** | `/hub/whatsapp` | Canal oficial: estado de la conexion, envio de prueba, **bandeja** (responsable, etiquetas con color, notas internas, ficha 360, respuestas rapidas), **Embudo comercial** por etapa con monto y **Metricas** (conversion, tasa de cierre, tiempo por etapa y motivos de perdida), **avisos automaticos** y **busqueda dentro de los mensajes**. |
+| **Tareas** | `/hub/tareas` | Recordatorios con vencimiento y responsable: pendientes, vencidas (en ambar), para hoy y sin fecha; cerrar, reabrir y crear. |
+| **Inventario** | `/hub/inventario` | Stock con valorizacion, **agregar stock**, **editar** datos del insumo (nombre, categoria, precio, minimo), **Movimientos** (auditoria con autor y motivo) y **Ajustar** (recuento fisico con motivo). |
+| **Tecnicos** | `/hub/tecnicos` | Catalogo, especialidad, certificaciones, carga de trabajo y **editar / dar de alta o baja**. |
+| **Flotillas** | `/hub/flotillas` | Baterias activas de clientes corporativos y estado de garantia. |
+| **Garantias** | `/hub/garantias` | Garantias vigentes y por vencer. |
+| **Baja / reciclaje** | `/hub/baja` | Baterias dadas de baja con motivo y disposicion; trazabilidad para reciclaje. |
+| **Cotizador** | `/hub/cotizador` | Tarifas del cotizador de visitas (traslado, viaticos, precios, descuentos, extras, recargos, IVA, vigencia y limites), con vista previa e historial de cambios. |
+| **Papelera** | `/hub/papelera` | Clientes dados de baja, con quien y cuando, y boton **Restaurar**. |
+| **Reportes** | `/reportes` | Exportacion a CSV. |
+| **Usuarios** | `/usuarios` | Alta, edicion, baja/reactivacion y **matriz de permisos por usuario** (que ve y que puede hacer, con plantillas por rol). |
+| **Mi cuenta** | `/settings` | Datos propios y cambio de contrasena. |
 
-El admin tambien tiene `/reportes` (exporta CSV) y `/usuarios` (alta, edicion de
-rol/estado y reseteo de contrasenas de cualquier cuenta).
+El **menu lateral** agrupa todo por rol (Operacion · Comercial · Taller · Sistema) y
+**solo muestra lo que el usuario tiene permitido**; si entra por una direccion que no
+le corresponde, ve un cartel claro en vez de la pantalla.
 
 ### Crear orden de trabajo
 
