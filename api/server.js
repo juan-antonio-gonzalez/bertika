@@ -15,7 +15,8 @@ import { signToken, authRequired, requireRol, SECRET } from './middleware/auth.j
 import { canTransition, ORDEN_ESTADOS, ESTADO_LABEL, MIN_CAPACIDAD_PCT } from './reglas.js';
 import { obtenerDolar } from './dolar.js';
 import { calcularVisita, normalizarConfig, CONFIG_DEFAULT, textoFueraCobertura } from '../src/data/cotizadorVisita.js';
-import { enviarTexto, configPublicaWhatsApp, normalizarTelefono, normalizarEtiquetas, verificarFirma, ESTADO_ENTREGA } from './whatsapp.js';
+import { enviarTexto, enviarPlantilla, configPublicaWhatsApp, normalizarTelefono, normalizarEtiquetas, verificarFirma, ESTADO_ENTREGA } from './whatsapp.js';
+import { EVENTOS as EVENTOS_AVISO, PLANTILLA_POR_ESTADO, normalizarAvisos, parametrosAviso, resumenAviso } from './avisos.js';
 import { generarCodigoUnico, digitar, formatearCodigo } from './codigo.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -207,6 +208,17 @@ async function asegurarCodigos() {
     fecha TIMESTAMPTZ DEFAULT now()
   )`);
   await query('CREATE INDEX IF NOT EXISTS idx_wa_notas_conv ON wa_notas (conversacion_id, fecha DESC)');
+  // Avisos automaticos: que avisos estan prendidos y cuales ya se mandaron
+  // (la clave (orden, plantilla) evita mandar dos veces el mismo aviso).
+  await query('CREATE TABLE IF NOT EXISTS wa_avisos_config (evento TEXT PRIMARY KEY, activo BOOLEAN DEFAULT TRUE)');
+  await query(`CREATE TABLE IF NOT EXISTS wa_avisos_log (
+    orden_id TEXT,
+    plantilla TEXT,
+    estado TEXT,
+    error TEXT,
+    fecha TIMESTAMPTZ DEFAULT now(),
+    PRIMARY KEY (orden_id, plantilla)
+  )`);
   // Configuración editable del cotizador (tarifas, franjas, descuentos, IVA) +
   // historial de cambios para saber quién tocó los precios y cuándo.
   await query(`CREATE TABLE IF NOT EXISTS cotizador_config (
@@ -232,7 +244,7 @@ async function asegurarCodigos() {
   try {
     await query('ALTER TABLE ordenes ADD CONSTRAINT uq_ordenes_codigo UNIQUE (codigo_seguimiento)');
   } catch { /* ya existe */ }
-  console.log('[migracion] esquema asegurado (codigos, medio de pago, historial de cotizaciones, movimientos de insumos, cotizador configurable, whatsapp, crm de whatsapp)');
+  console.log('[migracion] esquema asegurado (codigos, medio de pago, historial de cotizaciones, movimientos de insumos, cotizador configurable, whatsapp, crm de whatsapp, avisos automaticos)');
 }
 
 async function enviarMailContacto(d) {
@@ -601,6 +613,7 @@ app.post('/api/ordenes', authRequired, requireRol('admin'), async (req, res) => 
     return ordId;
   });
   await notificar(null, ordId, `Orden ${ordId}: batería ingresada al taller.`, 'Email');
+  avisarOrden(ordId); // no se espera: el aviso no debe demorar la respuesta
   return res.status(201).json({ id: ordId });
 });
 
@@ -653,6 +666,7 @@ app.post('/api/ordenes/:id/diagnostico', authRequired, async (req, res) => {
     await transition(client, { ...o, estado: 'diagnosing' }, 'quoted', `Diagnóstico completado. Cotización generada por ${servicioT || 'el servicio'}.`, actorDe(req));
   });
   await notificar(null, req.params.id, `Orden ${req.params.id}: diagnóstico registrado y cotización generada. El cliente debe aprobarla.`, 'Email');
+  avisarOrden(req.params.id); // aviso automático: presupuesto listo
   return res.json({ ok: true });
 });
 
@@ -683,6 +697,7 @@ app.post('/api/ordenes/:id/cotizacion', authRequired, async (req, res) => {
     const o = (await client.query('SELECT * FROM ordenes WHERE id = $1', [req.params.id])).rows[0];
     await pushEvento(client, o.id, 'cotizacion', `Cotización generada por ${fmtARS.format(montoN)}.`, actorDe(req));
   });
+  avisarOrden(orden.id); // aviso automático: presupuesto listo
   return res.json({ ok: true });
 });
 
@@ -786,6 +801,7 @@ app.post('/api/ordenes/:id/prueba-final', authRequired, async (req, res) => {
     await pushEvento(client, o.id, evTipo, evDet, actorDe(req));
     await client.query('UPDATE ordenes SET estado = $2 WHERE id = $1', [o.id, passed ? 'ready' : 'in_repair']);
   });
+  if (passed) avisarOrden(req.params.id); // aviso automático: lista para retirar
   return res.json({ ok: true });
 });
 
@@ -1353,6 +1369,73 @@ async function guardarMensaje({ conversacion, direccion, tipo, texto, plantilla 
   }
   return id;
 }
+
+// ---------- Avisos automaticos por WhatsApp ----------
+let cacheAvisos = { valor: null, hasta: 0 };
+
+async function configAvisos({ forzar = false } = {}) {
+  if (!forzar && cacheAvisos.valor && Date.now() < cacheAvisos.hasta) return cacheAvisos.valor;
+  const filas = await query('SELECT evento, activo FROM wa_avisos_config');
+  const guardado = Object.fromEntries(filas.map((f) => [f.evento, f.activo === true]));
+  const valor = normalizarAvisos(guardado);
+  cacheAvisos = { valor, hasta: Date.now() + 15000 };
+  return valor;
+}
+
+// Manda la plantilla que corresponde al estado actual de la orden, si el aviso
+// esta prendido, el cliente tiene telefono y no se le haya mandado ya.
+// Nunca lanza: un aviso fallido no puede voltear la operacion del taller.
+async function avisarOrden(ordenId) {
+  try {
+    const orden = await one('SELECT * FROM ordenes WHERE id = $1', [ordenId]);
+    if (!orden) return;
+    const plantilla = PLANTILLA_POR_ESTADO[orden.estado];
+    if (!plantilla) return;
+    const activos = await configAvisos();
+    if (!activos[orden.estado]) return;
+    const ya = await one("SELECT 1 AS x FROM wa_avisos_log WHERE orden_id = $1 AND plantilla = $2 AND estado = 'enviado'", [orden.id, plantilla]);
+    if (ya) return;
+    const cliente = orden.cliente_id
+      ? await one('SELECT id, nombre, telefono FROM clientes WHERE id = $1', [orden.cliente_id])
+      : null;
+    if (!cliente?.telefono) return; // sin telefono no hay a donde avisar
+    const conv = await conversacionDe(cliente.telefono);
+    if (!conv) return;
+    const parametros = parametrosAviso(orden.estado, { cliente, orden, sitio: PUBLIC_URL });
+    const envio = await enviarPlantilla({ to: cliente.telefono, nombre: plantilla, idioma: 'es_AR', parametros });
+    await guardarMensaje({
+      conversacion: conv, direccion: 'out', tipo: 'template', plantilla,
+      texto: resumenAviso(orden.estado, { orden }),
+      waMessageId: envio.id || null, estado: envio.ok ? 'enviado' : 'error', error: envio.ok ? null : envio.error,
+    });
+    await query(
+      `INSERT INTO wa_avisos_log (orden_id, plantilla, estado, error) VALUES ($1,$2,$3,$4)
+       ON CONFLICT (orden_id, plantilla) DO UPDATE SET estado = EXCLUDED.estado, error = EXCLUDED.error, fecha = now()`,
+      [orden.id, plantilla, envio.ok ? 'enviado' : 'error', envio.ok ? null : envio.error]
+    );
+    if (!envio.ok) console.warn(`[whatsapp] aviso ${plantilla} de ${orden.id} no salio: ${envio.error}`);
+  } catch (e) {
+    console.error('[whatsapp] error mandando el aviso:', e.message);
+  }
+}
+
+// Que avisos automaticos existen y cuales estan prendidos.
+app.get('/api/whatsapp/avisos', authRequired, requireRol('admin'), async (req, res) => {
+  return res.json({ eventos: EVENTOS_AVISO, activos: await configAvisos({ forzar: true }) });
+});
+
+app.put('/api/whatsapp/avisos', authRequired, requireRol('admin'), async (req, res) => {
+  const activos = normalizarAvisos(req.body?.activos ?? req.body);
+  for (const e of EVENTOS_AVISO) {
+    await query(
+      `INSERT INTO wa_avisos_config (evento, activo) VALUES ($1,$2)
+       ON CONFLICT (evento) DO UPDATE SET activo = EXCLUDED.activo`,
+      [e.evento, activos[e.evento]]
+    );
+  }
+  cacheAvisos = { valor: null, hasta: 0 };
+  return res.json({ eventos: EVENTOS_AVISO, activos: await configAvisos({ forzar: true }) });
+});
 
 // Estado del canal para el panel: configurado o no, que falta y los numeros.
 app.get('/api/whatsapp/estado', authRequired, requireRol('admin'), async (req, res) => {

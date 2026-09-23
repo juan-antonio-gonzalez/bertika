@@ -22,6 +22,7 @@ export default function WhatsAppBandeja() {
   const [nota, setNota] = useState('');
   const [verNotas, setVerNotas] = useState(false);
   const [prueba, setPrueba] = useState({ telefono: '', texto: 'Hola, esta es una prueba del canal de WhatsApp de Bertika.' });
+  const [avisos, setAvisos] = useState(null);
   const [enviando, setEnviando] = useState(false);
   const [cargando, setCargando] = useState(true);
   const finRef = useRef(null);
@@ -31,6 +32,22 @@ export default function WhatsAppBandeja() {
   };
   const cargarAgentes = async () => {
     try { setAgentes(await api('/whatsapp/agentes')); } catch { /* sin permiso o caido */ }
+  };
+  // Los avisos automáticos los configura solo el admin: si no tiene permiso, la
+  // tarjeta no se muestra (el 403 se ignora a propósito).
+  const cargarAvisos = async () => {
+    try { setAvisos(await api('/whatsapp/avisos')); } catch { setAvisos(null); }
+  };
+  const cambiarAviso = async (evento, valor) => {
+    const activos = { ...avisos?.activos, [evento]: valor };
+    setAvisos({ ...avisos, activos });
+    try {
+      setAvisos(await api('/whatsapp/avisos', { method: 'PUT', body: { activos } }));
+      toastShow('Avisos automáticos actualizados', 'ok');
+    } catch (e) {
+      toastShow(e.message, 'error');
+      cargarAvisos();
+    }
   };
   const cargarConvs = async (f = filtro) => {
     const p = new URLSearchParams();
@@ -61,7 +78,7 @@ export default function WhatsAppBandeja() {
   }, [filtro]);
 
   useEffect(() => {
-    Promise.all([cargarEstado(), cargarAgentes()]).finally(() => setCargando(false));
+    Promise.all([cargarEstado(), cargarAgentes(), cargarAvisos()]).finally(() => setCargando(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -223,6 +240,28 @@ export default function WhatsAppBandeja() {
             <input className="input" style={{ width: 190 }} placeholder="Teléfono (ej. 11 5555-0101)" value={prueba.telefono} onChange={(e) => setPrueba({ ...prueba, telefono: e.target.value })} />
             <input className="input" style={{ flex: 1, minWidth: 200 }} placeholder="Mensaje" value={prueba.texto} onChange={(e) => setPrueba({ ...prueba, texto: e.target.value })} />
             <button className="btn primary" disabled={enviando} onClick={enviarPrueba}><Icon name="mail" size={14} /> {enviando ? 'Enviando...' : 'Enviar'}</button>
+          </div>
+        </div>
+      )}
+
+      {/* Avisos automáticos (solo admin) */}
+      {estado?.configurado && avisos?.eventos && (
+        <div className="card">
+          <div className="card-title"><Icon name="bolt" size={14} /> Avisos automáticos al cliente</div>
+          <p className="muted" style={{ fontSize: 12, margin: '4px 0 8px' }}>
+            Cuando cambia el estado de una orden se le manda la plantilla aprobada por Meta. Si el aviso no sale,
+            queda registrado como error en la bandeja (con el motivo).
+          </p>
+          <div className="row wrap" style={{ gap: 14 }}>
+            {avisos.eventos.map((e) => (
+              <label key={e.evento} className="row" style={{ gap: 6, fontSize: 12.5 }} title={e.detalle}>
+                <input
+                  type="checkbox" checked={Boolean(avisos.activos?.[e.evento])}
+                  onChange={(ev) => cambiarAviso(e.evento, ev.target.checked)}
+                />
+                {e.etiqueta}
+              </label>
+            ))}
           </div>
         </div>
       )}
