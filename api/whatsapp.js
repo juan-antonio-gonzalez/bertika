@@ -48,6 +48,29 @@ export function configPublicaWhatsApp() {
   };
 }
 
+// Etiquetas de una conversacion (CRM). Se guardan como texto separado por coma
+// para que la base no necesite arrays: sin repetidas, sin vacias, maximo 8.
+export function normalizarEtiquetas(valor) {
+  const partes = Array.isArray(valor) ? valor : String(valor || '').split(',');
+  const vistas = new Set();
+  const salida = [];
+  for (const parte of partes) {
+    const t = String(parte || '').trim().replace(/\s+/g, ' ').slice(0, 24);
+    if (!t) continue;
+    const clave = t.toLowerCase();
+    if (vistas.has(clave)) continue;
+    vistas.add(clave);
+    salida.push(t);
+    if (salida.length >= 8) break;
+  }
+  return salida.join(', ');
+}
+
+// Separa lo guardado en una lista (para el panel).
+export function listaEtiquetas(valor) {
+  return normalizarEtiquetas(valor).split(', ').filter(Boolean);
+}
+
 // Telefono en formato E.164 sin "+" como lo pide Meta.
 // Los telefonos del taller vienen locales ("11 5555-0101"): se agrega 54 9.
 export function normalizarTelefono(tel) {

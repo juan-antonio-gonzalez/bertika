@@ -15,7 +15,7 @@ import { signToken, authRequired, requireRol, SECRET } from './middleware/auth.j
 import { canTransition, ORDEN_ESTADOS, ESTADO_LABEL, MIN_CAPACIDAD_PCT } from './reglas.js';
 import { obtenerDolar } from './dolar.js';
 import { calcularVisita, normalizarConfig, CONFIG_DEFAULT, textoFueraCobertura } from '../src/data/cotizadorVisita.js';
-import { enviarTexto, configPublicaWhatsApp, normalizarTelefono, verificarFirma, ESTADO_ENTREGA } from './whatsapp.js';
+import { enviarTexto, configPublicaWhatsApp, normalizarTelefono, normalizarEtiquetas, verificarFirma, ESTADO_ENTREGA } from './whatsapp.js';
 import { generarCodigoUnico, digitar, formatearCodigo } from './codigo.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -197,6 +197,16 @@ async function asegurarCodigos() {
   )`);
   await query('CREATE INDEX IF NOT EXISTS idx_wa_mensajes_conv ON wa_mensajes (conversacion_id, fecha DESC)');
   await query('CREATE INDEX IF NOT EXISTS idx_wa_mensajes_wamid ON wa_mensajes (wa_message_id)');
+  // CRM de la bandeja: etiquetas por conversacion y notas internas del taller.
+  await query('ALTER TABLE wa_conversaciones ADD COLUMN IF NOT EXISTS etiquetas TEXT');
+  await query(`CREATE TABLE IF NOT EXISTS wa_notas (
+    id TEXT PRIMARY KEY,
+    conversacion_id TEXT,
+    autor TEXT,
+    texto TEXT,
+    fecha TIMESTAMPTZ DEFAULT now()
+  )`);
+  await query('CREATE INDEX IF NOT EXISTS idx_wa_notas_conv ON wa_notas (conversacion_id, fecha DESC)');
   // Configuración editable del cotizador (tarifas, franjas, descuentos, IVA) +
   // historial de cambios para saber quién tocó los precios y cuándo.
   await query(`CREATE TABLE IF NOT EXISTS cotizador_config (
@@ -222,7 +232,7 @@ async function asegurarCodigos() {
   try {
     await query('ALTER TABLE ordenes ADD CONSTRAINT uq_ordenes_codigo UNIQUE (codigo_seguimiento)');
   } catch { /* ya existe */ }
-  console.log('[migracion] esquema asegurado (codigos, medio de pago, historial de cotizaciones, movimientos de insumos, cotizador configurable, whatsapp)');
+  console.log('[migracion] esquema asegurado (codigos, medio de pago, historial de cotizaciones, movimientos de insumos, cotizador configurable, whatsapp, crm de whatsapp)');
 }
 
 async function enviarMailContacto(d) {
@@ -1354,14 +1364,89 @@ app.get('/api/whatsapp/estado', authRequired, requireRol('admin'), async (req, r
       count(*) FILTER (WHERE direccion = 'in' AND fecha > now() - interval '7 days')::int AS recibidos_7d
     FROM wa_mensajes`);
   const [conv] = await query('SELECT count(*)::int AS conversaciones, COALESCE(sum(no_leidos), 0)::int AS sin_leer FROM wa_conversaciones');
-  return res.json({ ...cfg, webhook: `${PUBLIC_URL}/api/whatsapp/webhook`, estadisticas: { ...tot, ...conv } });
+  // Etiquetas en uso, para los filtros del panel.
+  const tags = await query(`SELECT DISTINCT trim(t) AS etiqueta FROM wa_conversaciones,
+      unnest(string_to_array(COALESCE(etiquetas, ''), ',')) AS t
+    WHERE trim(t) <> '' ORDER BY 1`);
+  return res.json({
+    ...cfg,
+    webhook: `${PUBLIC_URL}/api/whatsapp/webhook`,
+    estadisticas: { ...tot, ...conv },
+    etiquetas: tags.map((t) => t.etiqueta).filter(Boolean),
+  });
 });
 
+// Bandeja con filtros: busqueda libre, etiqueta, responsable y sin leer.
 app.get('/api/whatsapp/conversaciones', authRequired, requireRol('admin', 'tecnico'), async (req, res) => {
+  const q = limStr(req.query?.q, 60);
+  const etiqueta = limStr(req.query?.etiqueta, 24);
+  const asignado = limStr(req.query?.asignado, 120);
+  const soloSinLeer = String(req.query?.sin_leer || '') === '1';
+  const cond = [];
+  const args = [];
+  if (q) {
+    args.push(`%${q}%`);
+    cond.push(`(c.telefono ILIKE $${args.length} OR c.nombre_perfil ILIKE $${args.length} OR c.ultimo_texto ILIKE $${args.length} OR cl.nombre ILIKE $${args.length})`);
+  }
+  if (etiqueta) {
+    // Coincidencia exacta dentro de la lista separada por comas.
+    args.push(etiqueta);
+    const n = `$${args.length}`;
+    cond.push(`(c.etiquetas = ${n} OR c.etiquetas LIKE ${n} || ', %' OR c.etiquetas LIKE '%, ' || ${n} OR c.etiquetas LIKE '%, ' || ${n} || ', %')`);
+  }
+  if (asignado) {
+    args.push(asignado);
+    cond.push(`c.asignado_a = $${args.length}`);
+  }
+  if (soloSinLeer) cond.push('c.no_leidos > 0');
   const convs = await query(`SELECT c.*, cl.nombre AS cliente_nombre, cl.email AS cliente_email
     FROM wa_conversaciones c LEFT JOIN clientes cl ON cl.id = c.cliente_id
-    ORDER BY c.ultima_fecha DESC NULLS LAST, c.id DESC LIMIT 100`);
+    ${cond.length ? `WHERE ${cond.join(' AND ')}` : ''}
+    ORDER BY c.ultima_fecha DESC NULLS LAST, c.id DESC LIMIT 100`, args);
   return res.json(convs);
+});
+
+// Responsables posibles de una conversacion (admins y tecnicos activos).
+app.get('/api/whatsapp/agentes', authRequired, requireRol('admin', 'tecnico'), async (req, res) => {
+  const rows = await query("SELECT email, rol FROM usuarios WHERE activo = true AND rol IN ('admin','tecnico') ORDER BY rol, email");
+  return res.json(rows);
+});
+
+// Asignar responsable y/o etiquetas (CRM).
+app.patch('/api/whatsapp/conversaciones/:id', authRequired, requireRol('admin', 'tecnico'), async (req, res) => {
+  const conv = await one('SELECT * FROM wa_conversaciones WHERE id = $1', [req.params.id]);
+  if (!conv) return res.status(404).json({ error: 'Conversación no encontrada' });
+  const campos = [];
+  const args = [];
+  if (req.body?.asignado_a !== undefined) {
+    args.push(limStr(req.body.asignado_a, 120) || null);
+    campos.push(`asignado_a = $${args.length}`);
+  }
+  if (req.body?.etiquetas !== undefined) {
+    args.push(normalizarEtiquetas(req.body.etiquetas) || null);
+    campos.push(`etiquetas = $${args.length}`);
+  }
+  if (!campos.length) return res.status(400).json({ error: 'No hay nada para actualizar' });
+  args.push(conv.id);
+  const upd = await one(`UPDATE wa_conversaciones SET ${campos.join(', ')} WHERE id = $${args.length} RETURNING *`, args);
+  return res.json(upd);
+});
+
+// Notas internas del taller: no se le mandan al cliente.
+app.get('/api/whatsapp/conversaciones/:id/notas', authRequired, requireRol('admin', 'tecnico'), async (req, res) => {
+  const notas = await query('SELECT * FROM wa_notas WHERE conversacion_id = $1 ORDER BY fecha DESC LIMIT 100', [req.params.id]);
+  return res.json(notas);
+});
+
+app.post('/api/whatsapp/conversaciones/:id/notas', authRequired, requireRol('admin', 'tecnico'), async (req, res) => {
+  const conv = await one('SELECT id FROM wa_conversaciones WHERE id = $1', [req.params.id]);
+  if (!conv) return res.status(404).json({ error: 'Conversación no encontrada' });
+  const texto = limStr(req.body?.texto, 1000);
+  if (!texto) return res.status(400).json({ error: 'La nota está vacía' });
+  const id = await nextId('wan');
+  const autor = actorDe(req)?.email || 'panel';
+  const nota = await one('INSERT INTO wa_notas (id, conversacion_id, autor, texto) VALUES ($1,$2,$3,$4) RETURNING *', [id, conv.id, autor, texto]);
+  return res.json(nota);
 });
 
 app.get('/api/whatsapp/conversaciones/:id', authRequired, requireRol('admin', 'tecnico'), async (req, res) => {
@@ -1373,7 +1458,20 @@ app.get('/api/whatsapp/conversaciones/:id', authRequired, requireRol('admin', 't
   const ordenes = conv.cliente_id
     ? await query('SELECT id, bateria_serie, estado, fecha_ingreso FROM ordenes WHERE cliente_id = $1 ORDER BY fecha_ingreso DESC LIMIT 5', [conv.cliente_id])
     : [];
-  return res.json({ conversacion: { ...conv, no_leidos: 0 }, mensajes, cliente, ordenes });
+  const notas = await query('SELECT * FROM wa_notas WHERE conversacion_id = $1 ORDER BY fecha DESC LIMIT 50', [conv.id]);
+  // Ficha 360: numeros del cliente para no tener que salir de la bandeja.
+  const ficha = conv.cliente_id
+    ? await one(`SELECT
+        count(*)::int AS ordenes,
+        count(*) FILTER (WHERE estado = 'delivered')::int AS entregadas,
+        count(*) FILTER (WHERE cotizacion IS NOT NULL)::int AS cotizadas,
+        count(*) FILTER (WHERE garantia IS NOT NULL)::int AS con_garantia
+      FROM ordenes WHERE cliente_id = $1`, [conv.cliente_id])
+    : null;
+  const garantias = conv.cliente_id
+    ? await query("SELECT id, bateria_serie, garantia FROM ordenes WHERE cliente_id = $1 AND garantia IS NOT NULL ORDER BY garantia->>'vence' DESC NULLS LAST LIMIT 10", [conv.cliente_id])
+    : [];
+  return res.json({ conversacion: { ...conv, no_leidos: 0 }, mensajes, cliente, ordenes, notas, ficha: ficha ? { ...ficha, garantias } : null });
 });
 
 // Mensaje libre: vale dentro de las 24 h desde el ultimo mensaje del cliente.

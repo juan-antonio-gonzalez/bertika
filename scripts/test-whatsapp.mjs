@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
 import {
   configWhatsApp, configPublicaWhatsApp, normalizarTelefono, enviarTexto, enviarPlantilla, verificarFirma, mensajeDeError,
+  normalizarEtiquetas, listaEtiquetas,
 } from '../api/whatsapp.js';
 
 let pasaron = 0;
@@ -125,6 +126,22 @@ await asyncTest('si Meta no responde, avisa sin romper', async () => {
   const r = await enviarTexto({ to: '1155550101', texto: 'hola', fetchImpl });
   assert.equal(r.ok, false);
   assert.match(r.error, /no respondió|conectar/i);
+});
+
+console.log('\nEtiquetas del CRM (bandeja)');
+test('normaliza las etiquetas: sin repetidas, sin vacías y con tope', () => {
+  assert.equal(normalizarEtiquetas('presupuesto, garantia'), 'presupuesto, garantia');
+  assert.equal(normalizarEtiquetas('  Presupuesto ,, presupuesto ,  GARANTIA '), 'Presupuesto, GARANTIA');
+  assert.equal(normalizarEtiquetas(['a', 'b', 'a']), 'a, b');
+  assert.equal(normalizarEtiquetas(''), '');
+  assert.equal(normalizarEtiquetas(null), '');
+  assert.equal(normalizarEtiquetas(',,,,'), '');
+  const muchas = normalizarEtiquetas(Array.from({ length: 20 }, (_, i) => `t${i}`));
+  assert.equal(muchas.split(', ').length, 8, 'como máximo 8 etiquetas');
+  const larga = normalizarEtiquetas('x'.repeat(80));
+  assert.equal(larga.length, 24, 'cada etiqueta se recorta a 24 caracteres');
+  assert.deepEqual(listaEtiquetas('uno, dos'), ['uno', 'dos']);
+  assert.deepEqual(listaEtiquetas(null), []);
 });
 
 console.log('\nFirma de los avisos de Meta (webhook)');
