@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Icon, Modal, fmtFecha } from './ui';
-import { api } from '../store/api';
+import { api, getToken, BASE_URL } from '../store/api';
 import { useStore, usePermiso } from '../store/store';
 import {
   ETAPAS, agruparEmbudo, resumenEmbudo, normalizarMonto, formatearDuracion, formatearTasa,
@@ -17,6 +17,8 @@ export default function WhatsAppBandeja() {
   const sync = useStore((s) => s.sync);
   const yo = useStore((s) => s.user);
   const puedeAvisos = usePermiso('avisos_whatsapp');
+  const puedeCrm = usePermiso('crm_whatsapp');
+  const esAdmin = yo?.rol === 'admin';
   const [estado, setEstado] = useState(null);
   const [convs, setConvs] = useState([]);
   const [agentes, setAgentes] = useState([]);
@@ -398,6 +400,38 @@ export default function WhatsAppBandeja() {
     }
   };
 
+  // Baja / alta del envío de mensajes (consentimiento).
+  const cambiarOptin = async (estado) => {
+    if (!sel) return;
+    try {
+      await api(`/whatsapp/conversaciones/${sel}/optin`, { method: 'POST', body: { estado } });
+      await abrir(sel);
+      toastShow(estado === 'baja' ? 'Marcado: no quiere recibir mensajes' : 'Habilitado para recibir mensajes', 'ok');
+    } catch (e) {
+      toastShow(e.message, 'error');
+    }
+  };
+
+  // Descarga de todas las conversaciones en CSV (admin).
+  const exportarConversaciones = async () => {
+    try {
+      const res = await fetch(`${BASE_URL}/whatsapp/export`, { headers: { Authorization: `Bearer ${getToken()}` } });
+      if (!res.ok) throw new Error('No se pudo exportar (¿tenés permisos?)');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `bertika-whatsapp-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toastShow('Exportación descargada', 'ok');
+    } catch (e) {
+      toastShow(e.message, 'error');
+    }
+  };
+
   const guardarNota = async () => {
     const t = nota.trim();
     if (!t || !sel) return;
@@ -440,6 +474,7 @@ export default function WhatsAppBandeja() {
     return base.slice(0, 20);
   })();
   const etiquetasHilo = listaDe(hilo?.conversacion?.etiquetas);
+  const enBaja = hilo?.consentimiento?.estado === 'baja';
   const porVencer = (hilo?.ficha?.garantias || []).filter((g) => {
     const v = g.garantia?.vence;
     if (!v) return false;
@@ -482,6 +517,14 @@ export default function WhatsAppBandeja() {
               </p>
             )}
           </>
+        )}
+        {estado?.configurado && esAdmin && (
+          <div className="row wrap" style={{ gap: 8, marginTop: 10, alignItems: 'center' }}>
+            <button className="btn sm" onClick={exportarConversaciones}>
+              <Icon name="clipboard" size={12} /> Exportar conversaciones (CSV)
+            </button>
+            <span className="muted" style={{ fontSize: 11.5 }}>Baja todo lo hablado; queda registrado quién lo pidió.</span>
+          </div>
         )}
         {estado?.configurado && estado?.falta?.length > 0 && (
           <p className="muted" style={{ fontSize: 12.5, margin: '10px 0 0' }}>
@@ -775,6 +818,20 @@ export default function WhatsAppBandeja() {
                     {hilo.cliente?.telefono && ` · ficha: ${hilo.cliente.telefono}`}
                     {hilo.cliente?.wa_optin && ' · acepta WhatsApp'}
                   </div>
+                  {hilo.consentimiento?.estado === 'baja' && (
+                    <div className="row wrap" style={{ gap: 6, marginTop: 5, alignItems: 'center' }}>
+                      <span className="badge red">No quiere recibir mensajes</span>
+                      {puedeCrm && (
+                        <button className="btn sm ghost" onClick={() => cambiarOptin('alta')}>Habilitar envío</button>
+                      )}
+                    </div>
+                  )}
+                  {hilo.consentimiento?.estado === 'alta' && puedeCrm && (
+                    <button
+                      className="btn sm ghost" style={{ marginTop: 5 }} title="El cliente pidió que no le escribamos"
+                      onClick={() => cambiarOptin('baja')}
+                    >Marcar que no quiere recibir</button>
+                  )}
                   {hilo.ficha && (
                     <div className="row wrap" style={{ gap: 5, marginTop: 5 }}>
                       <span className="badge gray">{hilo.ficha.ordenes} órdenes</span>
@@ -932,12 +989,14 @@ export default function WhatsAppBandeja() {
                   />
                 </label>
                 <input
-                  className="input" style={{ flex: 1 }} placeholder="Escribí una respuesta (o / para respuestas rápidas)…"
+                  className="input" style={{ flex: 1 }}
+                  placeholder={enBaja ? 'El cliente pidió no recibir mensajes' : 'Escribí una respuesta (o / para respuestas rápidas)…'}
+                  disabled={enBaja}
                   value={texto}
                   onChange={(e) => { setTexto(e.target.value); setAtajosAbiertos(/^\/\S*$/.test(e.target.value)); }}
                   onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); responder(); } }}
                 />
-                <button className="btn primary" disabled={enviando || !texto.trim()} onClick={responder}>
+                <button className="btn primary" disabled={enviando || enBaja || !texto.trim()} onClick={responder}>
                   <Icon name="mail" size={14} /> Enviar
                 </button>
               </div>

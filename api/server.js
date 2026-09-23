@@ -18,7 +18,7 @@ import { obtenerDolar } from './dolar.js';
 import { calcularVisita, normalizarConfig, CONFIG_DEFAULT, textoFueraCobertura } from '../src/data/cotizadorVisita.js';
 import {
   enviarTexto, enviarPlantilla, configPublicaWhatsApp, normalizarTelefono, normalizarEtiquetas, verificarFirma, ESTADO_ENTREGA,
-  descargarMedia, subirMedia, enviarImagen, enviarDocumento,
+  descargarMedia, subirMedia, enviarImagen, enviarDocumento, pideBaja,
 } from './whatsapp.js';
 import { EVENTOS as EVENTOS_AVISO, PLANTILLA_POR_ESTADO, PLANTILLA_GARANTIA, normalizarAvisos, parametrosAviso, resumenAviso, debeAvisarGarantia, parametrosGarantia } from './avisos.js';
 import {
@@ -224,6 +224,26 @@ async function asegurarCodigos() {
   )`);
   await query('CREATE INDEX IF NOT EXISTS idx_wa_mensajes_conv ON wa_mensajes (conversacion_id, fecha DESC)');
   await query('CREATE INDEX IF NOT EXISTS idx_wa_mensajes_wamid ON wa_mensajes (wa_message_id)');
+  // Consentimiento de WhatsApp: quien pidio la baja (BAJA/STOP) no recibe mas
+  // mensajes nuestros, y queda registrado con fecha y motivo.
+  await query(`CREATE TABLE IF NOT EXISTS wa_consentimiento (
+    telefono TEXT PRIMARY KEY,
+    estado TEXT DEFAULT 'alta',
+    motivo TEXT,
+    fuente TEXT,
+    actualizado TIMESTAMPTZ DEFAULT now(),
+    usuario TEXT
+  )`);
+  // Registro de exportaciones (quien se llevo los datos y cuando).
+  await query(`CREATE TABLE IF NOT EXISTS wa_export_log (
+    id TEXT PRIMARY KEY,
+    usuario TEXT,
+    desde TIMESTAMPTZ,
+    hasta TIMESTAMPTZ,
+    filas INTEGER,
+    fecha TIMESTAMPTZ DEFAULT now()
+  )`);
+
   // Archivos del chat (fotos y documentos): se guardan como los de diagnostico.
   await query('ALTER TABLE wa_mensajes ADD COLUMN IF NOT EXISTS media_url TEXT');
   await query('ALTER TABLE wa_mensajes ADD COLUMN IF NOT EXISTS media_tipo TEXT');
@@ -1938,6 +1958,7 @@ async function avisarOrden(ordenId) {
       ? await one('SELECT id, nombre, telefono FROM clientes WHERE id = $1', [orden.cliente_id])
       : null;
     if (!cliente?.telefono) return; // sin telefono no hay a donde avisar
+    if (await estaEnBaja(cliente.telefono)) return; // pidio no recibir mas mensajes
     const conv = await conversacionDe(cliente.telefono);
     if (!conv) return;
     if (!(await reservarAviso(orden.id, plantilla))) return; // ya se mando (o lo esta mandando otro)
@@ -1992,6 +2013,7 @@ async function avisarGarantias() {
       if (!o.cliente_telefono) { resumen.sinTelefono += 1; continue; }
       const conv = await conversacionDe(o.cliente_telefono);
       if (!conv) continue;
+      if (await estaEnBaja(o.cliente_telefono)) continue; // pidio no recibir mas mensajes
       if (!(await reservarAviso(o.id, PLANTILLA_GARANTIA))) continue; // ya se aviso
       const parametros = parametrosGarantia({ cliente: { nombre: o.cliente_nombre }, orden: o });
       const envio = await enviarPlantilla({ to: o.cliente_telefono, nombre: PLANTILLA_GARANTIA, idioma: 'es_AR', parametros });
@@ -2094,6 +2116,28 @@ app.get('/api/whatsapp/agentes', authRequired, permisoRequerido('whatsapp'), asy
   const rows = await query("SELECT email, rol FROM usuarios WHERE activo = true AND rol IN ('admin','tecnico') ORDER BY rol, email");
   return res.json(rows);
 });
+
+// ---------- Consentimiento (opt-out) ----------
+async function consentimientoDe(telefono) {
+  const t = normalizarTelefono(telefono);
+  if (!t) return { telefono: '', estado: 'alta' };
+  const fila = await one('SELECT * FROM wa_consentimiento WHERE telefono = $1', [t]);
+  return fila || { telefono: t, estado: 'alta' };
+}
+
+async function estaEnBaja(telefono) {
+  return (await consentimientoDe(telefono)).estado === 'baja';
+}
+
+async function registrarConsentimiento({ telefono, estado, motivo = null, fuente = null, usuario = null }) {
+  const t = normalizarTelefono(telefono);
+  if (!t) return null;
+  return one(`INSERT INTO wa_consentimiento (telefono, estado, motivo, fuente, usuario, actualizado)
+    VALUES ($1,$2,$3,$4,$5, now())
+    ON CONFLICT (telefono) DO UPDATE SET estado = EXCLUDED.estado, motivo = EXCLUDED.motivo,
+      fuente = EXCLUDED.fuente, usuario = EXCLUDED.usuario, actualizado = now()
+    RETURNING *`, [t, estado === 'baja' ? 'baja' : 'alta', limStr(motivo, 200) || null, limStr(fuente, 40) || null, limStr(usuario, 120) || null]);
+}
 
 // Etiquetas activas del catalogo (para validar lo que llega del panel).
 async function catalogoEtiquetas() {
@@ -2498,7 +2542,8 @@ app.get('/api/whatsapp/conversaciones/:id', authRequired, permisoRequerido('what
   const garantias = conv.cliente_id
     ? await query("SELECT id, bateria_serie, garantia FROM ordenes WHERE cliente_id = $1 AND garantia IS NOT NULL ORDER BY garantia->>'vence' DESC NULLS LAST LIMIT 10", [conv.cliente_id])
     : [];
-  return res.json({ conversacion: { ...conv, no_leidos: 0 }, mensajes, cliente, ordenes, notas, ficha: ficha ? { ...ficha, garantias } : null });
+  const consentimiento = await consentimientoDe(conv.telefono);
+  return res.json({ conversacion: { ...conv, no_leidos: 0 }, mensajes, cliente, ordenes, notas, consentimiento, ficha: ficha ? { ...ficha, garantias } : null });
 });
 
 // Mensaje libre: vale dentro de las 24 h desde el ultimo mensaje del cliente.
@@ -2507,6 +2552,9 @@ app.post('/api/whatsapp/conversaciones/:id/responder', authRequired, permisoRequ
   if (!conv) return res.status(404).json({ error: 'Conversación no encontrada' });
   const texto = limStr(req.body?.texto, 4000);
   if (!texto) return res.status(400).json({ error: 'El mensaje está vacío' });
+  if (await estaEnBaja(conv.telefono)) {
+    return res.status(400).json({ error: 'Este cliente pidió no recibir más mensajes (baja de WhatsApp). Si querés volver a escribirle, habilitá el envío desde el hilo.' });
+  }
   const envio = await enviarTexto({ to: conv.telefono, texto });
   await guardarMensaje({
     conversacion: conv, direccion: 'out', tipo: 'text', texto,
@@ -2516,11 +2564,69 @@ app.post('/api/whatsapp/conversaciones/:id/responder', authRequired, permisoRequ
   return res.json({ ok: true, id: envio.id });
 });
 
+// Habilitar o dar de baja el envío de mensajes para un cliente.
+app.post('/api/whatsapp/conversaciones/:id/optin', authRequired, permisoRequerido('crm_whatsapp'), async (req, res) => {
+  const conv = await one('SELECT * FROM wa_conversaciones WHERE id = $1', [req.params.id]);
+  if (!conv) return res.status(404).json({ error: 'Conversación no encontrada' });
+  const estado = String(req.body?.estado || '').toLowerCase() === 'baja' ? 'baja' : 'alta';
+  const fila = await registrarConsentimiento({
+    telefono: conv.telefono, estado, motivo: req.body?.motivo || (estado === 'baja' ? 'Dado de baja desde el panel' : 'Habilitado desde el panel'),
+    fuente: 'panel', usuario: actorDe(req)?.email,
+  });
+  return res.json(fila);
+});
+
+// Estado del consentimiento de un teléfono.
+app.get('/api/whatsapp/consentimiento', authRequired, permisoRequerido('whatsapp'), async (req, res) => {
+  return res.json(await consentimientoDe(req.query?.telefono));
+});
+
+// Exportar las conversaciones (admin). Queda registrado quién se lo llevó.
+app.get('/api/whatsapp/export', authRequired, requireRol('admin'), async (req, res) => {
+  const desde = req.query?.desde ? new Date(String(req.query.desde)) : null;
+  const hasta = req.query?.hasta ? new Date(String(req.query.hasta)) : null;
+  const cond = [];
+  const args = [];
+  if (desde && !Number.isNaN(desde.getTime())) { args.push(desde.toISOString()); cond.push(`m.fecha >= $${args.length}`); }
+  if (hasta && !Number.isNaN(hasta.getTime())) { args.push(hasta.toISOString()); cond.push(`m.fecha <= $${args.length}`); }
+  const filas = await query(
+    `SELECT m.fecha, m.direccion, c.telefono, COALESCE(cl.nombre, c.nombre_perfil, '') AS cliente,
+            m.tipo, m.texto, m.estado, m.plantilla, m.media_url
+       FROM wa_mensajes m
+       JOIN wa_conversaciones c ON c.id = m.conversacion_id
+       LEFT JOIN clientes cl ON cl.id = c.cliente_id
+       ${cond.length ? `WHERE ${cond.join(' AND ')}` : ''}
+      ORDER BY m.fecha ASC
+      LIMIT 20000`,
+    args
+  );
+  const escapar = (v) => `"${String(v ?? '').replace(/"/g, '""').replace(/[\r\n]+/g, ' ')}"`;
+  const encabezado = ['fecha', 'direccion', 'telefono', 'cliente', 'tipo', 'texto', 'estado', 'plantilla', 'archivo'].join(';');
+  const csv = [
+    encabezado,
+    ...filas.map((f) => [
+      f.fecha instanceof Date ? f.fecha.toISOString() : f.fecha,
+      f.direccion === 'in' ? 'recibido' : 'enviado',
+      f.telefono, f.cliente, f.tipo, f.texto, f.estado, f.plantilla, f.media_url,
+    ].map(escapar).join(';')),
+  ].join('\n');
+  await query(
+    'INSERT INTO wa_export_log (id, usuario, desde, hasta, filas) VALUES ($1,$2,$3,$4,$5)',
+    [await nextId('wex'), actorDe(req)?.email || 'panel', desde, hasta, filas.length]
+  );
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="bertika-whatsapp-${new Date().toISOString().slice(0, 10)}.csv"`);
+  return res.send(`\uFEFF${csv}`);
+});
+
 // Mandar una foto o un PDF dentro de la conversacion.
 app.post('/api/whatsapp/conversaciones/:id/adjunto', authRequired, permisoRequerido('responder_whatsapp'), uploadChat.single('archivo'), async (req, res) => {
   const conv = await one('SELECT * FROM wa_conversaciones WHERE id = $1', [req.params.id]);
   if (!conv) return res.status(404).json({ error: 'Conversación no encontrada' });
   if (!req.file?.buffer?.length) return res.status(400).json({ error: 'No se recibió el archivo' });
+  if (await estaEnBaja(conv.telefono)) {
+    return res.status(400).json({ error: 'Este cliente pidió no recibir más mensajes (baja de WhatsApp).' });
+  }
   const texto = limStr(req.body?.texto, 1000);
   const esPdf = req.file.buffer.subarray(0, 4).toString('latin1') === '%PDF';
   const nombre = limStr(req.file.originalname, 120) || (esPdf ? 'documento.pdf' : 'foto.jpg');
@@ -2548,6 +2654,9 @@ app.post('/api/whatsapp/enviar', authRequired, permisoRequerido('enviar_whatsapp
   if (!telefono || !texto) return res.status(400).json({ error: 'Faltan el teléfono y el mensaje' });
   const conv = await conversacionDe(telefono);
   if (!conv) return res.status(400).json({ error: 'Teléfono inválido' });
+  if (await estaEnBaja(conv.telefono)) {
+    return res.status(400).json({ error: 'Este cliente pidió no recibir más mensajes (baja de WhatsApp).' });
+  }
   const envio = await enviarTexto({ to: conv.telefono, texto });
   await guardarMensaje({
     conversacion: conv, direccion: 'out', tipo: 'text', texto,
@@ -2613,8 +2722,18 @@ app.post('/api/whatsapp/webhook', async (req, res) => {
           mediaUrl: media?.url || null, mediaTipo: media?.tipo || null, mediaNombre: media?.nombre || null,
         });
         if (!guardado) continue; // ya estaba cargado: no se duplica ni suma no leidos
+        // Pedido de baja (BAJA / STOP / "no me escriban"): se registra con fecha
+        // y no se le vuelve a escribir. Se le confirma una sola vez.
+        const pidioBaja = pideBaja(texto);
+        if (pidioBaja) {
+          await registrarConsentimiento({
+            telefono: conv.telefono, estado: 'baja', fuente: 'whatsapp',
+            motivo: `El cliente escribió: ${limStr(texto, 40)}`,
+          });
+          enviarTexto({ to: conv.telefono, texto: 'Listo, no te vamos a escribir más por acá. Si nos necesitás, escribinos cuando quieras.' });
+        }
         // Escribirnos es el consentimiento implicito para poder responderle.
-        if (conv.cliente_id) {
+        if (!pidioBaja && conv.cliente_id) {
           const cli = await one('SELECT id, wa_optin FROM clientes WHERE id = $1', [conv.cliente_id]);
           if (cli && !cli.wa_optin) await query('UPDATE clientes SET wa_optin = true, wa_optin_fecha = now() WHERE id = $1', [cli.id]);
         }

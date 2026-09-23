@@ -233,3 +233,29 @@ export async function enviarDocumento({ to, mediaId, texto = '', nombre = 'docum
     document: { id: mediaId, filename: String(nombre).slice(0, 120), ...(texto ? { caption: String(texto).slice(0, 1024) } : {}) },
   }, { fetchImpl });
 }
+
+// ---------- Baja de WhatsApp (opt-out) ----------
+
+// Palabras con las que la gente pide que no le escribamos más.
+export const PALABRAS_BAJA = [
+  'baja', 'stop', 'no molestar', 'no me escriban', 'no me escriban mas', 'no escribirme',
+  'cancelar suscripcion', 'unsubscribe', 'dar de baja',
+];
+
+const sinAdornos = (t) => t.replace(/\b(por favor|gracias|ok|dale|che|hola)\b/g, ' ').replace(/\s+/g, ' ').trim();
+
+// Reconoce un pedido de baja ("BAJA", "stop", "no me escriban más").
+// Es a propósito estricto: el mensaje tiene que SER el pedido (se permiten
+// fórmulas de cortesía), porque "baja el precio" o "dar de baja la orden de
+// trabajo" no significan que el cliente no quiera recibir mensajes.
+export function pideBaja(texto) {
+  const t = String(texto || '')
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!t || t.length > 40) return false;
+  return PALABRAS_BAJA.includes(sinAdornos(t));
+}
+

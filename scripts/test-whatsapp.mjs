@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
 import {
   configWhatsApp, configPublicaWhatsApp, normalizarTelefono, enviarTexto, enviarPlantilla, verificarFirma, mensajeDeError,
-  normalizarEtiquetas, listaEtiquetas, descargarMedia, subirMedia, enviarImagen, enviarDocumento,
+  normalizarEtiquetas, listaEtiquetas, descargarMedia, subirMedia, enviarImagen, enviarDocumento, pideBaja,
 } from '../api/whatsapp.js';
 
 let pasaron = 0;
@@ -213,6 +213,17 @@ await asyncTest('manda la imagen y el documento con el formato que pide Meta', a
   assert.equal(cuerpo.type, 'document');
   assert.equal(cuerpo.document.filename, 'informe.pdf');
   assert.equal(cuerpo.document.caption, undefined, 'sin texto no manda caption');
+});
+
+
+console.log('\nBaja de WhatsApp (opt-out)');
+test('reconoce los pedidos de baja y no se confunde con frases largas', () => {
+  for (const t of ['BAJA', 'baja', 'Stop', 'no molestar', 'No me escriban más', 'DAR DE BAJA', 'baja por favor']) {
+    assert.equal(pideBaja(t), true, `debería reconocer "${t}"`);
+  }
+  for (const t of ['', null, 'hola', '¿cuánto sale la batería?', 'baja el precio un poco', 'necesito dar de baja la orden de trabajo porque vendí el auto']) {
+    assert.equal(pideBaja(t), false, `no debería reconocer "${t}"`);
+  }
 });
 
 console.log(`\n${pasaron} tests OK${process.exitCode ? ' (con fallas)' : ''}\n`);
