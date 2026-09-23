@@ -90,31 +90,7 @@ if [ ! -s "$TMP" ]; then
   exit 0
 fi
 
-echo
-echo "== Subiendo al servidor =="
-# -p conserva el permiso 600 del archivo temporal (nunca queda legible por otros).
-scp -q -p "${SSH_ARGS[@]}" "$TMP" "root@$SSH_HOST:/tmp/whatsapp-env.$$"
-
-ssh "${SSH_ARGS[@]}" "root@$SSH_HOST" "bash -s -- '$ENV_REMOTO' '/tmp/whatsapp-env.$$'" <<'REMOTO'
-set -euo pipefail
-ENV="$1"
-NUEVO="$2"
-[ -f "$ENV" ] || { echo "No existe $ENV"; exit 1; }
-cp -a "$ENV" "$ENV.bak.$(date +%s)"
-# Solo se reemplazan las claves que vinieron: el resto queda como estaba.
-while IFS='=' read -r CLAVE VALOR; do
-  [ -n "$CLAVE" ] || continue
-  grep -v -E "^$CLAVE=" "$ENV" > "$ENV.nuevo" || true
-  printf '%s=%s\n' "$CLAVE" "$VALOR" >> "$ENV.nuevo"
-  cat "$ENV.nuevo" > "$ENV"
-done < "$NUEVO"
-rm -f "$ENV.nuevo" "$NUEVO"
-chmod 600 "$ENV"
-systemctl restart bertika-api
-sleep 2
-echo "Servicio: $(systemctl is-active bertika-api)"
-echo "Claves de WhatsApp cargadas: $(grep -c '^WHATSAPP_' "$ENV")"
-REMOTO
+bash "$SCRIPT_DIR/lib/whatsapp-subir.sh" "$TMP"
 
 # Copia en el Llavero de macOS (misma convención que el resto de los secretos).
 if [ -n "$TOKEN" ]; then security add-generic-password -U -s bertika -a whatsapp-token -w "$TOKEN" 2>/dev/null || echo "(no se pudo guardar el token en el Llavero)"; fi

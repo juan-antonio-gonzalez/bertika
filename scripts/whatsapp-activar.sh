@@ -228,9 +228,15 @@ fi
 # ------------------------------------------------------ 5. El webhook
 echo "== 5. La dirección de avisos (webhook) =="
 if [ -z "$VERIFY" ]; then
-  FALLOS=$((FALLOS+1))
-  no "Falta la frase de verificación (WHATSAPP_VERIFY_TOKEN)."
-elif ! printf '%s' "$VERIFY" | grep -qE '^[A-Za-z0-9._-]+$'; then
+  # La frase la generamos nosotros: el dueño del negocio no tiene por qué inventarla.
+  VERIFY="$(openssl rand -hex 16)"
+  guardar_var WHATSAPP_VERIFY_TOKEN "$VERIFY"
+  GUARDE=1
+  ok "Generé la frase de verificación y la guardé en el servidor."
+  systemctl restart bertika-api
+  sleep 2
+fi
+if ! printf '%s' "$VERIFY" | grep -qE '^[A-Za-z0-9._-]+$'; then
   FALLOS=$((FALLOS+1))
   no "La frase de verificación tiene símbolos raros."
   dato "Volvé a cargarla usando solo letras, números, guiones y puntos."
