@@ -207,6 +207,10 @@ if [ -n "$WABA_ID" ]; then
 else
   FALLOS=$((FALLOS+1))
   no "No pude encontrar el ID de la cuenta de WhatsApp (WABA)."
+  dato "Dos causas posibles:"
+  dato "  a) la cuenta de WhatsApp todavía no existe. Se crea desde la app:"
+  dato "     WhatsApp → Configuración de la API → botón Comenzar / Empezar."
+  dato "  b) a la clave le falta el permiso business_management."
 fi
 
 # ----------------------------------------------------------- 3. El numero
