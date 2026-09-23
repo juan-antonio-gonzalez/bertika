@@ -58,6 +58,27 @@ if [ "${1:-}" = "--en-servidor" ]; then
   exit 0
 fi
 
+# ------------------- copia en la nube (opcional, con rclone) -------------------
+# Si algun dia contratan un almacenamiento en la nube (Google Drive, S3, Backblaze,
+# etc.), alcanza con configurar rclone (`rclone config`, un "remote" llamado
+# bertika-nube) y esto sube el ultimo respaldo. Sin rclone, avisa y no hace nada.
+if [ "${1:-}" = "--nube" ]; then
+  if ! command -v rclone >/dev/null 2>&1; then
+    echo "rclone no esta instalado. Para respaldar en la nube:"
+    echo "  1) brew install rclone"
+    echo "  2) rclone config   (crear un remote llamado: bertika-nube)"
+    echo "  3) bash scripts/backup-db.sh --nube"
+    exit 1
+  fi
+  ULTIMO="$(ssh "${SSH_ARGS[@]}" "root@$SSH_HOST" "ls -t $DESTINO/bertika_*.sql.gz 2>/dev/null | head -1" || true)"
+  [ -n "$ULTIMO" ] || { echo "No hay respaldos en el servidor"; exit 1; }
+  TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+  scp -q "${SSH_ARGS[@]}" "root@$SSH_HOST:$ULTIMO" "$TMP/"
+  rclone copy "$TMP" bertika-nube:bertika-backups/ --include '*.sql.gz' --verbose
+  echo "Subido a la nube: $(basename "$ULTIMO")"
+  exit 0
+fi
+
 # ------------------- copia local (fuera del servidor) -------------------
 if [ "${1:-}" = "--traer" ]; then
   DESTINO_LOCAL="${2:-$HOME/Desktop/Proyecto/Taller-reparación/backups}"

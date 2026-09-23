@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Bertika - Copia de respaldo FUERA del servidor, todos los dias en la Mac.
+
+  Esto es la segunda pata del respaldo: el VPS guarda el respaldo diario y esta
+  tarea lo baja a la Mac, asi que si se pierde el servidor la base sigue estando.
+
+  Instalacion (una vez):
+    cp scripts/launchd/com.bertika.backup.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.bertika.backup.plist
+
+  Desinstalar:
+    launchctl unload ~/Library/LaunchAgents/com.bertika.backup.plist
+    rm ~/Library/LaunchAgents/com.bertika.backup.plist
+
+  Probar sin esperar la hora:
+    launchctl start com.bertika.backup
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.bertika.backup</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>cd "$HOME/Desktop/Proyecto/Taller-reparación" &amp;&amp; bash scripts/backup-db.sh --traer &gt;&gt; /tmp/bertika-backup-mac.log 2>&1</string>
+  </array>
+
+  <!-- Todos los dias a las 09:15 (hora de la Mac). Si esta apagada, macOS lo
+       corre cuando la prendan. -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>9</integer>
+    <key>Minute</key>
+    <integer>15</integer>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>StandardOutPath</key>
+  <string>/tmp/bertika-backup-mac.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/bertika-backup-mac.log</string>
+</dict>
+</plist>
