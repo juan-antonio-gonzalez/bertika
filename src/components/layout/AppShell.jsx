@@ -1,9 +1,15 @@
-import { useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useStore } from '../../store/store';
 import { Icon, Modal } from '../ui';
 import { AltasForm, NewOrdenForm } from '../AccionesGlobales';
 import { CONTACTO } from '../../data/siteData';
+import CentroNotificaciones from './CentroNotificaciones';
+import BusquedaGlobal from './BusquedaGlobal';
+
+// El detalle de la orden se carga solo cuando se abre desde una notificacion o
+// desde el buscador: no engorda el bundle inicial de la plataforma.
+const OrdenDetalle = lazy(() => import('../OrdenDetalle'));
 
 // Shell de la plataforma: sidebar fijo por rol + topbar con las acciones
 // globales. Reemplaza a la barra superior vieja (Shell de ui.jsx) y envuelve
@@ -131,6 +137,8 @@ export default function AppShell({ children }) {
   const [abierto, setAbierto] = useState(false); // drawer en movil
   const [nueva, setNueva] = useState(false);
   const [altas, setAltas] = useState(false);
+  const [buscar, setBuscar] = useState(false);
+  const [ordenAbierta, setOrdenAbierta] = useState(null);
 
   const ruta = CANONICO[location.pathname] || location.pathname;
   const esAdmin = user?.rol === 'admin';
@@ -145,7 +153,6 @@ export default function AppShell({ children }) {
     ] },
   ]), [user, c, esFlotilla]);
   const { grupo, label } = tituloDe(ruta, grupos);
-  const noLeidas = (data.notificaciones || []).filter((n) => !n.leida).length;
 
   // El drawer se cierra al cambiar de pantalla y con Escape.
   useEffect(() => { setAbierto(false); }, [location.pathname]);
@@ -157,6 +164,28 @@ export default function AppShell({ children }) {
   }, [abierto]);
 
   const esActivo = (it) => (it.exact ? ruta === it.to : ruta === it.to || ruta.startsWith(`${it.to}/`));
+
+  // Atajo global Ctrl+K / Cmd+K. No se dispara mientras se escribe en un campo
+  // (ahi el atajo se lo deja al navegador) ni en el propio buscador.
+  useEffect(() => {
+    const onKey = (e) => {
+      if (!(e.ctrlKey || e.metaKey) || String(e.key).toLowerCase() !== 'k') return;
+      const t = e.target;
+      const escribiendo = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
+      if (escribiendo) return;
+      e.preventDefault();
+      setBuscar((v) => !v);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, []);
+
+  // Abre el detalle de una orden desde la campana o desde el buscador.
+  const abrirOrden = (ordenId) => {
+    const orden = data.ordenes?.find((o) => o.id === ordenId);
+    if (!orden) return;
+    setOrdenAbierta(orden);
+  };
 
   const salir = () => { logout(); navigate('/'); };
 
@@ -231,14 +260,17 @@ export default function AppShell({ children }) {
               </>
             )}
             {user && (
-              <button
-                className={`shell-bell${noLeidas ? ' on' : ''}`}
-                aria-label={`Notificaciones${noLeidas ? `: ${noLeidas} sin leer` : ''}`}
-                title={noLeidas ? `${noLeidas} sin leer` : 'Sin novedades'}
-              >
-                <Icon name="bell" size={16} />
-                {noLeidas > 0 && <span className="shell-bell-n">{noLeidas > 99 ? '99+' : noLeidas}</span>}
-              </button>
+              <>
+                <button
+                  className="shell-lupa"
+                  aria-label="Buscar"
+                  title="Buscar (Ctrl+K)"
+                  onClick={() => setBuscar(true)}
+                >
+                  <Icon name="search" size={16} />
+                </button>
+                <CentroNotificaciones onAbrirOrden={abrirOrden} />
+              </>
             )}
           </div>
         </header>
@@ -255,6 +287,18 @@ export default function AppShell({ children }) {
         <Modal title="Altas administrativas" sub="Da de alta clientes, tecnicos e insumos del taller" onClose={() => setAltas(false)}>
           <AltasForm onClose={() => setAltas(false)} />
         </Modal>
+      )}
+
+      {/* Busqueda global (Ctrl+K) y detalle de orden abierto desde avisos. */}
+      <BusquedaGlobal abierto={buscar} onClose={() => setBuscar(false)} onAbrirOrden={abrirOrden} />
+      {ordenAbierta && (
+        <Suspense fallback={null}>
+          <OrdenDetalle
+            orden={ordenAbierta}
+            role={user?.rol || 'admin'}
+            onClose={() => setOrdenAbierta(null)}
+          />
+        </Suspense>
       )}
     </div>
   );
