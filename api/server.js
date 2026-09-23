@@ -1931,6 +1931,16 @@ async function cerrarAviso(ordenId, plantilla, envio) {
   }
 }
 
+// Subida de adjuntos del chat: fotos o PDF, hasta 8 MB.
+const uploadChat = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 8 * 1024 * 1024, files: 1 },
+  fileFilter: (req, file, cb) => {
+    if (/^(image\/(jpeg|png|webp|gif)|application\/pdf)$/.test(file.mimetype)) return cb(null, true);
+    cb(new Error('Solo se permiten fotos (jpg, png, webp, gif) o PDF'));
+  },
+});
+
 // ---------- Avisos automaticos por WhatsApp ----------
 let cacheAvisos = { valor: null, hasta: 0 };
 
@@ -2780,16 +2790,6 @@ function guardarArchivoChat({ buffer, mime, nombre = '' }) {
   const tipo = ext === '.pdf' ? 'documento' : (String(mime || '').split('/')[1] || 'imagen');
   return { url: `${PUBLIC_URL}/uploads/${archivo}`, tipo, nombre: limStr(nombre, 120) || `archivo${ext}` };
 }
-
-// Subida de adjuntos del chat: fotos o PDF, hasta 8 MB.
-const uploadChat = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 8 * 1024 * 1024, files: 1 },
-  fileFilter: (req, file, cb) => {
-    if (/^(image\/(jpeg|png|webp|gif)|application\/pdf)$/.test(file.mimetype)) return cb(null, true);
-    cb(new Error('Solo se permiten fotos (jpg, png, webp, gif) o PDF'));
-  },
-});
 
 const upload = multer({
   storage: multer.memoryStorage(),
