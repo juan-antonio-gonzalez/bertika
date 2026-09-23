@@ -84,6 +84,14 @@ export const TRANSITIONS = {
   cancelled: [],
 };
 
+// Estados finales: la orden ya no se toca. Lo usan la API (para rechazar
+// cambios sobre una orden entregada o cancelada) y el panel.
+export const ESTADOS_CERRADOS = ['delivered', 'cancelled'];
+
+export function esEstadoCerrado(estado) {
+  return ESTADOS_CERRADOS.includes(estado);
+}
+
 // Validacion de una transicion. Devuelve { ok } o { ok: false, err }.
 export function canTransition(orden, target) {
   const t = TRANSITIONS[orden.estado] || [];

@@ -13,5 +13,7 @@ export {
   TRANSITIONS,
   FLOW_CHAIN,
   MIN_CAPACIDAD_PCT,
+  ESTADOS_CERRADOS,
+  esEstadoCerrado,
   canTransition,
 } from '../src/data/reglas.js';

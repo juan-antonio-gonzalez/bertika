@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node scripts/test-cotizador.mjs && node scripts/test-whatsapp.mjs && node scripts/test-avisos.mjs && node scripts/test-crm.mjs && node scripts/test-clientes.mjs"
+    "test": "node scripts/test-cotizador.mjs && node scripts/test-whatsapp.mjs && node scripts/test-avisos.mjs && node scripts/test-crm.mjs && node scripts/test-clientes.mjs && node scripts/test-integridad.mjs"
   },
   "dependencies": {
     "qrcode": "^1.5.4",

@@ -45,10 +45,30 @@ if [ "${1:-}" = "--en-servidor" ]; then
   done
   gzip -c "$TMP" > "$ARCHIVO"
   chmod 600 "$ARCHIVO"
+  # Las fotos de diagnostico viven fuera de la base: sin esto quedan sin respaldo.
+  if [ -d /var/www/bertika/uploads ]; then
+    tar czf "$DESTINO/uploads_$STAMP.tar.gz" -C /var/www/bertika uploads 2>/dev/null || true
+    chmod 600 "$DESTINO/uploads_$STAMP.tar.gz" 2>/dev/null || true
+  fi
   # Limpieza: respaldos viejos (comprimidos) y los .sql vacios del script roto.
   find "$DESTINO" -name 'bertika_*.sql.gz' -mtime "+$RETENCION_DIAS" -delete
+  find "$DESTINO" -name 'uploads_*.tar.gz' -mtime "+$RETENCION_DIAS" -delete
   find "$DESTINO" -name 'bertika_*.sql' -size 0 -delete
-  echo "OK respaldo: $ARCHIVO ($(du -h "$ARCHIVO" | cut -f1)), quedan $(ls "$DESTINO"/*.sql.gz 2>/dev/null | wc -l | tr -d ' ') respaldos"
+  echo "OK respaldo: $ARCHIVO ($(du -h "$ARCHIVO" | cut -f1)), fotos: $(ls -la "$DESTINO"/uploads_*.tar.gz 2>/dev/null | tail -1 | awk '{print $5" bytes"}' || echo 'sin fotos'), quedan $(ls "$DESTINO"/*.sql.gz 2>/dev/null | wc -l | tr -d ' ') respaldos"
+  exit 0
+fi
+
+# ------------------- copia local (fuera del servidor) -------------------
+if [ "${1:-}" = "--traer" ]; then
+  DESTINO_LOCAL="${2:-$HOME/Desktop/Proyecto/Taller-reparación/backups}"
+  mkdir -p "$DESTINO_LOCAL"
+  echo "== Trayendo los ultimos respaldos a $DESTINO_LOCAL =="
+  ULTIMO_DB="$(ssh "${SSH_ARGS[@]}" "root@$SSH_HOST" "ls -t $DESTINO/bertika_*.sql.gz 2>/dev/null | head -1" || true)"
+  ULTIMO_UP="$(ssh "${SSH_ARGS[@]}" "root@$SSH_HOST" "ls -t $DESTINO/uploads_*.tar.gz 2>/dev/null | head -1" || true)"
+  if [ -z "$ULTIMO_DB" ]; then echo "  No hay respaldos en el servidor todavia"; exit 1; fi
+  scp -q "${SSH_ARGS[@]}" "root@$SSH_HOST:$ULTIMO_DB" "$DESTINO_LOCAL/" && echo "  base: $(basename "$ULTIMO_DB")"
+  if [ -n "$ULTIMO_UP" ]; then scp -q "${SSH_ARGS[@]}" "root@$SSH_HOST:$ULTIMO_UP" "$DESTINO_LOCAL/" && echo "  fotos: $(basename "$ULTIMO_UP")"; fi
+  echo "  (copia fuera del VPS: si se pierde el servidor, la base esta aca)"
   exit 0
 fi
 

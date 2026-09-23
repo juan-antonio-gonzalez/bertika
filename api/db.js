@@ -7,6 +7,9 @@ export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   max: 10,
   idleTimeoutMillis: 30000,
+  // Si el pool esta agotado, que falle rapido (error) en vez de dejar el pedido
+  // esperando una conexion para siempre.
+  connectionTimeoutMillis: 10000,
 });
 
 export async function query(text, params) {

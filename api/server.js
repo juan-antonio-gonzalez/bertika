@@ -12,13 +12,14 @@ import rateLimit from 'express-rate-limit';
 import { query, one, tx } from './db.js';
 import { nextId } from './ids.js';
 import { signToken, authRequired, requireRol, SECRET } from './middleware/auth.js';
-import { canTransition, ORDEN_ESTADOS, ESTADO_LABEL, MIN_CAPACIDAD_PCT } from './reglas.js';
+import { canTransition, ORDEN_ESTADOS, ESTADO_LABEL, MIN_CAPACIDAD_PCT, esEstadoCerrado } from './reglas.js';
 import { obtenerDolar } from './dolar.js';
 import { calcularVisita, normalizarConfig, CONFIG_DEFAULT, textoFueraCobertura } from '../src/data/cotizadorVisita.js';
 import { enviarTexto, enviarPlantilla, configPublicaWhatsApp, normalizarTelefono, normalizarEtiquetas, verificarFirma, ESTADO_ENTREGA } from './whatsapp.js';
 import { EVENTOS as EVENTOS_AVISO, PLANTILLA_POR_ESTADO, PLANTILLA_GARANTIA, normalizarAvisos, parametrosAviso, resumenAviso, debeAvisarGarantia, parametrosGarantia } from './avisos.js';
 import { normalizarEtapa, normalizarMonto } from './crm.js';
 import { generarCodigoUnico, digitar, formatearCodigo } from './codigo.js';
+import { normalizarBooleano } from './validaciones.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, 'uploads');
@@ -103,6 +104,10 @@ const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<
 
 // Migraciones leves al arrancar (idempotentes): no requieren correr un script
 // aparte ni recrear la base. Cada bloque es seguro de repetir.
+// Indice unico de wa_message_id disponible (lo setea la migracion): con el se
+// puede reservar el mensaje entrante de forma atomica sin carrera.
+let indiceWamid = false;
+
 async function asegurarCodigos() {
   await query('ALTER TABLE ordenes ADD COLUMN IF NOT EXISTS codigo_seguimiento TEXT');
   await query('ALTER TABLE ordenes ADD COLUMN IF NOT EXISTS medio_pago TEXT');
@@ -248,7 +253,21 @@ async function asegurarCodigos() {
   try {
     await query('ALTER TABLE ordenes ADD CONSTRAINT uq_ordenes_codigo UNIQUE (codigo_seguimiento)');
   } catch { /* ya existe */ }
-  console.log('[migracion] esquema asegurado (codigos, medio de pago, historial de cotizaciones, movimientos de insumos, cotizador configurable, whatsapp, crm de whatsapp, avisos automaticos, embudo comercial)');
+  // Integridad (fase 2): indices unicos que impiden duplicados reales.
+  // Van en try/catch (mismo criterio que uq_ordenes_codigo) para que un dato
+  // viejo duplicado no impida que arranque el servicio; los chequeos de la
+  // aplicacion siguen evitando los duplicados aunque un indice no se cree.
+  try {
+    await query('CREATE UNIQUE INDEX IF NOT EXISTS uq_clientes_email_lower ON clientes (LOWER(email))');
+  } catch (e) { console.error(`[migracion] indice unico de clientes: ${e.message}`); }
+  try {
+    await query('CREATE UNIQUE INDEX IF NOT EXISTS uq_bajas_bateria ON bajas (bateria_id)');
+  } catch (e) { console.error(`[migracion] indice unico de bajas: ${e.message}`); }
+  try {
+    await query('CREATE UNIQUE INDEX IF NOT EXISTS uq_wa_mensajes_wamid ON wa_mensajes (wa_message_id) WHERE wa_message_id IS NOT NULL');
+    indiceWamid = true;
+  } catch (e) { console.error(`[migracion] indice unico de mensajes: ${e.message}`); }
+  console.log('[migracion] esquema asegurado (codigos, medio de pago, historial de cotizaciones, movimientos de insumos, cotizador configurable, whatsapp, crm de whatsapp, avisos automaticos, embudo comercial, integridad)');
 }
 
 async function enviarMailContacto(d) {
@@ -299,6 +318,16 @@ function puedeEscribirOrden(req, orden) {
   return false;
 }
 
+// Las ordenes cerradas (entregadas o canceladas) no se modifican: cotizar,
+// mover insumos o sacar fotos sobre una orden ya cobrada rompia el stock, los
+// montos y la trazabilidad. Devuelve true si ya respondio (la ruta hace return).
+function rechazarSiCerrada(orden, res) {
+  if (!esEstadoCerrado(orden?.estado)) return false;
+  const etiqueta = (ESTADO_LABEL[orden.estado] || orden.estado).toLowerCase();
+  res.status(400).json({ error: `La orden ya está ${etiqueta}: no se puede modificar. Si hay que corregir algo, avisale al administrador.` });
+  return true;
+}
+
 // Filtro SQL para que cada usuario solo vea/opere sus propias notificaciones.
 function notifWhere(req) {
   if (esAdmin(req)) return { clause: 'TRUE', params: [] };
@@ -329,7 +358,7 @@ const actorDe = (req) => (req?.user
   : null);
 
 async function pushEvento(client, ordenId, tipo, detalle, actor = null) {
-  const evId = await nextId('ev');
+  const evId = await nextId('ev', client);
   const ev = { id: evId, tipo, detalle, fecha: nowIso(), usuario: actor };
   await client.query(
     `UPDATE ordenes SET eventos = eventos || $2::jsonb WHERE id = $1`,
@@ -340,7 +369,7 @@ async function pushEvento(client, ordenId, tipo, detalle, actor = null) {
 
 // Movimiento de stock de un insumo (alta, ingreso, consumo, reversion, ajuste).
 async function movimientoInsumo(client, { insumoId, tipo, cantidad, stockResultante, motivo, ordenId = null, actor = null }) {
-  const id = await nextId('mov');
+  const id = await nextId('mov', client);
   const sql = `INSERT INTO insumos_movimientos (id, insumo_id, tipo, cantidad, stock_resultante, motivo, orden_id, usuario)
     VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb)`;
   const params = [id, insumoId, tipo, Number(cantidad) || 0, stockResultante, limStr(motivo, 200), ordenId, JSON.stringify(actor)];
@@ -350,7 +379,7 @@ async function movimientoInsumo(client, { insumoId, tipo, cantidad, stockResulta
 }
 
 async function notificar(client, ordenId, mensaje, canal = 'WhatsApp') {
-  const nId = await nextId('nt');
+  const nId = await nextId('nt', client);
   const sql = 'INSERT INTO notificaciones (id, orden_id, mensaje, canal) VALUES ($1,$2,$3,$4)';
   const params = [nId, ordenId, mensaje, canal];
   if (client && typeof client.query === 'function') {
@@ -359,6 +388,13 @@ async function notificar(client, ordenId, mensaje, canal = 'WhatsApp') {
     // Sin transaccion abierta: se inserta con el pool propio (evita crash por client null)
     await query(sql, params);
   }
+}
+
+// Notificacion interna "best effort": si falla, queda en el log pero no se le
+// devuelve error al taller. Antes, si esta inserción fallaba, el endpoint
+// respondia 400 con el cambio ya aplicado (y el usuario reintentaba).
+function notificarSinFrenar(client, ordenId, mensaje, canal = 'WhatsApp') {
+  notificar(client, ordenId, mensaje, canal).catch((e) => console.error(`[notificacion] no se pudo registrar: ${e.message}`));
 }
 
 const eventoArgs = {
@@ -381,10 +417,14 @@ async function transition(cliente, orden, target, detalle, actor = null) {
   if (target === 'quoted') sets.estado_cotizacion = 'pending';
   if (target === 'approved') sets.estado_cotizacion = 'approved';
   if (target === 'delivered') sets.fecha_entrega = nowIso();
-  await cliente.query(
-    `UPDATE ordenes SET estado = $2, estado_cotizacion = COALESCE($3, estado_cotizacion), fecha_entrega = COALESCE($4, fecha_entrega) WHERE id = $1`,
-    [orden.id, sets.estado, sets.estado_cotizacion ?? null, sets.fecha_entrega ?? null]
+  // Control optimista: el UPDATE solo vale si la orden sigue en el estado que
+  // leimos. Si otro la movio en el medio, no se pisa y se avisa para recargar.
+  const upd = await cliente.query(
+    `UPDATE ordenes SET estado = $2, estado_cotizacion = COALESCE($3, estado_cotizacion), fecha_entrega = COALESCE($4, fecha_entrega)
+     WHERE id = $1 AND estado = $5`,
+    [orden.id, sets.estado, sets.estado_cotizacion ?? null, sets.fecha_entrega ?? null, orden.estado]
   );
+  if (upd.rowCount === 0) throw { status: 409, message: 'La orden cambió de estado mientras la mirabas: recargá y volvé a intentar.' };
   // notificaciones simuladas
   if (target === 'ready') await notificar(cliente, orden.id, `Orden ${orden.id}: reparación completada, batería lista para retirar.`, 'WhatsApp');
   if (target === 'delivered') await notificar(cliente, orden.id, `Orden ${orden.id}: batería entregada y cobrada. Garantía activada.`, 'WhatsApp');
@@ -599,7 +639,7 @@ app.post('/api/ordenes', authRequired, requireRol('admin'), async (req, res) => 
   const ordId = await tx(async (client) => {
     let bat = (await client.query('SELECT * FROM baterias WHERE numero_serie = $1', [serieT])).rows[0];
     if (!bat) {
-      const batId = await nextId('bat');
+      const batId = await nextId('bat', client);
       await client.query(
         `INSERT INTO baterias (id, numero_serie, tipo, voltaje, capacidad, aplicacion, marca, modelo, equipo, fecha_fabricacion, cliente_id, ciclos_estimados, estado_vida)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,300,'activa')`,
@@ -607,8 +647,8 @@ app.post('/api/ordenes', authRequired, requireRol('admin'), async (req, res) => 
       );
       bat = { id: batId, numero_serie: serieT };
     }
-    const evId = await nextId('ev');
-    const ordId = await nextId('ord');
+    const evId = await nextId('ev', client);
+    const ordId = await nextId('ord', client);
     const codigo = await generarCodigoUnico(async (cod) => {
       const r = await client.query('SELECT 1 FROM ordenes WHERE codigo_seguimiento = $1', [cod]);
       return r.rowCount > 0;
@@ -624,7 +664,7 @@ app.post('/api/ordenes', authRequired, requireRol('admin'), async (req, res) => 
     );
     return ordId;
   });
-  await notificar(null, ordId, `Orden ${ordId}: batería ingresada al taller.`, 'Email');
+  notificarSinFrenar(null, ordId, `Orden ${ordId}: batería ingresada al taller.`, 'Email');
   avisarOrden(ordId); // no se espera: el aviso no debe demorar la respuesta
   return res.status(201).json({ id: ordId });
 });
@@ -677,7 +717,7 @@ app.post('/api/ordenes/:id/diagnostico', authRequired, async (req, res) => {
     // si ya lo estaba), que es el unico origen valido hacia 'quoted'.
     await transition(client, { ...o, estado: 'diagnosing' }, 'quoted', `Diagnóstico completado. Cotización generada por ${servicioT || 'el servicio'}.`, actorDe(req));
   });
-  await notificar(null, req.params.id, `Orden ${req.params.id}: diagnóstico registrado y cotización generada. El cliente debe aprobarla.`, 'Email');
+  notificarSinFrenar(null, req.params.id, `Orden ${req.params.id}: diagnóstico registrado y cotización generada. El cliente debe aprobarla.`, 'Email');
   avisarOrden(req.params.id); // aviso automático: presupuesto listo
   return res.json({ ok: true });
 });
@@ -691,22 +731,29 @@ app.post('/api/ordenes/:id/cotizacion', authRequired, async (req, res) => {
   const orden = await one('SELECT * FROM ordenes WHERE id = $1', [req.params.id]);
   if (!orden) return res.status(404).json({ error: 'Orden no encontrada' });
   if (!puedeEscribirOrden(req, orden)) return res.status(403).json({ error: 'Sin permisos para esta orden' });
+  if (rechazarSiCerrada(orden, res)) return;
   const detalleCot = {
     monto: montoN,
     servicios_costos: (servicios || []).slice(0, 50).map((s) => ({ nombre: limStr(s.nombre, 120) || 'Servicio', monto: Math.max(0, Math.min(Number(s.monto) || 0, 1e9)) })),
     insumos: (insumos || []).slice(0, 50).map((i) => ({ nombre: limStr(i.nombre, 120) || 'Insumo', cantidad: Math.max(0, Math.min(Number(i.cantidad) || 1, 1e4)), precio: Math.max(0, Math.min(Number(i.precio) || 0, 1e9)) })),
   };
-  await query(
-    `UPDATE ordenes SET cotizacion = $2::jsonb, estado = 'quoted', estado_cotizacion = 'pending' WHERE id = $1`,
-    [orden.id, JSON.stringify(detalleCot)]
-  );
-  // Versionado: cada cotizacion guardada queda en el historial con su autor.
-  await query(
-    'INSERT INTO cotizaciones_historial (id, orden_id, monto, detalle, usuario) VALUES ($1,$2,$3,$4::jsonb,$5::jsonb)',
-    [await nextId('cot'), orden.id, montoN, JSON.stringify(detalleCot), JSON.stringify(actorDe(req))]
-  );
+  // Cotizacion + version en el historial + evento, todo en UNA transaccion: si
+  // algo falla no queda una cotizacion sin su rastro de auditoria.
   await tx(async (client) => {
-    const o = (await client.query('SELECT * FROM ordenes WHERE id = $1', [req.params.id])).rows[0];
+    const o = (await client.query('SELECT * FROM ordenes WHERE id = $1 FOR UPDATE', [orden.id])).rows[0];
+    if (!o) throw { status: 404, message: 'Orden no encontrada' };
+    if (esEstadoCerrado(o.estado)) {
+      throw { status: 400, message: `La orden ya está ${(ESTADO_LABEL[o.estado] || o.estado).toLowerCase()}: no se puede recotizar.` };
+    }
+    await client.query(
+      `UPDATE ordenes SET cotizacion = $2::jsonb, estado = 'quoted', estado_cotizacion = 'pending' WHERE id = $1`,
+      [o.id, JSON.stringify(detalleCot)]
+    );
+    const cotId = await nextId('cot', client);
+    await client.query(
+      'INSERT INTO cotizaciones_historial (id, orden_id, monto, detalle, usuario) VALUES ($1,$2,$3,$4::jsonb,$5::jsonb)',
+      [cotId, o.id, montoN, JSON.stringify(detalleCot), JSON.stringify(actorDe(req))]
+    );
     await pushEvento(client, o.id, 'cotizacion', `Cotización generada por ${fmtARS.format(montoN)}.`, actorDe(req));
   });
   avisarOrden(orden.id); // aviso automático: presupuesto listo
@@ -723,27 +770,35 @@ app.get('/api/ordenes/:id/cotizaciones', authRequired, async (req, res) => {
 
 app.post('/api/ordenes/:id/insumos', authRequired, async (req, res) => {
   const { insumo_id, cantidad } = req.body || {};
-  const cant = Number(cantidad) || 0;
+  const cant = numEnRango(cantidad, 0.01, 1000000);
+  if (cant === null) return res.status(400).json({ error: 'La cantidad tiene que ser un numero mayor a 0' });
   const resultado = await tx(async (client) => {
     const o = (await client.query('SELECT * FROM ordenes WHERE id = $1', [req.params.id])).rows[0];
     if (!o) throw { status: 404, message: 'Orden no encontrada' };
     if (!puedeEscribirOrden(req, o)) throw { status: 403, message: 'Sin permisos para esta orden' };
+    if (esEstadoCerrado(o.estado)) {
+      throw { status: 400, message: `La orden ya está ${(ESTADO_LABEL[o.estado] || o.estado).toLowerCase()}: no se le pueden cargar insumos.` };
+    }
     const i = (await client.query('SELECT * FROM insumos WHERE id = $1', [insumo_id])).rows[0];
     if (!i) throw { status: 404, message: 'Insumo no encontrado' };
-    if (cant <= 0) throw { status: 400, message: 'Cantidad invalida' };
-    if (i.stock < cant) throw { status: 400, message: `Stock insuficiente de ${i.nombre} (disponible: ${i.stock})` };
-    await client.query('UPDATE insumos SET stock = stock - $2 WHERE id = $1', [i.id, cant]);
+    // Descuento atomico: la condicion stock >= cant la evalua la base en el
+    // mismo UPDATE, asi dos consumos simultaneos no dejan el stock negativo.
+    const act = (await client.query(
+      'UPDATE insumos SET stock = stock - $2 WHERE id = $1 AND stock >= $2 RETURNING stock',
+      [i.id, cant]
+    )).rows[0];
+    if (!act) throw { status: 400, message: `No alcanza el stock de ${i.nombre} (disponible: ${i.stock})` };
+    const stockNuevo = act.stock;
     await client.query(
       `UPDATE ordenes SET insumos_utilizados = insumos_utilizados || $2::jsonb WHERE id = $1`,
       [o.id, JSON.stringify([{ insumo_id: i.id, nombre: i.nombre, cantidad: cant, precio: i.precio }])]
     );
     await pushEvento(client, o.id, 'insumo', `Insumo utilizado: ${i.nombre} x${cant}`, actorDe(req));
-    const critico = i.stock - cant < 3;
     await movimientoInsumo(client, {
-      insumoId: i.id, tipo: 'consumo', cantidad: cant, stockResultante: i.stock - cant,
+      insumoId: i.id, tipo: 'consumo', cantidad: cant, stockResultante: stockNuevo,
       motivo: `Consumo en orden ${o.id}`, ordenId: o.id, actor: actorDe(req),
     });
-    return { critico, stockNuevo: i.stock - cant, nombre: i.nombre };
+    return { critico: stockNuevo < 3, stockNuevo, nombre: i.nombre };
   });
   return res.json({ ok: true, critico: resultado ? resultado.critico : false });
 });
@@ -753,9 +808,14 @@ app.post('/api/ordenes/:id/insumos', authRequired, async (req, res) => {
 app.delete('/api/ordenes/:id/insumos/:indice', authRequired, async (req, res) => {
   const indice = Number(req.params.indice);
   const revertido = await tx(async (client) => {
-    const o = (await client.query('SELECT * FROM ordenes WHERE id = $1', [req.params.id])).rows[0];
+    // FOR UPDATE: serializa dos reversiones simultaneas de la misma orden (si se
+    // pisaban, el stock se devolvia dos veces y quedaba mercaderia fantasma).
+    const o = (await client.query('SELECT * FROM ordenes WHERE id = $1 FOR UPDATE', [req.params.id])).rows[0];
     if (!o) throw { status: 404, message: 'Orden no encontrada' };
     if (!puedeEscribirOrden(req, o)) throw { status: 403, message: 'Sin permisos para esta orden' };
+    if (esEstadoCerrado(o.estado)) {
+      throw { status: 400, message: `La orden ya está ${(ESTADO_LABEL[o.estado] || o.estado).toLowerCase()}: no se puede devolver stock.` };
+    }
     const usados = Array.isArray(o.insumos_utilizados) ? o.insumos_utilizados : [];
     if (!Number.isInteger(indice) || indice < 0 || indice >= usados.length) {
       throw { status: 400, message: 'El insumo indicado no existe en esta orden' };
@@ -811,7 +871,11 @@ app.post('/api/ordenes/:id/prueba-final', authRequired, async (req, res) => {
       ? `Prueba final APROBADA. Capacidad medida: ${capNum} Ah.${obs ? ` ${obs}` : ''}`
       : `Prueba final FALLIDA. Capacidad medida: ${capNum} Ah. Regresa a reparación: ${obs || 'se requiere reproceso'}`;
     await pushEvento(client, o.id, evTipo, evDet, actorDe(req));
-    await client.query('UPDATE ordenes SET estado = $2 WHERE id = $1', [o.id, passed ? 'ready' : 'in_repair']);
+    const upd = await client.query(
+      "UPDATE ordenes SET estado = $2 WHERE id = $1 AND estado = 'testing'",
+      [o.id, passed ? 'ready' : 'in_repair']
+    );
+    if (upd.rowCount === 0) throw { status: 409, message: 'La orden cambió de estado mientras la mirabas: recargá y volvé a intentar.' };
   });
   if (passed) avisarOrden(req.params.id); // aviso automático: lista para retirar
   return res.json({ ok: true });
@@ -828,33 +892,46 @@ app.post('/api/ordenes/:id/entregar', authRequired, requireRol('admin'), async (
     const gMeses = Number(garantia_meses) || 6;
     const gCiclos = Number(garantia_ciclos) || 100;
     const vence = new Date(Date.now() + gMeses * 30.44 * 86400000).toISOString();
-    await client.query(
-      `UPDATE ordenes SET estado = 'delivered', monto_cobrado = $2, fecha_entrega = $3, garantia = $4::jsonb, medio_pago = $5 WHERE id = $1`,
+    const upd = await client.query(
+      `UPDATE ordenes SET estado = 'delivered', monto_cobrado = $2, fecha_entrega = $3, garantia = $4::jsonb, medio_pago = $5
+       WHERE id = $1 AND estado = 'ready'`,
       [o.id, monto, nowIso(), JSON.stringify({ meses: gMeses, ciclos: gCiclos, vence }), medioT || null]
     );
+    if (upd.rowCount === 0) throw { status: 409, message: 'La orden cambió de estado mientras la mirabas: recargá y volvé a intentar.' };
     await client.query('UPDATE baterias SET estado_vida = $2 WHERE numero_serie = $1', [o.bateria_serie, 'en_garantia']);
     await pushEvento(client, o.id, 'entregada',
       `Batería entregada al cliente. ${fmtARS.format(monto)} cobrados${medioT ? ` (${medioT})` : ''}. Garantía ${gMeses} meses / ${gCiclos} ciclos.`,
       actorDe(req));
   });
-  await notificar(null, req.params.id, `Orden ${req.params.id}: batería entregada y cobrada. Garantía activada.`, 'WhatsApp');
+  notificarSinFrenar(null, req.params.id, `Orden ${req.params.id}: batería entregada y cobrada. Garantía activada.`, 'WhatsApp');
   return res.json({ ok: true });
 });
 
 app.post('/api/ordenes/:id/baja', authRequired, requireRol('admin'), async (req, res) => {
   const { motivo } = req.body || {};
+  const motivoT = limStr(motivo, 300) || 'No reparable / fuera de vida util';
   const baja = await tx(async (client) => {
-    const o = (await client.query('SELECT * FROM ordenes WHERE id = $1', [req.params.id])).rows[0];
+    const o = (await client.query('SELECT * FROM ordenes WHERE id = $1 FOR UPDATE', [req.params.id])).rows[0];
     if (!o) throw { status: 404, message: 'Orden no encontrada' };
+    // Una orden ya entregada y cobrada no se da de baja (cambiaria el estado de
+    // una venta cerrada y la vida de la bateria).
+    if (o.estado === 'delivered') {
+      throw { status: 400, message: 'La orden ya fue entregada y cobrada: no se puede dar de baja.' };
+    }
     const b = (await client.query('SELECT * FROM baterias WHERE numero_serie = $1', [o.bateria_serie])).rows[0];
+    const batId = b ? b.id : o.bateria_serie;
+    // Idempotencia: una bateria no puede tener dos bajas (antes, repetir el
+    // pedido duplicaba filas en el panel de reciclaje).
+    const ya = (await client.query('SELECT id FROM bajas WHERE bateria_id = $1', [batId])).rows[0];
+    if (ya) throw { status: 409, message: `Esa batería ya tiene una baja registrada (${ya.id}).` };
     await client.query('UPDATE ordenes SET estado = $2 WHERE id = $1', [o.id, 'cancelled']);
     if (b) await client.query('UPDATE baterias SET estado_vida = $2 WHERE id = $1', [b.id, 'dada_de_baja']);
-    const bajaId = await nextId('baja');
+    const bajaId = await nextId('baja', client);
     await client.query(
       `INSERT INTO bajas (id, bateria_id, serie, fecha, motivo, disposicion, reciclada) VALUES ($1,$2,$3,$4,$5,'Pendiente de disposicion responsable',false)`,
-      [bajaId, b ? b.id : o.bateria_serie, o.bateria_serie, nowIso(), motivo || 'No reparable / fuera de vida util']
+      [bajaId, batId, o.bateria_serie, nowIso(), motivoT]
     );
-    await pushEvento(client, o.id, 'baja', `Batería ${o.bateria_serie} dada de baja: ${motivo || 'no reparable'}. Trazabilidad activa para reciclaje.`, actorDe(req));
+    await pushEvento(client, o.id, 'baja', `Batería ${o.bateria_serie} dada de baja: ${motivoT}. Trazabilidad activa para reciclaje.`, actorDe(req));
     return { id: bajaId, serie: o.bateria_serie };
   });
   return res.json({ ok: true, baja });
@@ -897,26 +974,34 @@ app.post('/api/insumos', authRequired, requireRol('admin'), async (req, res) => 
   const { nombre, categoria, stock, precio } = req.body || {};
   const nombreT = limStr(nombre, 120);
   if (!nombreT) return res.status(400).json({ error: 'Falta nombre' });
-  const id = await nextId('ins');
   const stockInicial = Math.max(0, Math.min(Number(stock) || 0, 1000000));
-  await query('INSERT INTO insumos (id, nombre, categoria, stock, precio) VALUES ($1,$2,$3,$4,$5)', [
-    id, nombreT, limStr(categoria, 60), stockInicial, Math.max(0, Math.min(Number(precio) || 0, 1e9)),
-  ]);
-  await movimientoInsumo(null, { insumoId: id, tipo: 'alta', cantidad: stockInicial, stockResultante: stockInicial, motivo: 'Alta de insumo', actor: actorDe(req) });
+  // Alta + movimiento de stock en una transaccion: si falla el movimiento no
+  // queda un insumo sin su rastro de auditoria.
+  const id = await tx(async (client) => {
+    const nuevo = await nextId('ins', client);
+    await client.query('INSERT INTO insumos (id, nombre, categoria, stock, precio) VALUES ($1,$2,$3,$4,$5)', [
+      nuevo, nombreT, limStr(categoria, 60), stockInicial, Math.max(0, Math.min(Number(precio) || 0, 1e9)),
+    ]);
+    await movimientoInsumo(client, { insumoId: nuevo, tipo: 'alta', cantidad: stockInicial, stockResultante: stockInicial, motivo: 'Alta de insumo', actor: actorDe(req) });
+    return nuevo;
+  });
   return res.status(201).json({ id });
 });
 
 app.patch('/api/insumos/:id/stock', authRequired, requireRol('admin'), async (req, res) => {
   const { cantidad, motivo } = req.body || {};
-  const cant = Number(cantidad) || 0;
-  if (cant <= 0) return res.status(400).json({ error: 'Cantidad invalida' });
-  const r = await query('UPDATE insumos SET stock = stock + $2 WHERE id = $1 RETURNING *', [req.params.id, cant]);
-  if (!r.length) return res.status(404).json({ error: 'Insumo no encontrado' });
-  await movimientoInsumo(null, {
-    insumoId: r[0].id, tipo: 'ingreso', cantidad: cant, stockResultante: r[0].stock,
-    motivo: limStr(motivo, 200) || 'Ingreso de stock', actor: actorDe(req),
+  const cant = numEnRango(cantidad, 0.01, 1000000);
+  if (cant === null) return res.status(400).json({ error: 'La cantidad tiene que ser un numero mayor a 0' });
+  const r = await tx(async (client) => {
+    const upd = (await client.query('UPDATE insumos SET stock = stock + $2 WHERE id = $1 RETURNING *', [req.params.id, cant])).rows[0];
+    if (!upd) throw { status: 404, message: 'Insumo no encontrado' };
+    await movimientoInsumo(client, {
+      insumoId: upd.id, tipo: 'ingreso', cantidad: cant, stockResultante: upd.stock,
+      motivo: limStr(motivo, 200) || 'Ingreso de stock', actor: actorDe(req),
+    });
+    return upd;
   });
-  return res.json({ ok: true, stock: r[0].stock });
+  return res.json({ ok: true, stock: r.stock });
 });
 
 // Ajuste por recuento fisico: fija el stock real y registra la diferencia con motivo.
@@ -929,12 +1014,15 @@ app.post('/api/insumos/:id/ajuste', authRequired, requireRol('admin'), async (re
   const previo = await one('SELECT * FROM insumos WHERE id = $1', [req.params.id]);
   if (!previo) return res.status(404).json({ error: 'Insumo no encontrado' });
   const nuevo = Math.round(contado);
-  await query('UPDATE insumos SET stock = $2 WHERE id = $1', [previo.id, nuevo]);
-  await movimientoInsumo(null, {
-    insumoId: previo.id, tipo: 'ajuste', cantidad: nuevo - previo.stock, stockResultante: nuevo,
-    motivo: motivoT, actor: actorDe(req),
+  const diferencia = await tx(async (client) => {
+    const upd = (await client.query('UPDATE insumos SET stock = $2 WHERE id = $1 RETURNING stock', [previo.id, nuevo])).rows[0];
+    await movimientoInsumo(client, {
+      insumoId: previo.id, tipo: 'ajuste', cantidad: nuevo - previo.stock, stockResultante: upd.stock,
+      motivo: motivoT, actor: actorDe(req),
+    });
+    return nuevo - previo.stock;
   });
-  return res.json({ ok: true, stock: nuevo, diferencia: nuevo - previo.stock });
+  return res.json({ ok: true, stock: nuevo, diferencia });
 });
 
 app.get('/api/insumos/:id/movimientos', authRequired, requireRol('admin', 'tecnico'), async (req, res) => {
@@ -952,10 +1040,19 @@ app.post('/api/clientes', authRequired, requireRol('admin'), async (req, res) =>
   const nombreT = limStr(nombre, 120);
   const emailT = String(email || '').trim();
   if (!nombreT || !validEmail(emailT)) return res.status(400).json({ error: 'Faltan nombre y email valido' });
+  // El email no puede estar repetido: se avisa con un mensaje de negocio en vez
+  // del error crudo de Postgres (el indice unico es la red de seguridad).
+  const existente = await one('SELECT id, nombre FROM clientes WHERE LOWER(email) = LOWER($1)', [emailT]);
+  if (existente) return res.status(409).json({ error: `Ya hay un cliente cargado con ese email (${existente.nombre}).` });
   const id = await nextId('cli');
-  await query('INSERT INTO clientes (id, nombre, tipo, telefono, contacto, email, empresa) VALUES ($1,$2,$3,$4,$5,$6,$7)', [
-    id, nombreT, 'particular', limStr(telefono, 40), nombreT, emailT, limStr(empresa, 120),
-  ]);
+  try {
+    await query('INSERT INTO clientes (id, nombre, tipo, telefono, contacto, email, empresa) VALUES ($1,$2,$3,$4,$5,$6,$7)', [
+      id, nombreT, 'particular', limStr(telefono, 40), nombreT, emailT, limStr(empresa, 120),
+    ]);
+  } catch (e) {
+    if (e.code === '23505') return res.status(409).json({ error: 'Ya hay un cliente cargado con ese email.' });
+    throw e;
+  }
   return res.status(201).json({ id });
 });
 
@@ -967,10 +1064,15 @@ app.post('/api/clientes/find-or-create', authRequired, requireRol('admin'), asyn
   if (exist) return res.json({ id: exist.id });
   const id = await nextId('cli');
   const nombreT = limStr(nombre, 120) || 'Cliente';
-  await query('INSERT INTO clientes (id, nombre, tipo, telefono, contacto, email, empresa) VALUES ($1,$2,$3,$4,$5,$6,$7)', [
-    id, nombreT, 'particular', limStr(telefono, 40), nombreT, emailT, limStr(empresa, 120),
-  ]);
-  return res.status(201).json({ id });
+  // ON CONFLICT DO NOTHING + relectura: si dos pedidos del mismo email entran
+  // juntos, uno crea la ficha y el otro la reutiliza (antes se duplicaba).
+  await query(
+    `INSERT INTO clientes (id, nombre, tipo, telefono, contacto, email, empresa) VALUES ($1,$2,$3,$4,$5,$6,$7)
+     ON CONFLICT DO NOTHING`,
+    [id, nombreT, 'particular', limStr(telefono, 40), nombreT, emailT, limStr(empresa, 120)]
+  );
+  const creado = await one('SELECT id FROM clientes WHERE LOWER(email) = LOWER($1)', [emailT]);
+  return res.status(201).json({ id: creado?.id || id });
 });
 
 // ---------- Tecnicos ----------
@@ -1065,7 +1167,11 @@ app.patch('/api/usuarios/:id', authRequired, requireRol('admin'), async (req, re
   if (cliente_id !== undefined) { params.push(cliente_id ? limStr(cliente_id, 32) : null); sets.push(`cliente_id = $${params.length}`); }
   if (activo !== undefined) {
     if (isSelf) return res.status(403).json({ error: 'No podes desactivarte a vos mismo' });
-    params.push(Boolean(activo)); sets.push(`activo = $${params.length}`);
+    // Ojo: antes era Boolean(activo), y el texto "false" dejaba al usuario
+    // ACTIVO. Ahora se valida y un valor raro se rechaza.
+    const activoBool = normalizarBooleano(activo);
+    if (activoBool === null) return res.status(400).json({ error: 'El campo activo tiene que ser true o false' });
+    params.push(activoBool); sets.push(`activo = $${params.length}`);
   }
   if (password !== undefined && password !== null && password !== '') {
     if (!validPassword(password)) return res.status(400).json({ error: 'Password invalido (min 8 caracteres)' });
@@ -1130,16 +1236,21 @@ app.put('/api/cotizador', authRequired, requireRol('admin'), async (req, res) =>
   } catch (e) {
     return res.status(400).json({ error: e.message });
   }
-  await query(
-    `INSERT INTO cotizador_config (id, config, actualizado_en, actualizado_por)
-     VALUES ('actual', $1::jsonb, now(), $2)
-     ON CONFLICT (id) DO UPDATE SET config = EXCLUDED.config, actualizado_en = now(), actualizado_por = EXCLUDED.actualizado_por`,
-    [JSON.stringify(config), req.user.email]
-  );
-  await query(
-    'INSERT INTO cotizador_config_historial (id, config, usuario) VALUES ($1, $2::jsonb, $3::jsonb)',
-    [await nextId('cfg'), JSON.stringify(config), JSON.stringify(actorDe(req))]
-  );
+  // Config + historial en una transaccion: la config vigente y su version
+  // tienen que guardarse juntas (si no, quedaba un cambio sin trazabilidad).
+  await tx(async (client) => {
+    await client.query(
+      `INSERT INTO cotizador_config (id, config, actualizado_en, actualizado_por)
+       VALUES ('actual', $1::jsonb, now(), $2)
+       ON CONFLICT (id) DO UPDATE SET config = EXCLUDED.config, actualizado_en = now(), actualizado_por = EXCLUDED.actualizado_por`,
+      [JSON.stringify(config), req.user.email]
+    );
+    const cfgId = await nextId('cfg', client);
+    await client.query(
+      'INSERT INTO cotizador_config_historial (id, config, usuario) VALUES ($1, $2::jsonb, $3::jsonb)',
+      [cfgId, JSON.stringify(config), JSON.stringify(actorDe(req))]
+    );
+  });
   await configCotizador({ forzar: true });
   return res.json({ ok: true, config, actualizadoPor: req.user.email });
 });
@@ -1294,14 +1405,20 @@ app.post('/api/public/contacto', contactoLimiter, async (req, res) => {
     await tx(async (client) => {
       let c = (await client.query('SELECT * FROM clientes WHERE LOWER(email) = LOWER($1)', [emailT])).rows[0];
       if (!c) {
-        const cid = await nextId('cli');
-        await client.query('INSERT INTO clientes (id, nombre, tipo, telefono, contacto, email, empresa) VALUES ($1,$2,$3,$4,$5,$6,$7)', [
-          cid, nombreT, 'particular', limStr(telefono, 40), nombreT, emailT, empresaT,
-        ]);
-        c = { id: cid, nombre: nombreT };
+        const cid = await nextId('cli', client);
+        // ON CONFLICT DO NOTHING + relectura: si dos consultas del mismo email
+        // entran juntas, una gana y la otra reutiliza esa ficha (antes se
+        // creaban clientes duplicados).
+        await client.query(
+          `INSERT INTO clientes (id, nombre, tipo, telefono, contacto, email, empresa) VALUES ($1,$2,$3,$4,$5,$6,$7)
+           ON CONFLICT DO NOTHING`,
+          [cid, nombreT, 'particular', limStr(telefono, 40), nombreT, emailT, empresaT]
+        );
+        c = (await client.query('SELECT * FROM clientes WHERE LOWER(email) = LOWER($1)', [emailT])).rows[0]
+          || { id: cid, nombre: nombreT };
       }
-      const evId = await nextId('ev');
-      const ordId = await nextId('ord');
+      const evId = await nextId('ev', client);
+      const ordId = await nextId('ord', client);
       const codigo = await generarCodigoUnico(async (cod) => {
         const r = await client.query('SELECT 1 FROM ordenes WHERE codigo_seguimiento = $1', [cod]);
         return r.rowCount > 0;
@@ -1320,16 +1437,22 @@ app.post('/api/public/contacto', contactoLimiter, async (req, res) => {
   }
 
   // Si la consulta viene del cotizador de visitas, se adjunta la estimación
-  // guardada (con importes y cotización del dólar) y queda marcada como solicitada.
+  // guardada (con importes y cotización del dólar) y queda marcada como
+  // solicitada. Todo dentro de una transacción y con el estado como condición:
+  // dos envíos simultáneos no la marcan dos veces.
   let cotizacionDetalle = '';
   const cotCodigo = limStr(cotizacion_codigo, 20).toUpperCase();
   if (cotCodigo) {
-    const c = await one('SELECT id, total, moneda, dolar, resumen, estado FROM cotizaciones_visita WHERE id = $1', [cotCodigo]);
-    if (c) {
+    cotizacionDetalle = await tx(async (client) => {
+      const c = (await client.query('SELECT id, total, moneda, dolar, resumen, estado FROM cotizaciones_visita WHERE id = $1 FOR UPDATE', [cotCodigo])).rows[0];
+      if (!c) return '';
       const d = c.dolar || {};
-      cotizacionDetalle = `${c.id} · ${c.moneda} ${c.total}${d.venta ? ` · dólar ${d.casa || 'oficial'} venta ${d.venta}${d.fuente ? ` (${d.fuente})` : ''}` : ''}\n${c.resumen}`;
-      if (c.estado === 'estimada') await query("UPDATE cotizaciones_visita SET estado = 'solicitada' WHERE id = $1", [c.id]);
-    }
+      const texto = `${c.id} · ${c.moneda} ${c.total}${d.venta ? ` · dólar ${d.casa || 'oficial'} venta ${d.venta}${d.fuente ? ` (${d.fuente})` : ''}` : ''}\n${c.resumen}`;
+      if (c.estado === 'estimada') {
+        await client.query("UPDATE cotizaciones_visita SET estado = 'solicitada' WHERE id = $1 AND estado = 'estimada'", [c.id]);
+      }
+      return texto;
+    });
   }
 
   const mail = await enviarMailContacto({ nombre: nombreT, empresa: empresaT, email: emailT, telefono: limStr(telefono, 40), serie: serieTxt, asunto: asuntoT, mensaje: mensajeT, codigo: codigoTxt, cotizacionDetalle });
@@ -1377,21 +1500,58 @@ async function conversacionDe(telefono, nombrePerfil = null) {
 }
 
 async function guardarMensaje({ conversacion, direccion, tipo, texto, plantilla = null, waMessageId = null, estado = null, error = null, fecha = null }) {
-  const id = await nextId('wams');
-  await query(
-    `INSERT INTO wa_mensajes (id, conversacion_id, wa_message_id, direccion, telefono, tipo, texto, plantilla, estado, error, fecha)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, COALESCE($11::timestamptz, now()))`,
-    [id, conversacion.id, waMessageId, direccion, conversacion.telefono, tipo, texto, plantilla, estado, error, fecha]
-  );
-  if (direccion === 'in') {
-    await query(
-      "UPDATE wa_conversaciones SET ultimo_texto = $2, ultima_fecha = now(), no_leidos = COALESCE(no_leidos, 0) + 1, estado = 'abierta' WHERE id = $1",
-      [conversacion.id, texto || `[${tipo}]`]
+  // Mensaje + resumen de la conversacion en UNA transaccion: antes podia quedar
+  // el mensaje guardado sin actualizar el ultimo texto o los no leidos.
+  // Si viene wa_message_id y existe el indice unico, la reserva es atomica: un
+  // aviso repetido de Meta (o un reintento del mismo envio) no se duplica y
+  // devuelve null.
+  return tx(async (client) => {
+    const id = await nextId('wams', client);
+    const dedupe = Boolean(waMessageId) && indiceWamid;
+    const ins = await client.query(
+      `INSERT INTO wa_mensajes (id, conversacion_id, wa_message_id, direccion, telefono, tipo, texto, plantilla, estado, error, fecha)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, COALESCE($11::timestamptz, now()))
+       ${dedupe ? 'ON CONFLICT (wa_message_id) WHERE wa_message_id IS NOT NULL DO NOTHING' : ''}
+       RETURNING id`,
+      [id, conversacion.id, waMessageId, direccion, conversacion.telefono, tipo, texto, plantilla, estado, error, fecha]
     );
+    if (!ins.rows.length) return null; // ya estaba cargado: no se duplica
+    if (direccion === 'in') {
+      await client.query(
+        "UPDATE wa_conversaciones SET ultimo_texto = $2, ultima_fecha = now(), no_leidos = COALESCE(no_leidos, 0) + 1, estado = 'abierta' WHERE id = $1",
+        [conversacion.id, texto || `[${tipo}]`]
+      );
+    } else {
+      await client.query('UPDATE wa_conversaciones SET ultimo_texto = $2, ultima_fecha = now() WHERE id = $1', [conversacion.id, texto || `[${tipo}]`]);
+    }
+    return id;
+  });
+}
+
+// Reserva el aviso ANTES de mandarlo: si otro proceso ya lo reservo o ya lo
+// mando, no se vuelve a enviar. (Antes se enviaba y recien despues se anotaba,
+// asi que dos procesos podian mandar la misma plantilla dos veces.)
+async function reservarAviso(ordenId, plantilla) {
+  const r = await one(
+    `INSERT INTO wa_avisos_log (orden_id, plantilla, estado) VALUES ($1, $2, 'enviando')
+     ON CONFLICT (orden_id, plantilla) DO UPDATE SET estado = 'enviando', error = NULL, fecha = now()
+       WHERE wa_avisos_log.estado <> 'enviado'
+         AND (wa_avisos_log.estado <> 'enviando' OR wa_avisos_log.fecha < now() - interval '10 minutes')
+     RETURNING orden_id`,
+    [ordenId, plantilla]
+  );
+  return Boolean(r);
+}
+
+// Cierra la reserva: si salio queda 'enviado' (y no se repite nunca mas); si
+// fallo se libera para poder reintentar. El intento fallido igual queda en la
+// bandeja como mensaje con error, asi el taller lo ve.
+async function cerrarAviso(ordenId, plantilla, envio) {
+  if (envio.ok) {
+    await query("UPDATE wa_avisos_log SET estado = 'enviado', error = NULL, fecha = now() WHERE orden_id = $1 AND plantilla = $2", [ordenId, plantilla]);
   } else {
-    await query('UPDATE wa_conversaciones SET ultimo_texto = $2, ultima_fecha = now() WHERE id = $1', [conversacion.id, texto || `[${tipo}]`]);
+    await query('DELETE FROM wa_avisos_log WHERE orden_id = $1 AND plantilla = $2', [ordenId, plantilla]);
   }
-  return id;
 }
 
 // ---------- Avisos automaticos por WhatsApp ----------
@@ -1417,14 +1577,13 @@ async function avisarOrden(ordenId) {
     if (!plantilla) return;
     const activos = await configAvisos();
     if (!activos[orden.estado]) return;
-    const ya = await one("SELECT 1 AS x FROM wa_avisos_log WHERE orden_id = $1 AND plantilla = $2 AND estado = 'enviado'", [orden.id, plantilla]);
-    if (ya) return;
     const cliente = orden.cliente_id
       ? await one('SELECT id, nombre, telefono FROM clientes WHERE id = $1', [orden.cliente_id])
       : null;
     if (!cliente?.telefono) return; // sin telefono no hay a donde avisar
     const conv = await conversacionDe(cliente.telefono);
     if (!conv) return;
+    if (!(await reservarAviso(orden.id, plantilla))) return; // ya se mando (o lo esta mandando otro)
     const parametros = parametrosAviso(orden.estado, { cliente, orden, sitio: PUBLIC_URL });
     const envio = await enviarPlantilla({ to: cliente.telefono, nombre: plantilla, idioma: 'es_AR', parametros });
     await guardarMensaje({
@@ -1432,11 +1591,7 @@ async function avisarOrden(ordenId) {
       texto: resumenAviso(orden.estado, { orden }),
       waMessageId: envio.id || null, estado: envio.ok ? 'enviado' : 'error', error: envio.ok ? null : envio.error,
     });
-    await query(
-      `INSERT INTO wa_avisos_log (orden_id, plantilla, estado, error) VALUES ($1,$2,$3,$4)
-       ON CONFLICT (orden_id, plantilla) DO UPDATE SET estado = EXCLUDED.estado, error = EXCLUDED.error, fecha = now()`,
-      [orden.id, plantilla, envio.ok ? 'enviado' : 'error', envio.ok ? null : envio.error]
-    );
+    await cerrarAviso(orden.id, plantilla, envio);
     if (!envio.ok) console.warn(`[whatsapp] aviso ${plantilla} de ${orden.id} no salio: ${envio.error}`);
   } catch (e) {
     console.error('[whatsapp] error mandando el aviso:', e.message);
@@ -1477,11 +1632,10 @@ async function avisarGarantias() {
     for (const o of ordenes) {
       if (!debeAvisarGarantia(o.garantia?.vence)) continue;
       resumen.revisadas += 1;
-      const ya = await one("SELECT 1 AS x FROM wa_avisos_log WHERE orden_id = $1 AND plantilla = $2 AND estado = 'enviado'", [o.id, PLANTILLA_GARANTIA]);
-      if (ya) continue;
       if (!o.cliente_telefono) { resumen.sinTelefono += 1; continue; }
       const conv = await conversacionDe(o.cliente_telefono);
       if (!conv) continue;
+      if (!(await reservarAviso(o.id, PLANTILLA_GARANTIA))) continue; // ya se aviso
       const parametros = parametrosGarantia({ cliente: { nombre: o.cliente_nombre }, orden: o });
       const envio = await enviarPlantilla({ to: o.cliente_telefono, nombre: PLANTILLA_GARANTIA, idioma: 'es_AR', parametros });
       await guardarMensaje({
@@ -1489,11 +1643,7 @@ async function avisarGarantias() {
         texto: resumenAviso('garantia', { orden: o }),
         waMessageId: envio.id || null, estado: envio.ok ? 'enviado' : 'error', error: envio.ok ? null : envio.error,
       });
-      await query(
-        `INSERT INTO wa_avisos_log (orden_id, plantilla, estado, error) VALUES ($1,$2,$3,$4)
-         ON CONFLICT (orden_id, plantilla) DO UPDATE SET estado = EXCLUDED.estado, error = EXCLUDED.error, fecha = now()`,
-        [o.id, PLANTILLA_GARANTIA, envio.ok ? 'enviado' : 'error', envio.ok ? null : envio.error]
-      );
+      await cerrarAviso(o.id, PLANTILLA_GARANTIA, envio);
       if (envio.ok) {
         resumen.enviadas += 1;
         resumen.detalle.push(`${o.bateria_serie} (${o.id})`);
@@ -1710,7 +1860,11 @@ app.post('/api/whatsapp/webhook', async (req, res) => {
       const v = cambio.value || {};
       const perfil = v.contacts?.[0]?.profile?.name || null;
       for (const m of v.messages || []) {
-        if (m.id) {
+        // Con el indice unico de wa_message_id, la reserva del mensaje entrante
+        // la hace la base (atomica, sin carrera). Si el indice no existe, se
+        // consulta antes (puede colarse un duplicado en simultaneo, pero no se
+        // pierde ningun mensaje).
+        if (m.id && !indiceWamid) {
           const ya = await one('SELECT id FROM wa_mensajes WHERE wa_message_id = $1', [m.id]);
           if (ya) continue; // Meta puede repetir el mismo aviso
         }
@@ -1723,13 +1877,16 @@ app.post('/api/whatsapp/webhook', async (req, res) => {
           || m.interactive?.button_reply?.title
           || (m.image ? '[imagen]' : m.audio ? '[audio]' : m.document ? '[documento]' : m.video ? '[video]' : m.location ? '[ubicación]' : `[${tipo}]`);
         const fecha = m.timestamp ? new Date(Number(m.timestamp) * 1000).toISOString() : null;
-        await guardarMensaje({ conversacion: conv, direccion: 'in', tipo, texto, waMessageId: m.id || null, estado: 'recibido', fecha });
+        const guardado = await guardarMensaje({
+          conversacion: conv, direccion: 'in', tipo, texto, waMessageId: m.id || null, estado: 'recibido', fecha,
+        });
+        if (!guardado) continue; // ya estaba cargado: no se duplica ni suma no leidos
         // Escribirnos es el consentimiento implicito para poder responderle.
         if (conv.cliente_id) {
           const cli = await one('SELECT id, wa_optin FROM clientes WHERE id = $1', [conv.cliente_id]);
           if (cli && !cli.wa_optin) await query('UPDATE clientes SET wa_optin = true, wa_optin_fecha = now() WHERE id = $1', [cli.id]);
         }
-        await notificar(null, null, `WhatsApp de ${perfil || conv.telefono}: ${String(texto).slice(0, 120)}`, 'WhatsApp');
+        notificarSinFrenar(null, null, `WhatsApp de ${perfil || conv.telefono}: ${String(texto).slice(0, 120)}`, 'WhatsApp');
       }
       for (const s of v.statuses || []) {
         if (!s.id) continue;
@@ -1775,6 +1932,7 @@ app.post('/api/diagnostico/:orden_id/fotos', authRequired, upload.array('fotos',
   const orden = await one('SELECT * FROM ordenes WHERE id = $1', [req.params.orden_id]);
   if (!orden) return res.status(404).json({ error: 'Orden no encontrada' });
   if (!puedeEscribirOrden(req, orden)) return res.status(403).json({ error: 'Sin permisos para esta orden' });
+  if (rechazarSiCerrada(orden, res)) return;
   const rutas = [];
   for (const f of req.files) {
     const ext = detectImg(f.buffer);
