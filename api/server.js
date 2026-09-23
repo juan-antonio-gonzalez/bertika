@@ -12,7 +12,7 @@ import rateLimit from 'express-rate-limit';
 import { query, one, tx } from './db.js';
 import { nextId } from './ids.js';
 import { signToken, authRequired, requireRol, requierePermiso, requiereSeccion, SECRET } from './middleware/auth.js';
-import { SECCIONES, ACCIONES, PERMISOS_POR_ROL, normalizarPermisos, puedeVer } from './permisos.js';
+import { SECCIONES, SECCIONES_CLIENTE, ACCIONES, PERMISOS_POR_ROL, normalizarPermisos, puedeVer } from './permisos.js';
 import { canTransition, ORDEN_ESTADOS, ESTADO_LABEL, MIN_CAPACIDAD_PCT, esEstadoCerrado } from './reglas.js';
 import { obtenerDolar } from './dolar.js';
 import { calcularVisita, normalizarConfig, CONFIG_DEFAULT, textoFueraCobertura } from '../src/data/cotizadorVisita.js';
@@ -1401,7 +1401,9 @@ app.get('/api/usuarios', authRequired, requierePermiso('gestionar_usuarios'), as
 
 // Catalogo de permisos para dibujar la tabla de casillas del panel.
 app.get('/api/permisos/catalogo', authRequired, requierePermiso('gestionar_usuarios'), async (req, res) => {
-  return res.json({ secciones: SECCIONES, acciones: ACCIONES, porRol: PERMISOS_POR_ROL });
+  // Se incluye el grupo del espacio del cliente para que la API y el panel
+  // devuelvan exactamente el mismo catalogo.
+  return res.json({ secciones: [...SECCIONES, ...SECCIONES_CLIENTE], acciones: ACCIONES, porRol: PERMISOS_POR_ROL });
 });
 
 app.post('/api/usuarios', authRequired, requierePermiso('gestionar_usuarios'), async (req, res) => {
