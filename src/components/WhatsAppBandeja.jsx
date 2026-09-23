@@ -115,6 +115,14 @@ export default function WhatsAppBandeja() {
             )}
           </>
         )}
+        {estado?.configurado && estado?.falta?.length > 0 && (
+          <p className="muted" style={{ fontSize: 12.5, margin: '10px 0 0' }}>
+            <span className="badge amber" style={{ marginRight: 6 }}>Atención</span>
+            Falta cargar <span className="mono">{estado.falta.join(', ')}</span>. Sin el App Secret los mensajes que
+            entren se rechazan (no aparecen en la bandeja) y sin la frase de verificación Meta no puede confirmar la
+            dirección de avisos. Corré <span className="mono">bash scripts/whatsapp-env.sh</span>.
+          </p>
+        )}
       </div>
 
       {/* Prueba de envío */}

@@ -177,9 +177,12 @@ Limpia todas las tablas de demo y re-siembra desde `src/data/seed.js` (corre `no
 | `GET` | `/whatsapp/webhook` | Público. Verificación del webhook de Meta (`hub.verify_token` → `hub.challenge`). |
 | `POST` | `/whatsapp/webhook` | Público. Avisos de Meta: mensajes entrantes y estados de entrega. Valida la firma `X-Hub-Signature-256` con `WHATSAPP_APP_SECRET` antes de procesar. |
 
-Configuración: `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID`, `WHATSAPP_WABA_ID`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_APP_SECRET`
-y (opcional) `WHATSAPP_API_VERSION`. Se cargan con `bash scripts/whatsapp-env.sh` (los valores no pasan por el chat ni
-por el repositorio). Guía del trámite en Meta: `docs/WHATSAPP_META.md`; textos de plantillas: `docs/WHATSAPP_PLANTILLAS.md`.
+Configuración: `WHATSAPP_APP_ID`, `WHATSAPP_BUSINESS_ID`, `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID`, `WHATSAPP_WABA_ID`,
+`WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_APP_SECRET` y (opcional) `WHATSAPP_API_VERSION`. Se cargan con
+`bash scripts/whatsapp-env.sh` (los valores no pasan por el chat ni por el repositorio); ese script llama al final a
+`bash scripts/whatsapp-activar.sh`, que por API suscribe la app al WABA (`POST /{waba-id}/subscribed_apps`), registra el
+webhook (`POST /{app-id}/subscriptions`) y verifica la puerta de entrada. Un solo comando hace todo el trámite de Meta.
+Guía del trámite: `docs/WHATSAPP_META.md`; textos de plantillas: `docs/WHATSAPP_PLANTILLAS.md`.
 
 Sin claves cargadas el canal queda apagado y el resto de la API funciona igual.
 

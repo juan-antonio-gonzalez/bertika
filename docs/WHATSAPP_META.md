@@ -1,7 +1,10 @@
 # Conectar WhatsApp (Meta) a Bertika — guía paso a paso
 
-Esta guía es para hacerla con el navegador, sin conocimientos técnicos. Son unos 20 minutos.
+Esta guía es para hacerla con el navegador, sin conocimientos técnicos. Son unos 15 minutos.
 **No hace falta tocar el WhatsApp del teléfono**: arrancamos con el *número de prueba* que Meta regala.
+
+Casi todo el trámite técnico lo hace un script por vos. Vos solo tenés que
+**copiar 3 datos** de una pantalla de Meta y correr **1 comando**.
 
 ## Palabras raras, en criollo
 
@@ -29,20 +32,22 @@ Esta guía es para hacerla con el navegador, sin conocimientos técnicos. Son un
 ## Paso 2 — Agregar el producto WhatsApp (3 min)
 
 1. En el panel de la app, buscá **WhatsApp** y tocá **Configurar** (Set up).
-2. Se abre la pantalla **API Setup**. Ahí vas a ver y anotar (o copiar):
-   - **From / Número de prueba** → es el número de Meta con el que vamos a probar.
+2. Se abre la pantalla **API Setup** (también llegás directo con
+   `https://developers.facebook.com/apps/<App ID>/whatsapp-business/wa-dev-console/`).
+   De ahí vas a **copiar 3 cosas** y anotar 1:
+   - **Temporary access token** (token temporal, dura 24 h) → copialo. Sirve para probar hoy; después lo cambiamos por uno permanente (Paso 5).
    - **Phone number ID** → copialo.
-   - **WhatsApp Business Account ID** (WABA ID) → copialo.
-   - **Temporary access token** (token temporal, dura 24 h) → copialo. Sirve para probar hoy; después lo cambiamos por uno permanente (Paso 6).
+   - **App Secret**: está en **Configuración de la app → Básica → Clave secreta de la app → Mostrar** → copialo.
+   - El **App ID** y el **Business ID** son los números que aparecen en la dirección
+     del navegador (`/apps/<App ID>/…` y `business_id=<Business ID>`). No son secretos.
 3. En **To**, agregá hasta **5 números destinatarios autorizados**: tu celular, el del taller y los que quieras.
    A cada número Meta le manda un código; hay que confirmarlo.
+4. En **From** podés probar con el botón de mensaje de prueba para ver que el número anda.
 
-## Paso 3 — Probar que anda (1 min)
+> El **WABA ID** y el **Phone number ID** ya no hace falta buscarlos: si los dejás
+> vacíos, el script los averigua solo con el token.
 
-1. En esa misma pantalla hay un botón para **enviar un mensaje de prueba**. Mandá "hola" a tu número.
-2. Si te llega por WhatsApp, el canal funciona. (Todavía no sale desde Bertika: eso es el Paso 4 y 5.)
-
-## Paso 4 — Cargar las claves en el servidor (2 min)
+## Paso 3 — Un solo comando (2 min)
 
 En la carpeta del proyecto, en la Terminal:
 
@@ -50,31 +55,56 @@ En la carpeta del proyecto, en la Terminal:
 bash scripts/whatsapp-env.sh
 ```
 
-El script te va a pedir **5 datos** y los guarda en el servidor (y en el Llavero de tu Mac). Nada queda escrito en este chat ni en el repositorio.
+Te va a pedir los datos (el token y el App Secret son **invisibles** mientras los
+pegás: es normal). Nada queda escrito en el chat ni en el repositorio.
 
 | Lo que te pide | De dónde sale |
 | --- | --- |
-| `WHATSAPP_TOKEN` | El token del Paso 2 (por ahora el temporal). |
+| `WHATSAPP_APP_ID` | Viene puesto: apretá Enter. |
+| `WHATSAPP_BUSINESS_ID` | Viene puesto: apretá Enter. |
+| `WHATSAPP_TOKEN` | El *Temporary access token* del Paso 2 (por ahora el temporal). |
 | `WHATSAPP_PHONE_ID` | El **Phone number ID** del Paso 2. |
-| `WHATSAPP_WABA_ID` | El **WABA ID** del Paso 2. |
-| `WHATSAPP_VERIFY_TOKEN` | **Inventá una frase**, por ejemplo `bertika-2026-verificacion`. La vas a pegar también en Meta (Paso 5). |
-| `WHATSAPP_APP_SECRET` | Meta: **Configuración de la app → Básica → Clave secreta de la app → Mostrar**. |
+| `WHATSAPP_WABA_ID` | Enter (lo busca solo). |
+| `WHATSAPP_VERIFY_TOKEN` | Enter (lo genera solo; no hace falta que lo anotes). |
+| `WHATSAPP_APP_SECRET` | La *Clave secreta de la app* del Paso 2. |
+| `WHATSAPP_API_VERSION` | Enter. |
 
-Al terminar reinicia el servicio solo. Después entrá al panel: **Hub → pestaña WhatsApp** y tiene que decir **Conectado**.
+Si ya habías cargado algo, **dejar vacío no lo borra**: se conserva lo que estaba.
 
-## Paso 5 — Decirle a Meta dónde avisar (2 min)
+El mismo script, al terminar, hace todo esto contra Meta (no lo tenés que hacer a mano):
 
-1. En Meta: **WhatsApp → Configuración (Configuration) → Webhook → Editar**.
-2. **URL de devolución de llamada** (*Callback URL*):
-   ```
-   https://bertika.com/api/whatsapp/webhook
-   ```
-3. **Token de verificación**: la misma frase que cargaste en `WHATSAPP_VERIFY_TOKEN`.
-4. **Verificar y guardar**. Tiene que quedar en **Verificado**.
-5. En **Campos del webhook** (*Webhook fields*), activá **messages**.
-6. Si da error: casi siempre es que la frase no es idéntica (ojo con los espacios) o que el Paso 4 no se hizo todavía.
+1. revisa que el token sirva;
+2. averigua la cuenta (WABA) y el número;
+3. le avisa a Meta que la app atiende esa cuenta (**sin esto no llega ningún mensaje**);
+4. configura la dirección de avisos (webhook) `https://bertika.com/api/whatsapp/webhook` y la deja **verificada**;
+5. reinicia el servicio y prueba la puerta de entrada.
 
-## Paso 6 — Token permanente (para que no se venza cada 24 h) (5 min)
+Vas a ver un resumen con `OK` en cada punto. Si querés además recibir un mensaje
+de prueba:
+
+```bash
+bash scripts/whatsapp-activar.sh 11 5555-0101
+```
+
+(Ese mismo script se puede volver a correr cuando quieras: no rompe nada, revisa
+todo de nuevo.)
+
+> **Si el punto 4 del script falla** (Meta rechaza el webhook), se puede hacer a mano
+> en 1 minuto: Meta → **WhatsApp → Configuración (Configuration) → Webhook → Editar** →
+> **URL de devolución de llamada**: `https://bertika.com/api/whatsapp/webhook` →
+> **Token de verificación**: la frase que quedó guardada, la podés ver con este comando
+> en la Terminal (queda solo en tu pantalla, no se comparte):
+> `security find-generic-password -s bertika -a whatsapp-verify-token -w`
+> → **Verificar y guardar**, y en **Campos del webhook** activá **messages**.
+
+## Paso 4 — Verlo en el panel
+
+1. Entrá a Bertika → **Hub → pestaña WhatsApp**. Tiene que decir **Conectado**.
+2. En "Enviar prueba" poné tu número y mandá un mensaje.
+3. Escribile al número de prueba de Meta desde tu celular: la conversación
+   aparece sola en la bandeja, y desde ahí le podés contestar.
+
+## Paso 5 — Token permanente (para que no se venza cada 24 h) (5 min)
 
 1. Entrá a <https://business.facebook.com/settings> → **Usuarios → Usuarios del sistema** → **Agregar**.
    - Nombre: `bertika-api` · Rol: **Empleado** → Crear.
@@ -85,18 +115,23 @@ Al terminar reinicia el servicio solo. Después entrá al panel: **Hub → pesta
    ```bash
    bash scripts/whatsapp-env.sh
    ```
-   Esta vez pegá ese token como `WHATSAPP_TOKEN` y dejá los otros valores como estaban (el script te muestra qué ya está cargado).
+   Esta vez pegá ese token como `WHATSAPP_TOKEN` y **apretá Enter en todo lo demás**.
 
-## Paso 7 — Pasar tu número real (cuando ya lo veas funcionando)
+## Paso 6 — Pasar tu número real (cuando ya lo veas funcionando)
 
 Mientras estés en el número de prueba, **solo se puede escribir a los 5 números autorizados**. Para atender clientes reales hay que dar de alta tu número:
 
 1. Meta: **WhatsApp → Números de teléfono → Agregar número de teléfono**.
    - El número **no puede estar en uso en la app de WhatsApp** (ni normal ni Business). Si querés usar el que ya tenés, hay que **borrar la cuenta de la app del teléfono**; los chats viejos quedan en el teléfono como respaldo, no se pasan al sistema.
    - Nombre visible: `Bertika` (Meta lo revisa).
-2. **Verificación del negocio**: en Meta Business → **Configuración del negocio → Centro de seguridad** → iniciar la verificación con los papeles de la empresa. Puede tardar unos días; conviene arrancarla en paralelo.
-3. **Medio de pago**: en **WhatsApp → Configuración de facturación** cargá una tarjeta. Los mensajes que iniciás vos se cobran por mensaje (centavos de dólar); los que responde el cliente dentro de las 24 h no se cobran.
-4. **Plantillas**: para avisos que inicia el taller ("tu batería está lista") hay que crear plantillas y que Meta las apruebe.
+2. Después de agregarlo, corré otra vez:
+   ```bash
+   bash scripts/whatsapp-activar.sh
+   ```
+   El script detecta el número nuevo, lo guarda y lo deja andando.
+3. **Verificación del negocio**: en Meta Business → **Configuración del negocio → Centro de seguridad** → iniciar la verificación con los papeles de la empresa. Puede tardar unos días; conviene arrancarla en paralelo.
+4. **Medio de pago**: en **WhatsApp → Configuración de facturación** cargá una tarjeta. Los mensajes que iniciás vos se cobran por mensaje (centavos de dólar); los que responde el cliente dentro de las 24 h no se cobran.
+5. **Plantillas**: para avisos que inicia el taller ("tu batería está lista") hay que crear plantillas y que Meta las apruebe.
    Te dejo los textos listos para copiar en `docs/WHATSAPP_PLANTILLAS.md`.
 
 ---
@@ -105,12 +140,15 @@ Mientras estés en el número de prueba, **solo se puede escribir a los 5 númer
 
 | Mensaje | Qué significa | Qué hacer |
 | --- | --- | --- |
-| *El cliente tiene que escribirnos primero (pasaron más de 24 h)* | Quisiste mandar un mensaje libre fuera de la ventana de 24 h. | Usar una plantilla aprobada (Paso 7.4). |
-| *La clave (token) de WhatsApp venció o es inválida* | El token temporal duró 24 h. | Generar el permanente (Paso 6) y recargarlo. |
-| *Ese número no puede recibir mensajes* | El número no tiene WhatsApp o está mal escrito. | Revisar el teléfono del cliente. |
+| *La clave (token) de WhatsApp venció o es inválida* | El token temporal duró 24 h. | Generar el permanente (Paso 5) y recargarlo. |
+| *No pude encontrar el ID de la cuenta de WhatsApp (WABA)* | El token no tiene permiso sobre esa cuenta. | Revisar que el token sea de la app correcta y que tenga los permisos del Paso 1. |
+| *No hubo respuesta de Meta* | El servidor no salió a internet. | Probar de nuevo en unos minutos; si sigue, avisar. |
+| *El cliente tiene que escribirnos primero (pasaron más de 24 h)* | Quisiste mandar un mensaje libre fuera de la ventana de 24 h. | Usar una plantilla aprobada (Paso 6.5). |
+| *Ese número no puede recibir mensajes* | El número no tiene WhatsApp, está mal escrito o no está autorizado. | Revisar el teléfono y la lista **To** del Paso 2. |
 | *La plantilla no está aprobada todavía* | Meta está revisando el texto. | Esperar la aprobación o revisar el nombre/idioma. |
-| *La firma no coincide* (en los logs del servidor) | El `WHATSAPP_APP_SECRET` no es el de esa app. | Volver a copiarlo (Paso 4) y reintentar. |
+| *La firma no coincide* (en los logs del servidor) | El `WHATSAPP_APP_SECRET` no es el de esa app. | Volver a copiarlo (Paso 3) y reintentar. |
 
 ## Qué NO cambia
-- Tu WhatsApp del teléfono sigue funcionando igual hasta el Paso 7.
+- Tu WhatsApp del teléfono sigue funcionando igual hasta el Paso 6.
 - El resto de la plataforma (órdenes, taller, cotizador) funciona aunque el canal esté apagado: si faltan las claves, el panel simplemente muestra "Falta configurar".
+- Los scripts se pueden volver a correr las veces que haga falta: lo que no completes se conserva como estaba.

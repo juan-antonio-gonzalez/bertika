@@ -137,7 +137,7 @@ Panel principal para administrar la operacion. Pestañas:
 | **Garantias** | Tabla de garantias vigentes y por vencer. |
 | **Baja / reciclaje** | Baterias dadas de baja con motivo y disposicion; trazabilidad para reciclaje responsable. |
 | **Cotizador** | Tarifas del cotizador de visitas: franjas de traslado, viaticos, precios por tipo de bateria, descuentos, extras, recargos, IVA, vigencia y limites. Vista previa en vivo y valores de fabrica. |
-| **WhatsApp** | Canal oficial de WhatsApp: estado de la conexion, envio de prueba y la bandeja de conversaciones (con la ficha del cliente y sus ultimas ordenes al lado). Guia del tramite en Meta: `docs/WHATSAPP_META.md`. |
+| **WhatsApp** | Canal oficial de WhatsApp: estado de la conexion, envio de prueba y la bandeja de conversaciones (con la ficha del cliente y sus ultimas ordenes al lado). Se conecta con Meta corriendo `bash scripts/whatsapp-env.sh` (un solo comando hace todo el tramite). Guia: `docs/WHATSAPP_META.md`. |
 
 El admin tambien tiene `/reportes` (exporta CSV) y `/usuarios` (alta, edicion de
 rol/estado y reseteo de contrasenas de cualquier cuenta).
@@ -298,8 +298,11 @@ Sin firma valida el endpoint responde 403.
 ## 10. Notas y limites actuales
 
 - La autenticacion es **real** (JWT + bcrypt) y los datos viven en PostgreSQL.
-- Las **notificaciones** se registran en la base (`notificaciones`) pero el envio por
-  WhatsApp/email es simulado: solo el formulario de contacto envia correo real (SMTP).
+- Las **notificaciones** se registran en la base (`notificaciones`). El **formulario de
+  contacto** envia correo real (SMTP) y el **canal de WhatsApp** envia mensajes reales
+  por la API de Meta cuando las claves estan cargadas (`scripts/whatsapp-env.sh`).
+  Los avisos automaticos por estado de la orden (plantillas) son el paso siguiente:
+  hoy los mensajes se mandan a mano desde la bandeja del Hub.
 - La **agenda** de visitas y la emision de **CFDI/facturacion** estan pendientes;
   tampoco hay pagos ni lecturas automaticas del equipo de diagnostico.
 - El **cotizador de visita** usa tarifas provisorias en USD (`src/data/cotizadorVisita.js`).
