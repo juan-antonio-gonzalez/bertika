@@ -122,7 +122,7 @@ export function Toast() {
 }
 
 /* ---------------- Modal ---------------- */
-export function Modal({ title, sub, onClose, children }) {
+export function Modal({ title, sub, onClose, children, ancho }) {
   // Cerrar con Esc y anunciar el dialogo a lectores de pantalla.
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose?.(); };
@@ -131,7 +131,7 @@ export function Modal({ title, sub, onClose, children }) {
   }, [onClose]);
   return (
     <div className="modal-back" onClick={onClose}>
-      <div className="modal" role="dialog" aria-modal="true" aria-label={title} onClick={(e) => e.stopPropagation()}>
+      <div className={`modal${ancho === 'ancho' ? ' modal-ancho' : ''}`} role="dialog" aria-modal="true" aria-label={title} onClick={(e) => e.stopPropagation()}>
         <div className="row between mb16">
           <div>
             <h3>{title}</h3>

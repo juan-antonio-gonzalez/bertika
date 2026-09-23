@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
-import { Link, Navigate, useParams } from 'react-router-dom';
+import { Navigate, useParams } from 'react-router-dom';
 import { useStore } from '../store/store';
 import { Icon, EstadoPill, OrdenCard, Modal, fmtDate, fmtARS, fmtFecha, nombreActor } from '../components/ui';
 import OrdenDetalle from '../components/OrdenDetalle';
 import CotizadorConfig from '../components/CotizadorConfig';
 import WhatsAppBandeja from '../components/WhatsAppBandeja';
+import ClientesCrm from '../components/ClientesCrm';
 import { ORDEN_ESTADOS } from '../data/reglas';
 
 // Columnas del tablero: todos los estados del flujo (incluye "approved" y
@@ -461,26 +462,6 @@ function HistorialSerie() {
   );
 }
 
-// Fase 6: ficha unificada de clientes (contactos, equipos, historial y
-// garantias en una pantalla). Por ahora la sub-ruta muestra un aviso con
-// accesos a lo que ya existe, para que no quede vacia.
-function Clientes() {
-  return (
-    <div className="card">
-      <div className="card-title"><Icon name="users" size={14} /> Clientes</div>
-      <p className="muted" style={{ marginBottom: 10 }}>
-        La ficha unificada de clientes llega en la proxima etapa. Mientras tanto, estos accesos siguen disponibles:
-      </p>
-      <div className="row wrap" style={{ gap: 8 }}>
-        <Link className="btn" to="/hub"><Icon name="battery" size={14} /> Ver el tablero</Link>
-        <Link className="btn" to="/hub/flotillas"><Icon name="building" size={14} /> Flotillas</Link>
-        <Link className="btn" to="/hub/garantias"><Icon name="shield" size={14} /> Garantias</Link>
-        <Link className="btn" to="/hub/whatsapp"><Icon name="mail" size={14} /> WhatsApp</Link>
-      </div>
-    </div>
-  );
-}
-
 // Pestanas del Hub: cada una es una sub-ruta real (/hub/dashboard, /hub/baja...).
 // Un slug desconocido cae en el tablero, asi los enlaces viejos no rompen.
 const HUB_TABS = ['kanban', 'dashboard', 'historial', 'inventario', 'tecnicos', 'flotillas', 'garantias', 'baja', 'cotizador', 'whatsapp', 'clientes'];
@@ -514,7 +495,7 @@ export default function Hub() {
       {tab === 'baja' && <BajaYReciclaje onAbrirOrden={setSel} />}
       {tab === 'cotizador' && <CotizadorConfig />}
       {tab === 'whatsapp' && <WhatsAppBandeja />}
-      {tab === 'clientes' && <Clientes />}
+      {tab === 'clientes' && <ClientesCrm onAbrirOrden={setSel} />}
 
       {sel && <OrdenDetalle orden={sel} role="admin" onClose={() => setSel(null)} />}
     </div>

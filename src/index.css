@@ -302,6 +302,9 @@ select.input option { background: var(--bg-3); }
 .tbl td { padding: 10px 12px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
 .tbl tbody tr:hover { background: var(--bg-3); }
 .tbl .num { text-align: right; font-variant-numeric: tabular-nums; }
+/* Encabezado clickeable para ordenar (Clientes/CRM). */
+.th-sort { border: 0; background: transparent; padding: 0; margin: 0; cursor: pointer; color: inherit; font: inherit; letter-spacing: inherit; text-transform: inherit; }
+.th-sort:hover { color: var(--amber-d); }
 
 /* ---------- kanban ---------- */
 .kanban { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; align-items: start; }
@@ -398,6 +401,7 @@ select.input option { background: var(--bg-3); }
 
 .modal-back { position: fixed; inset: 0; background: rgba(4, 6, 8, 0.7); backdrop-filter: blur(3px); z-index: 100; display: grid; place-items: center; padding: 16px; }
 .modal { width: min(560px, 100%); max-height: 88vh; overflow-y: auto; background: var(--bg-2); border: 1px solid var(--line); border-radius: 14px; padding: 22px; box-shadow: var(--shadow); }
+.modal.modal-ancho { width: min(880px, 100%); }
 .modal h3 { margin: 0 0 4px; font-size: 17px; }
 .modal .sub { color: var(--muted); font-size: 12.5px; margin-bottom: 16px; }
 .modal-close { position: absolute; }
