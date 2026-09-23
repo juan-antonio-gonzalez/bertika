@@ -23,6 +23,13 @@ import {
 const SCHEMA_SQL = readFileSync(new URL('./schema.sql', import.meta.url), 'utf8')
 
 export async function seedDatabase() {
+  // Este proceso BORRA todas las tablas y reemplaza los usuarios por los de
+  // demo: en produccion es una perdida total. Por eso, ademas de la variable
+  // de entorno, hace falta el argumento explicito y FORCE_SEED=1.
+  if (process.env.NODE_ENV === 'production'
+      && !(process.argv.includes('--si-borrar-todo') && process.env.FORCE_SEED === '1')) {
+    throw new Error('seed.js borra TODOS los datos. En produccion solo corre con FORCE_SEED=1 y el argumento --si-borrar-todo.');
+  }
   const hash = (p) => bcrypt.hashSync(p, 12);
   await pool.query(SCHEMA_SQL);
 
@@ -30,8 +37,16 @@ export async function seedDatabase() {
   try {
     await client.query('BEGIN');
 
-    // Limpiar datos de demo (mantiene tablas)
-    for (const t of ['usuarios', 'bajas', 'notificaciones', 'ordenes', 'insumos', 'baterias', 'clientes', 'tecnicos', 'contadores']) {
+    // Limpiar datos de demo (mantiene tablas). Se incluyen las tablas derivadas
+    // (WhatsApp, historial, cotizador) porque si quedaran vivas apuntarian a
+    // clientes y ordenes que ya no existen, y los contadores volverian a 100
+    // reutilizando ids con datos viejos encima.
+    for (const t of [
+      'wa_notas', 'wa_mensajes', 'wa_conversaciones', 'wa_avisos_log', 'wa_avisos_config',
+      'cotizaciones_historial', 'insumos_movimientos', 'cotizaciones_visita',
+      'cotizador_eventos', 'cotizador_config_historial', 'cotizador_config',
+      'usuarios', 'bajas', 'notificaciones', 'ordenes', 'insumos', 'baterias', 'clientes', 'tecnicos', 'contadores',
+    ]) {
       await client.query(`DELETE FROM ${t}`);
     }
 

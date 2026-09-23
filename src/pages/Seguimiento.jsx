@@ -11,7 +11,6 @@ export default function Seguimiento() {
 
   // El campo acepta las dos formas de busqueda:
   //  - codigo de seguimiento: solo digitos; se formatea con guion cada 4 cifras.
-  //  - numero de serie: texto libre (letras, digitos y guiones), sin formatear.
   const alEscribir = (e) => {
     const v = e.target.value;
     if (/^[\d\s-]*$/.test(v)) {
@@ -25,20 +24,18 @@ export default function Seguimiento() {
   const buscar = async (e) => {
     e.preventDefault();
     const term = q.trim();
-    if (!term) { toastShow('Ingresá el código de seguimiento o el número de serie', 'warn'); return; }
+    if (!term) { toastShow('Ingresá el código de seguimiento (16 dígitos)', 'warn'); return; }
     try {
+      // El seguimiento publico se resuelve SOLO con el codigo de 16 digitos del
+      // comprobante: antes tambien aceptaba el numero de serie y el id interno,
+      // y eso dejaba listar todas las ordenes del taller sin sesion.
       const rows = await api(`/public/ordenes?q=${encodeURIComponent(term)}`);
-      const norm = term.toUpperCase();
-      const dig = norm.replace(/\D/g, '');
-      const exact = rows.find((o) => o.id.toUpperCase() === norm
-        || (o.bateria_serie || '').toUpperCase() === norm
-        || (dig.length === 16 && (o.codigo || '').replace(/\D/g, '') === dig));
-      if (exact) {
-        navigate(`/tracker/${exact.id}`);
-      } else if (rows.length === 1) {
-        navigate(`/tracker/${rows[0].id}`);
+      if (rows.length === 1) {
+        navigate(`/tracker/${encodeURIComponent(rows[0].codigo)}`);
+      } else if (term.replace(/\D/g, '').length === 16) {
+        toastShow('No se encontró ninguna orden con ese código. Revisá los 16 dígitos del comprobante.', 'error');
       } else {
-        toastShow(rows.length > 1 ? 'Se encontraron varias ordenes. Ingresá el código completo.' : 'No se encontró ninguna orden con ese dato', rows.length > 1 ? 'warn' : 'error');
+        toastShow('Ingresá el código de seguimiento completo (16 dígitos, como figura en el comprobante).', 'warn');
       }
     } catch (err) {
       toastShow(err.message || 'No se pudo realizar la busqueda', 'error');
@@ -60,12 +57,12 @@ export default function Seguimiento() {
           <div className="card" style={{ padding: 32 }}>
             <h2 className="sec-title center">Seguí tu reparación</h2>
             <p className="sec-sub center" style={{ margin: '8px auto 24px' }}>
-              Ingresá tu código de seguimiento de 16 dígitos —o el número de serie de la batería— para ver el estado en tiempo real.
+              Ingresá tu código de seguimiento de 16 dígitos (está en el comprobante que te dio el taller) para ver el estado en tiempo real.
             </p>
             <form onSubmit={buscar} style={{ display: 'flex', gap: 10 }}>
               <input
                 className="input"
-                placeholder="0000-0000-0000-0000 o N° de serie"
+                placeholder="0000-0000-0000-0000"
                 autoComplete="off"
                 value={q}
                 onChange={alEscribir}
@@ -76,7 +73,7 @@ export default function Seguimiento() {
               </button>
             </form>
             <p className="muted center" style={{ fontSize: 12.5, margin: '12px 0 0' }}>
-              También podés buscar por número de serie de la batería.
+              El código viene en el comprobante y en el mensaje de WhatsApp que te enviamos.
             </p>
           </div>
         </div>

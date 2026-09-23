@@ -2,6 +2,7 @@
 // expone req.user = { id, email, rol, tecnico_id, cliente_id }
 import { randomBytes } from 'node:crypto';
 import jwt from 'jsonwebtoken';
+import { one } from '../db.js';
 
 // En produccion JWT_SECRET debe estar definido (fail-fast al firmar si no).
 // En desarrollo sin .env se genera un secreto efimero: los tokens dejan de
@@ -28,17 +29,30 @@ export function signToken(user) {
   );
 }
 
-export function authRequired(req, res, next) {
+export async function authRequired(req, res, next) {
   const header = req.headers.authorization || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
   if (!token) return res.status(401).json({ error: 'Autenticacion requerida' });
+  let payload;
   try {
-    const payload = jwt.verify(token, SECRET, { issuer: 'bertika-api', audience: 'bertika-web', algorithms: ['HS256'] });
-    req.user = payload;
-    return next();
+    payload = jwt.verify(token, SECRET, { issuer: 'bertika-api', audience: 'bertika-web', algorithms: ['HS256'] });
   } catch {
     return res.status(401).json({ error: 'Token invalido o expirado' });
   }
+  // El token por si solo no alcanza: si al usuario lo desactivaron o lo
+  // borraron, tiene que perder el acceso en el acto. Antes seguia entrando (y
+  // con los mismos permisos) hasta que venciera el token, 12 h despues.
+  try {
+    const u = await one('SELECT activo FROM usuarios WHERE id = $1', [payload.sub]);
+    if (!u || u.activo !== true) {
+      return res.status(401).json({ error: 'Tu acceso fue desactivado. Pedile al administrador que lo reactive.' });
+    }
+  } catch (e) {
+    console.error('[auth] no se pudo verificar el usuario:', e.message);
+    return res.status(503).json({ error: 'No se pudo verificar el acceso. Probá de nuevo en unos segundos.' });
+  }
+  req.user = payload;
+  return next();
 }
 
 export function requireRol(...roles) {

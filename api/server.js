@@ -484,30 +484,36 @@ app.get('/api/public/stats', publicLimiter, async (req, res) => {
   });
 });
 
-// Publico: busqueda por id de orden, numero de serie o codigo de 16 digitos (sin login)
+// Publico: seguimiento por CODIGO de 16 digitos (el que esta impreso en el
+// comprobante del cliente).
+//
+// Antes esta busqueda aceptaba el id de la orden, el numero de serie y comodines
+// SQL (% y _), y devolvia el codigo de seguimiento de cada resultado: cualquiera
+// podia listar las ordenes del taller sin sesion. Ahora:
+//   - solo busca por el codigo completo (16 digitos),
+//   - no busca por id ni por serie,
+//   - no devuelve el codigo (el cliente ya lo tiene).
 app.get('/api/public/ordenes', publicLimiter, async (req, res) => {
-  const { q } = req.query || {};
-  const term = String(q || '').trim();
+  const term = String(req.query?.q || '').trim().slice(0, 40);
   if (!term) return res.status(400).json({ error: 'Falta el parametro q' });
   const dig = digitar(term);
+  if (dig.length !== 16) return res.json([]);
   const rows = await query(
-    `SELECT id, bateria_serie, codigo_seguimiento, estado, fecha_ingreso FROM ordenes
-     WHERE id ILIKE $1 OR bateria_serie ILIKE $1 OR ($2 <> '' AND codigo_seguimiento = $3)
-     ORDER BY fecha_ingreso DESC LIMIT 10`,
-    [`%${term}%`, dig, dig]
+    'SELECT bateria_serie, estado, fecha_ingreso FROM ordenes WHERE codigo_seguimiento = $1 LIMIT 1',
+    [dig]
   );
-  for (const r of rows) { r.codigo = formatearCodigo(r.codigo_seguimiento); delete r.codigo_seguimiento; }
   return res.json(rows);
 });
 
-// Publico: seguimiento / cotizacion publica (sin login). Se resuelve por id de
-// la orden o por el codigo de seguimiento de 16 digitos (con o sin guiones).
+// Publico: detalle del seguimiento. Solo con el codigo de 16 digitos (o el
+// enlace firmado de la cotizacion, que es otro endpoint). Aceptar el id crudo
+// permitia leer cualquier orden sin sesion (los ids son ord_100, ord_101...).
 app.get('/api/public/ordenes/:id', publicLimiter, async (req, res) => {
-  const param = String(req.params.id).trim();
-  const dig = digitar(param);
-  const o = dig.length === 16
-    ? await one('SELECT * FROM ordenes WHERE id = $1 OR codigo_seguimiento = $2', [param, dig])
-    : await one('SELECT * FROM ordenes WHERE id = $1', [param]);
+  const dig = digitar(String(req.params.id || '').trim());
+  if (dig.length !== 16) {
+    return res.status(403).json({ error: 'Hace falta el código de seguimiento de 16 dígitos del comprobante.' });
+  }
+  const o = await one('SELECT * FROM ordenes WHERE codigo_seguimiento = $1', [dig]);
   if (!o) return res.status(404).json({ error: 'Orden no encontrada' });
   const b = await one('SELECT tipo, voltaje, capacidad, aplicacion, equipo FROM baterias WHERE numero_serie = $1', [o.bateria_serie]);
   const c = await one('SELECT nombre FROM clientes WHERE id = $1', [o.cliente_id]);
@@ -519,7 +525,9 @@ app.get('/api/public/ordenes/:id', publicLimiter, async (req, res) => {
     falla: o.falla,
     fecha_ingreso: o.fecha_ingreso,
     hora_entrega: o.hora_entrega,
-    eventos: o.eventos,
+    // Los eventos se devuelven sin el autor: adentro va el email y el rol del
+    // personal del taller y eso no es informacion del cliente.
+    eventos: (Array.isArray(o.eventos) ? o.eventos : []).map(({ usuario: _usuario, ...resto }) => resto),
     bateria: b || null,
     cliente: c?.nombre || null,
   });
@@ -856,11 +864,18 @@ app.post('/api/ordenes/:id/baja', authRequired, requireRol('admin'), async (req,
 app.post('/api/ordenes/:id/transition', authRequired, async (req, res) => {
   const { target, detalle } = req.body || {};
   if (!ORDEN_ESTADOS.includes(target)) return res.status(400).json({ error: 'Estado invalido' });
+  // Entregar y cancelar son decisiones de administrador: la entrega tiene que
+  // pasar por POST /ordenes/:id/entregar, que es el que registra el monto
+  // cobrado, el medio de pago y la garantia (y deja la bateria en garantia).
+  // Por este endpoint un tecnico podia entregar o cancelar salteando todo eso.
+  if (['delivered', 'cancelled'].includes(target) && !esAdmin(req)) {
+    return res.status(403).json({ error: 'Entregar o cancelar una orden es una acción de administrador' });
+  }
   await tx(async (client) => {
     const o = (await client.query('SELECT * FROM ordenes WHERE id = $1', [req.params.id])).rows[0];
     if (!o) throw { status: 404, message: 'Orden no encontrada' };
     if (!puedeEscribirOrden(req, o)) throw { status: 403, message: 'Sin permisos para esta orden' };
-    await transition(client, o, target, detalle, actorDe(req));
+    await transition(client, o, target, limStr(detalle, 500), actorDe(req));
   });
   return res.json({ ok: true });
 });
@@ -987,9 +1002,14 @@ app.delete('/api/notificaciones', authRequired, async (req, res) => {
 });
 
 // ---------- Reset demo (solo admin; deshabilitado salvo ALLOW_RESET=1) ----------
+// Borra TODOS los datos: por eso, ademas de la variable de entorno, exige una
+// confirmacion escrita a mano. Un click de mas no puede vaciar la operacion.
 app.post('/api/reset', authRequired, requireRol('admin'), async (req, res) => {
   if (process.env.ALLOW_RESET !== '1') {
     return res.status(403).json({ error: 'Reset deshabilitado en este entorno (requiere ALLOW_RESET=1). Borra datos solo con cuidado manual.' });
+  }
+  if (String(req.body?.confirmar || '').trim().toUpperCase() !== 'BORRAR TODO') {
+    return res.status(400).json({ error: 'Para confirmar, escribí exactamente: BORRAR TODO' });
   }
   try {
     // seed.js usa su propio pool; la re-ejecucion se hace en proceso hijo para limpiar
