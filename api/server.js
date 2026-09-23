@@ -17,7 +17,7 @@ import { obtenerDolar } from './dolar.js';
 import { calcularVisita, normalizarConfig, CONFIG_DEFAULT, textoFueraCobertura } from '../src/data/cotizadorVisita.js';
 import { enviarTexto, enviarPlantilla, configPublicaWhatsApp, normalizarTelefono, normalizarEtiquetas, verificarFirma, ESTADO_ENTREGA } from './whatsapp.js';
 import { EVENTOS as EVENTOS_AVISO, PLANTILLA_POR_ESTADO, PLANTILLA_GARANTIA, normalizarAvisos, parametrosAviso, resumenAviso, debeAvisarGarantia, parametrosGarantia } from './avisos.js';
-import { ETAPAS, normalizarEtapa, normalizarMonto } from './crm.js';
+import { normalizarEtapa, normalizarMonto } from './crm.js';
 import { generarCodigoUnico, digitar, formatearCodigo } from './codigo.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
