@@ -17,7 +17,7 @@ Guía de la infraestructura real desplegada en el VPS, despliegue, backups y sol
 | Backend | servicios `bertika-api.service` (systemd) en `127.0.0.1:3001` |
 | Seed data | `/var/www/bertika/src/data/` (copia de la fuente de verdad) |
 | Fotos | `/var/www/bertika/uploads/` |
-| Backups | `/var/backups/bertika/` via cron diario |
+| Backups | `/var/backups/bertika/` (cron diario del servidor + botón manual del panel `/respaldos`) |
 | Env (secretos) | `/etc/bertika/bertika-api.env` (modo 600, fuera del árbol web) |
 
 Acceso por SSH: `ssh -i ~/.ssh/id_ed25519_bertika root@srv1981179.hstgr.cloud`
@@ -166,6 +166,36 @@ Qué hace distinto del anterior:
 
 Cron diario a las 03:17 (host): `/etc/cron.d/bertika-backup` → `/usr/local/bin/bertika-backup.sh --en-servidor`.
 
+### Botón manual en el panel (admin)
+
+Además del cron del servidor, el administrador puede respaldar **cuando quiere** desde
+**Sistema → Respaldos** (`/respaldos`):
+
+- **Respaldar ahora**: corre el respaldo en el VPS y baja el `.sql.gz` al navegador en el
+  mismo click (queda en la carpeta de Descargas). Las fotos van en un `.tar.gz` aparte.
+- Debajo, la lista de copias del servidor (tamaño y fecha) con un botón para bajar cada una.
+
+No hay ninguna tarea programada en la Mac: la bajada automática diaria a las 09:15
+(LaunchAgent `com.bertika.backup`) se quitó el 23/09/2026 a pedido del usuario. El único
+automatismo que queda es el cron del propio servidor (03:17), como red de seguridad.
+
+Endpoints (solo `respaldos`, que por plantilla es exclusivo del admin):
+
+| Método | Ruta | Qué hace |
+| --- | --- | --- |
+| `GET` | `/api/respaldos` | Lista las copias del servidor (nombre, tipo, bytes, fecha) |
+| `POST` | `/api/respaldos` | Corre el respaldo ahora (409 si ya hay uno en curso) |
+| `GET` | `/api/respaldos/:archivo` | Baja el archivo (el nombre se valida contra un patrón fijo) |
+
+El endpoint ejecuta el script con argumentos fijos (`--en-servidor --json`); nunca recibe
+comandos del navegador. Variables opcionales: `BACKUP_DIR` (por defecto
+`/var/backups/bertika`), `BACKUP_SCRIPT` (`/usr/local/bin/bertika-backup.sh`) y
+`BACKUP_RETENCION_DIAS` (14, solo para mostrarlo en el panel).
+
+> **El botón necesita el script instalado y actualizado en el VPS.** Después de tocar
+> `scripts/backup-db.sh` hay que correr una vez `bash scripts/backup-db.sh --instalar`
+> (el deploy no toca `/usr/local/bin`). Si falta, el panel avisa con ese mismo comando.
+
 Restaurar a mano (reemplaza la base real: parar el servicio antes):
 
 ```bash
@@ -174,13 +204,9 @@ gunzip -c /var/backups/bertika/bertika_YYYY-MM-DD_HHMM.sql.gz | psql "$DATABASE_
 systemctl start bertika-api
 ```
 
-> **Las fotos de diagnóstico NO están en el respaldo.** Viven en `/var/www/bertika/uploads`
-> (`UPLOAD_DIR`) y solo se respalda la base. Conviene copiarlas aparte (rsync a otra
-> máquina o incluirlas en el respaldo).
-
 ### Copias fuera del servidor
 
-Un respaldo en el mismo servidor no protege contra perder el servidor. Hay dos copias:
+Un respaldo en el mismo servidor no protege contra perder el servidor. Las copias son:
 
 ```bash
 bash scripts/backup-db.sh --traer                    # trae la última copia a tu Mac (backups/)
@@ -188,9 +214,9 @@ bash scripts/backup-db.sh --configurar-nube <destino>  # copia automática en la
 bash scripts/backup-db.sh --nube                     # prueba la copia a la nube ahora
 ```
 
-La copia a la nube se hace **desde el servidor**, así el respaldo de las 03:17 se sube solo
-(sin depender de que tu Mac esté encendida). Necesita [rclone](https://rclone.org) instalado
-en el VPS y un destino conectado:
+La copia a la nube se hace **desde el servidor**, así cada respaldo (el del cron y el del
+botón) se sube solo, sin depender de que tu Mac esté encendida. Necesita
+[rclone](https://rclone.org) instalado en el VPS y un destino conectado:
 
 ```bash
 apt-get install -y rclone      # en el VPS
@@ -242,6 +268,9 @@ ssh bertika-vps "journalctl -u bertika-api -n 50 --no-pager"
 # Deploy
 bash scripts/deploy.sh
 
-# Backup manual
-ssh bertika-vps "PGPASSWORD='<PASS>' /usr/local/bin/bertika-backup.sh"
+# Backup manual (desde la Mac, sin abrir el panel)
+bash scripts/backup-db.sh
+
+# Backup manual desde el panel: Sistema → Respaldos → «Respaldar ahora»
+# (el mismo script, con --en-servidor --json, y baja la copia al navegador)
 ```

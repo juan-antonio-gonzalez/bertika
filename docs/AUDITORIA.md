@@ -17,6 +17,7 @@ Todo lo de acá abajo **ya está implementado, deployado y verificado en producc
 | Urgente | **El token muere al desactivar/borrar un usuario** (chequeo de `activo` en cada request). Verificado: token válido de usuario inexistente → 401 | `ef734b9` |
 | Urgente | **`seed.js` con doble llave** en producción y **reset con confirmación escrita** (`BORRAR TODO`) | `ef734b9` |
 | Urgente | **Respaldo arreglado e instalado**: cron 03:17 con validación del dump, fotos incluidas, retención y prueba de restauración (`scripts/backup-db.sh`), más copia fuera del VPS (`--traer`) | — |
+| Respaldos | **Botón manual «Respaldar ahora»** en Sistema → Respaldos (admin): corre el respaldo en el VPS y baja el `.sql.gz` al navegador, con historial descargable; se quitó la bajada automática a la Mac (09:15) a pedido del dueño. Permiso propio `respaldos`, nombre de archivo validado por patrón | — |
 | Integridad | **Guardias de estado** (no se cotiza/carga insumo/saca fotos en órdenes entregadas o canceladas), **baja validada y única**, **stock atómico** (no puede quedar negativo), **avisos y webhooks sin duplicados**, **transacciones** en cotización/stock/mensajes/config, **control optimista** de estado, `connectionTimeoutMillis`, **índices UNIQUE** (email de cliente, `wa_message_id`, bajas) | `de3c817` |
 | CRUD | **Clientes, técnicos e insumos editables**; **papelera** de clientes con restaurar; **baja lógica de usuarios** (ya no se borran); notas de WhatsApp y notificaciones borrables | `b0e018d` |
 | CRM+ | **Etiquetas administrables, respuestas rápidas (`/` en el compositor), búsqueda dentro de los mensajes, exportar conversaciones a CSV** y **matriz de permisos por usuario** (qué ve y qué puede hacer cada cuenta, respetada por la API en 53 endpoints) | `a8f0d78` |
@@ -91,14 +92,25 @@ bueno era del 15/09 (hecho a mano durante la puesta en marcha).
 
 **Falta (1 comando):** `bash scripts/backup-db.sh --instalar` para reemplazar el cron roto.
 
+**Actualización (24/09/2026): respaldo manual desde el panel.** A pedido del dueño, el respaldo
+dejó de ser "algo que corre solo" desde su lado: se quitó la bajada automática diaria a la Mac
+(LaunchAgent `com.bertika.backup`, 09:15; los archivos quedaron en `trash/backup-mac-automatico/`)
+y se agregó **Sistema → Respaldos** (`/respaldos`) con el botón **«Respaldar ahora»**: corre el
+respaldo en el VPS y baja el `.sql.gz` (más las fotos en un `.tar.gz`) al navegador en el mismo
+click, con la lista de copias del servidor para bajar cualquiera. El endpoint usa un permiso
+propio (`respaldos`, por plantilla solo admin), ejecuta el script con argumentos fijos y valida
+el nombre del archivo contra un patrón (no se puede pedir otra ruta). El cron del VPS de las
+03:17 se mantiene como red de seguridad. Verificado en producción: `POST /api/respaldos` →
+`ok`, `GET /api/respaldos/:archivo` → 200 con el `.sql.gz` que restaura (26 tablas), técnico → 403.
+
 ### 2.2 Lo que sigue faltando en respaldos
 
 | Problema | Riesgo concreto |
 |---|---|
-| Los respaldos viven **en el mismo VPS** | Si se pierde el servidor, se pierde la base **y** los respaldos |
-| **Las fotos de diagnóstico no se respaldan** (`/var/www/bertika/uploads`, 3 archivos hoy) | Se pierde la evidencia fotográfica de los diagnósticos |
+| Los respaldos viven **en el mismo VPS** | Si se pierde el servidor, se pierde la base **y** los respaldos. El botón del panel lo mitiga (la copia baja a tu equipo cuando lo apretás), pero no hay copia automática fuera del VPS hasta configurar la nube (`--configurar-nube`) |
 | Solo 14 días de retención | Un error detectado al día 15 ya no se puede recuperar |
 | Nunca se probó una restauración **real** sobre la base viva | Ahora hay un procedimiento probado en base de prueba, pero no un ensayo de recuperación total |
+| El botón depende de que `/usr/local/bin/bertika-backup.sh` esté instalado y al día | Tras tocar el script hay que correr `bash scripts/backup-db.sh --instalar` (el panel avisa con ese comando) |
 
 ### 2.3 Borrado por error
 

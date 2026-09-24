@@ -179,6 +179,22 @@ Los clientes dados de baja no aparecen en `GET /estado`.
 | --- | --- | --- |
 | `POST` | `/bajas/:id/reciclar` | Marca `reciclada: true` y `fecha_reciclaje` |
 
+## Respaldos (admin)
+
+El respaldo **no** es programado desde el panel: el administrador lo dispara con el botón
+**Sistema → Respaldos → «Respaldar ahora»**. Requieren el permiso `respaldos` (por plantilla
+solo lo tiene el admin) y ejecutan `bertika-backup.sh --en-servidor --json` en el VPS, con
+argumentos fijos.
+
+| Método | Ruta | Efecto |
+| --- | --- | --- |
+| `GET` | `/respaldos` | `{ archivos[{nombre,tipo,bytes,fecha}], carpeta, retencionDias, corriendo, ultimo, base }` |
+| `POST` | `/respaldos` | Corre el respaldo **ahora** y devuelve `{ ok, archivo, bytes, fotos, cuando, archivos, base }`. `409` si ya hay uno en curso; `500 { error }` con el motivo si el dump falla la validación |
+| `GET` | `/respaldos/:archivo` | Baja el `.sql.gz` (o el `.tar.gz` de fotos) como adjunto. El nombre se valida contra `^(bertika\|uploads)_[A-Za-z0-9_-]+\.(sql\.gz\|tar\.gz)$`: no se puede pedir otra ruta |
+
+Sin el script instalado en el VPS (`/usr/local/bin/bertika-backup.sh`), `POST` responde `500`
+y el panel muestra el comando para instalarlo (`bash scripts/backup-db.sh --instalar`).
+
 ## Reset demo (admin)
 
 ### `POST /reset`

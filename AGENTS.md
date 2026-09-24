@@ -18,6 +18,14 @@
 - `deploy.sh` aborta solo si el dist contiene "Vertika" o no lleva la marca Bertika (guard anti-regresion). No deshabilitar ese guard.
 - No revelar secretos en logs ni mensajes. Los secretos viven en el Llavero de macOS (service `bertika`) y en `/etc/bertika/bertika-api.env` de la VPS, nunca en el repo.
 
+## Respaldos (regla del dueño, 24/09/2026)
+- **El respaldo NO es programado de nuestro lado**: no reinstalar la bajada automática a la Mac
+  (LaunchAgent `com.bertika.backup`; sus archivos quedaron en `trash/backup-mac-automatico/`).
+- El respaldo se dispara a mano desde el panel: **Sistema → Respaldos → «Respaldar ahora»**
+  (corre en el VPS y baja el `.sql.gz` al navegador). Endpoints en `api/server.js` (`/api/respaldos`).
+- El cron del VPS de las 03:17 se mantiene como red de seguridad. Tras tocar `scripts/backup-db.sh`
+  hay que correr `bash scripts/backup-db.sh --instalar` (el deploy no toca `/usr/local/bin`).
+
 ## Reglas de negocio (no cambiar sin pedido explicito)
 - **No se asignan clientes a los tecnicos.** Cualquier tecnico trabaja con cualquier
   orden/bateria, sin importar de que cliente sea (`tecnico_id` es solo informativo:

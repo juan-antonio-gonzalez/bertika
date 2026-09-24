@@ -144,6 +144,7 @@ direccion** (se puede guardar en favoritos y el menu marca donde estas):
 | **Papelera** | `/hub/papelera` | Clientes dados de baja, con quien y cuando, y boton **Restaurar**. |
 | **Reportes** | `/reportes` | Exportacion a CSV. |
 | **Usuarios** | `/usuarios` | Alta, edicion, baja/reactivacion y **matriz de permisos por usuario** (que ve y que puede hacer, con plantillas por rol). |
+| **Respaldos** | `/respaldos` | Solo admin. Boton **Respaldar ahora**: respalda la base en el servidor y baja la copia al navegador cuando vos quieras (no hay respaldo programado de tu lado). Abajo, la lista de copias del servidor con su fecha y tamano para bajar cualquiera. |
 | **Mi cuenta** | `/settings` | Datos propios y cambio de contrasena. |
 
 El **menu lateral** agrupa todo por rol (Operacion · Comercial · Taller · Sistema) y
