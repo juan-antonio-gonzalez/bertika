@@ -47,3 +47,32 @@ export async function api(path, { method = 'GET', body, form } = {}) {
   }
   return data;
 }
+
+// Descarga un archivo que exige token (los GET de la API no aceptan el token
+// por query). Se pide como blob y se dispara la bajada del navegador.
+export async function apiDescargar(path, nombre) {
+  const token = getToken();
+  let res;
+  try {
+    res = await fetch(BASE_URL + path, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  } catch {
+    throw new Error('No se pudo conectar con el servidor');
+  }
+  if (!res.ok) {
+    let data = null;
+    try { data = await res.json(); } catch { /* sin cuerpo JSON */ }
+    const err = new Error((data && data.error) || `Error ${res.status}`);
+    err.status = res.status;
+    throw err;
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = nombre;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  return blob.size;
+}

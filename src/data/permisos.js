@@ -75,6 +75,7 @@ export const PERMISOS = [
   { clave: 'crear_usuarios', etiqueta: 'Crear usuarios', grupo: 'Sistema', op: 'crear', critica: true, detalle: 'Da acceso nuevo a la plataforma.' },
   { clave: 'editar_usuarios', etiqueta: 'Editar usuarios y permisos', grupo: 'Sistema', op: 'editar', critica: true, detalle: 'Cambia contraseñas, roles y la matriz de permisos.' },
   { clave: 'borrar_usuarios', etiqueta: 'Dar de baja usuarios', grupo: 'Sistema', op: 'borrar', critica: true, detalle: 'Le saca el acceso a una cuenta.' },
+  { clave: 'respaldos', etiqueta: 'Respaldos', grupo: 'Sistema', op: 'ver', detalle: 'Botón para respaldar la base cuando quieras y bajar la copia.' },
   { clave: 'mi_cuenta', etiqueta: 'Mi cuenta', grupo: 'Sistema', op: 'ver', detalle: 'Datos propios y cambio de contraseña.' },
 
   // ---------------- Portal del cliente ----------------
@@ -190,6 +191,7 @@ export const SECCION_POR_RUTA = {
   '/hub/papelera': 'papelera',
   '/reportes': 'reportes',
   '/usuarios': 'usuarios',
+  '/respaldos': 'respaldos',
   '/settings': 'mi_cuenta',
 };
 
@@ -210,7 +212,7 @@ export function inicioDe(usuario) {
     ['/hub/whatsapp', 'whatsapp'], ['/hub/inventario', 'inventario'], ['/hub/garantias', 'garantias'],
     ['/hub/tecnicos', 'tecnicos'], ['/hub/flotillas', 'flotillas'], ['/hub/baja', 'baja'],
     ['/hub/cotizador', 'cotizador'], ['/hub/historial', 'historial'], ['/reportes', 'reportes'],
-    ['/hub/papelera', 'papelera'], ['/usuarios', 'usuarios'],
+    ['/hub/papelera', 'papelera'], ['/respaldos', 'respaldos'], ['/usuarios', 'usuarios'],
   ];
   for (const [ruta, seccion] of orden) {
     if (puedeVer(usuario, seccion)) return ruta;

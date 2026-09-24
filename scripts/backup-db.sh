@@ -3,6 +3,10 @@
 #
 # Uso:
 #   bash scripts/backup-db.sh                 # corre en el servidor y deja el .sql.gz
+#   bash scripts/backup-db.sh --en-servidor [--json]
+#                                             # respaldo en el VPS; con --json
+#                                             # imprime una linea JSON (lo usa el
+#                                             # boton "Respaldar ahora" del panel)
 #   bash scripts/backup-db.sh --instalar      # lo instala en el VPS + cron diario 03:17
 #   bash scripts/backup-db.sh --verificar     # restaura el ultimo respaldo en una base
 #                                             # de prueba y cuenta las filas (no toca la real)
@@ -56,8 +60,17 @@ subir_a_nube() {
 
 # ----------------------------- se ejecuta en el VPS -----------------------------
 if [ "${1:-}" = "--en-servidor" ]; then
+  # --json: salida de una sola linea para que la API del panel la parsee.
+  # Los mensajes humanos se van a stderr, asi stdout queda limpio.
+  JSON=0
+  [ "${2:-}" = "--json" ] && JSON=1
+  aviso() { [ "$JSON" = "1" ] && echo "$1" >&2 || echo "$1"; }
+  fallar() {
+    [ "$JSON" = "1" ] && echo "{\"ok\":false,\"error\":$1}" || echo "$2"
+    exit 1
+  }
   DB="$(grep -E '^DATABASE_URL=' "$ENV_REMOTO" | cut -d= -f2-)"
-  [ -n "$DB" ] || { echo "No encontre DATABASE_URL en $ENV_REMOTO"; exit 1; }
+  [ -n "$DB" ] || fallar '"No encontre DATABASE_URL en el archivo de entorno del servidor"' "No encontre DATABASE_URL en $ENV_REMOTO"
   mkdir -p "$DESTINO"
   STAMP="$(date +%F_%H%M)"
   ARCHIVO="$DESTINO/bertika_$STAMP.sql.gz"
@@ -66,28 +79,36 @@ if [ "${1:-}" = "--en-servidor" ]; then
   pg_dump "$DB" > "$TMP"
   TAMANO="$(wc -c < "$TMP" | tr -d ' ')"
   if [ "$TAMANO" -lt "$MIN_BYTES" ]; then
-    echo "FALLA: el respaldo salio de $TAMANO bytes (minimo $MIN_BYTES). No se guarda."
-    exit 1
+    fallar "\"El respaldo salio de $TAMANO bytes (minimo $MIN_BYTES): no se guarda\"" "FALLA: el respaldo salio de $TAMANO bytes (minimo $MIN_BYTES). No se guarda."
   fi
   # Control de cordura: el dump tiene que traer las tablas del taller.
   for t in ordenes clientes baterias insumos usuarios wa_conversaciones; do
-    grep -q "CREATE TABLE public.$t" "$TMP" || { echo "FALLA: el respaldo no trae la tabla $t"; exit 1; }
+    grep -q "CREATE TABLE public.$t" "$TMP" || fallar "\"El respaldo no trae la tabla $t\"" "FALLA: el respaldo no trae la tabla $t"
   done
   gzip -c "$TMP" > "$ARCHIVO"
   chmod 600 "$ARCHIVO"
   # Las fotos de diagnostico viven fuera de la base: sin esto quedan sin respaldo.
+  FOTOS=""
   if [ -d /var/www/bertika/uploads ]; then
     tar czf "$DESTINO/uploads_$STAMP.tar.gz" -C /var/www/bertika uploads 2>/dev/null || true
     chmod 600 "$DESTINO/uploads_$STAMP.tar.gz" 2>/dev/null || true
+    [ -f "$DESTINO/uploads_$STAMP.tar.gz" ] && FOTOS="uploads_$STAMP.tar.gz"
   fi
   # Limpieza: respaldos viejos (comprimidos) y los .sql vacios del script roto.
   find "$DESTINO" -name 'bertika_*.sql.gz' -mtime "+$RETENCION_DIAS" -delete
   find "$DESTINO" -name 'uploads_*.tar.gz' -mtime "+$RETENCION_DIAS" -delete
   find "$DESTINO" -name 'bertika_*.sql' -size 0 -delete
-  echo "OK respaldo: $ARCHIVO ($(du -h "$ARCHIVO" | cut -f1)), fotos: $(ls -la "$DESTINO"/uploads_*.tar.gz 2>/dev/null | tail -1 | awk '{print $5" bytes"}' || echo 'sin fotos'), quedan $(ls "$DESTINO"/*.sql.gz 2>/dev/null | wc -l | tr -d ' ') respaldos"
+  BYTES="$(wc -c < "$ARCHIVO" | tr -d ' ')"
+  if [ "$JSON" = "1" ]; then
+    printf '{"ok":true,"archivo":"%s","bytes":%s,"fecha":"%s","fotos":"%s"}\n' \
+      "$(basename "$ARCHIVO")" "$BYTES" "$(date -Iseconds)" "$FOTOS"
+  else
+    echo "OK respaldo: $ARCHIVO ($(du -h "$ARCHIVO" | cut -f1)), fotos: $(ls -la "$DESTINO"/uploads_*.tar.gz 2>/dev/null | tail -1 | awk '{print $5" bytes"}' || echo 'sin fotos'), quedan $(ls "$DESTINO"/*.sql.gz 2>/dev/null | wc -l | tr -d ' ') respaldos"
+  fi
   # Copia fuera del VPS (si esta configurada): sin esto, si se pierde el
-  # servidor se pierden tambien los respaldos.
-  subir_a_nube "$ARCHIVO" "$DESTINO/uploads_$STAMP.tar.gz"
+  # servidor se pierden tambien los respaldos. Va a stderr para no ensuciar el
+  # JSON, y nunca corta el respaldo (que ya quedo hecho y validado).
+  subir_a_nube "$ARCHIVO" "$DESTINO/uploads_$STAMP.tar.gz" >&2 || true
   exit 0
 fi
 

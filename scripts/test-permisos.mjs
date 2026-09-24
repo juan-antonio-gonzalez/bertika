@@ -29,7 +29,7 @@ test('el catálogo es coherente: claves únicas y con etiqueta, grupo y operaci�
 test('las secciones son los permisos de tipo ver', () => {
   assert.deepEqual(SECCIONES, PERMISOS.filter((p) => p.op === 'ver').map((p) => p.clave));
   for (const s of ['tablero', 'dashboard', 'historial', 'inventario', 'tecnicos', 'flotillas', 'garantias',
-    'baja', 'cotizador', 'whatsapp', 'clientes', 'papelera', 'tareas', 'reportes', 'usuarios', 'mi_cuenta']) {
+    'baja', 'cotizador', 'whatsapp', 'clientes', 'papelera', 'tareas', 'reportes', 'usuarios', 'respaldos', 'mi_cuenta']) {
     assert.ok(SECCIONES.includes(s), `falta la sección ${s}`);
   }
 });
@@ -60,7 +60,16 @@ test('el admin tiene todo y el cliente solo su portal', () => {
   assert.ok(tec.tablero && tec.diagnostico && tec.responder_whatsapp);
   assert.ok(!tec.entregar, 'el técnico no entrega ni cobra por plantilla');
   assert.ok(!tec.usuarios && !tec.config_cotizador && !tec.baja_orden);
+  assert.ok(!tec.respaldos, 'respaldar la base es solo del administrador');
   assert.equal(Object.keys(tec).length, CLAVES.length, 'la plantilla trae todas las claves');
+});
+
+test('respaldos queda para el admin (el botón no se le habilita a nadie más)', () => {
+  assert.equal(permisosPorDefecto('admin').respaldos, true);
+  assert.equal(permisosPorDefecto('tecnico').respaldos, false);
+  assert.equal(permisosPorDefecto('cliente').respaldos, false);
+  assert.ok(SECCIONES.includes('respaldos'), 'es una pantalla del panel');
+  assert.equal(inicioDe({ rol: 'tecnico', permisos: null }) === '/respaldos', false, 'nunca es el inicio de un técnico');
 });
 
 test('permisosEfectivos usa la plantilla cuando el usuario no tiene nada guardado', () => {
@@ -137,6 +146,7 @@ test('cada ruta del panel tiene su sección y el inicio siempre es alcanzable', 
   assert.equal(seccionDeRuta('/hub/whatsapp'), 'whatsapp');
   assert.equal(seccionDeRuta('/hub/inventario/'), 'inventario');
   assert.equal(seccionDeRuta('/reportes'), 'reportes');
+  assert.equal(seccionDeRuta('/respaldos'), 'respaldos');
   assert.equal(seccionDeRuta('/ruta-inexistente'), null);
   const tec = { rol: 'tecnico', permisos: null };
   assert.equal(inicioDe(tec), '/hub', 'el técnico por plantilla arranca en el tablero');
