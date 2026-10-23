@@ -36,7 +36,7 @@ echo "== Deploy frontend a $SSH_HOST =="
 # --delete solo sobre el dist: nunca se tocan api/ (con su node_modules),
 # src/data ni uploads/ (que viven en el mismo directorio raiz).
 rsync -az --delete \
-  --exclude api --exclude src --exclude uploads "${EXCLUDE_DOCS[@]}" \
+  --exclude api --exclude src --exclude uploads --exclude scripts "${EXCLUDE_DOCS[@]}" \
   -e "ssh $SSH_ARGS" dist/ "root@$SSH_HOST:$REMOTE_DIR/"
 
 echo "== Deploy API =="
@@ -46,6 +46,12 @@ rsync -az --delete --exclude node_modules --exclude .env --exclude .env.example 
 echo "== Seed data (src/data) =="
 ssh $SSH_ARGS "root@$SSH_HOST" "mkdir -p $REMOTE_DIR/src/data"
 rsync -az "${EXCLUDE_DOCS[@]}" -e "ssh $SSH_ARGS" src/data/ "root@$SSH_HOST:$REMOTE_DIR/src/data/"
+
+echo "== Scripts de operacion =="
+ssh $SSH_ARGS "root@$SSH_HOST" "mkdir -p $REMOTE_DIR/scripts"
+rsync -az "${EXCLUDE_DOCS[@]}" -e "ssh $SSH_ARGS" \
+  scripts/retencion-privacidad.mjs scripts/verificar-privacidad.mjs \
+  "root@$SSH_HOST:$REMOTE_DIR/scripts/"
 
 echo "== Dependencias, directorios y servicio =="
 ssh $SSH_ARGS "root@$SSH_HOST" bash -s <<'EOF'

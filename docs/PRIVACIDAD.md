@@ -65,7 +65,8 @@ node scripts/retencion-privacidad.mjs --aplicar
 npm run privacidad:verificar
 ```
 
-Requiere `DATABASE_URL`. Conviene programarlo mensualmente en el VPS.
+Requiere `DATABASE_URL`. En producción está programado en `/etc/cron.d/bertika-privacidad`
+(el día 1 de cada mes a las 04:17) y el deploy sincroniza el script a `/var/www/bertika/scripts/`.
 
 ## 5. Variables de entorno
 
