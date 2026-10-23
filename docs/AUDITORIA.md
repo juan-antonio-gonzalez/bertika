@@ -4,6 +4,10 @@
 **Método:** lectura completa del código (65 endpoints, 20 tablas) + verificación en vivo contra
 producción de los hallazgos graves (solo lecturas). Nada se modificó sin decirlo.
 
+> **Actualización (23/10/2026):** las Fases 1 y 2 están implementadas, probadas y en producción.
+> Este documento queda como **registro histórico** de la auditoría del 23/09; no es el estado
+> vigente. Los pendientes actuales están en [FUTURO.md](FUTURO.md).
+
 ---
 
 ## 0. Estado de las correcciones (actualizado 23/09/2026 20:30)
@@ -37,10 +41,9 @@ sección de permisos) **dejan de aplicar por decisión de negocio**; `tecnico_id
 dato informativo. Los hallazgos A2 (entregar/cancelar) siguen vigentes y ya están
 corregidos: esas acciones son solo de admin.
 
-**Lo que sigue pendiente** (todo de menor urgencia, §6 y §7): etiquetas administrables, respuestas
-rápidas, búsqueda dentro de los mensajes, adjuntos/fotos en el chat, consentimiento y baja de
-WhatsApp (opt-out), exportación de conversaciones, papelera para el resto de las tablas, auditoría
-genérica de cambios, copia de respaldo a otro proveedor y el ensayo de restauración mensual.
+**Lo que sigue pendiente** está en [FUTURO.md](FUTURO.md). Este documento conserva el análisis
+original: varias de las mejoras de §6 y §7 ya se implementaron (etiquetas, respuestas rápidas,
+búsqueda en mensajes, adjuntos, opt-out, exportación, auditoría genérica y respaldos probados).
 
 ## 1. Resumen ejecutivo
 

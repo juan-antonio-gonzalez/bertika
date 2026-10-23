@@ -325,6 +325,9 @@ Sin firma valida el endpoint responde 403.
   **Sistema → Salud y auditoría → Envíos**.
 - La **agenda** de visitas y la emision de **CFDI/facturacion** estan pendientes;
   tampoco hay pagos ni lecturas automaticas del equipo de diagnostico.
+- **Fases 1 y 2 completas.** Lo que falta (recompra, campanas, cobros, portal de
+  flotillas, email/agenda, IA y pendientes de infraestructura) esta listado y priorizado
+  en `docs/FUTURO.md`.
 - El **cotizador de visita** usa tarifas provisorias en USD (`src/data/cotizadorVisita.js`).
 
 ---

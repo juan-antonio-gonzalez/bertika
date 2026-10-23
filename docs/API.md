@@ -2,6 +2,9 @@
 
 Base URL en producción: `https://bertika.com/api` (en dev local: `http://localhost:5173/api`, que proxya a `http://localhost:3001`).
 
+> **Estado:** Fases 1 (robustez) y 2 (CRM comercial) implementadas y en producción. Los
+> endpoints de la Fase 3 todavía no existen; lo pendiente está en [FUTURO.md](FUTURO.md).
+
 Formato: JSON. Autenticación con `Authorization: Bearer <token>` (obtenido en `POST /auth/login`). Los errores responden `{ "error": "mensaje" }` con su código HTTP y, desde la fase de robustez, también `reqId` (el mismo que sale en el header `x-request-id` y en el log del servidor).
 
 ## Autenticación

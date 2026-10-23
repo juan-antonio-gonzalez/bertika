@@ -4,6 +4,12 @@ Aplicacion web para gestionar el ciclo completo de una bateria en el taller: rec
 
 **Tagline:** `Bertika - Energia bajo control`
 
+## Estado
+
+- **Fase 1 — Robustez:** ✅ implementada y en producción (cola de salida de WhatsApp, auditoría, salud/alertas, CSV seguro, tests y CI).
+- **Fase 2 — CRM comercial:** ✅ implementada y en producción (cotizar desde el chat, embudo automático, SLA/reparto, automatizaciones de seguimiento).
+- **Fase 3 y pendientes de infraestructura:** ver [docs/FUTURO.md](docs/FUTURO.md).
+
 ## Como ejecutar
 
 ```bash
@@ -112,3 +118,4 @@ Datos semilla precargados (5 tecnicos, 5 clientes, 9 baterias, 10+ insumos, 8 or
 
 > Nota: WhatsApp (Meta Cloud API) y email transaccional ya están integrados. La agenda de
 > visitas, CFDI/facturación, pagos y lecturas automáticas del equipo siguen pendientes.
+> El detalle y el orden sugerido están en [docs/FUTURO.md](docs/FUTURO.md).
