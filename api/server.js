@@ -13,7 +13,7 @@ import rateLimit from 'express-rate-limit';
 import { query, one, tx } from './db.js';
 import { nextId } from './ids.js';
 import { signToken, authRequired, requireRol, permisoRequerido, SECRET } from './middleware/auth.js';
-import { PERMISOS, COLUMNAS, agruparPermisos, permisosPorDefecto, normalizarPermisos, permisosEfectivos, puedeVer } from './permisos.js';
+import { PERMISOS, COLUMNAS, agruparPermisos, permisosPorDefecto, normalizarPermisos, permisosEfectivos, puedeVer, tienePermiso } from './permisos.js';
 import { canTransition, ORDEN_ESTADOS, ESTADO_LABEL, MIN_CAPACIDAD_PCT, esEstadoCerrado , puedeTrabajarEnOrden } from './reglas.js';
 import { obtenerDolar } from './dolar.js';
 import { calcularVisita, normalizarConfig, CONFIG_DEFAULT, textoFueraCobertura } from '../src/data/cotizadorVisita.js';
@@ -29,6 +29,11 @@ import {
 import { generarCodigoUnico, digitar, formatearCodigo } from './codigo.js';
 import { normalizarBooleano } from './validaciones.js';
 import { RESPUESTAS_EJEMPLO, colorDePaleta, normalizarAtajo, fragmentoConTexto } from '../src/data/respuestas.js';
+import {
+  AUTOMATIZACIONES, normalizarAutomatizaciones, debeSeguirPresupuesto, debePedirRetiro,
+  tituloSeguimiento, tituloRetiro,
+} from '../src/data/automatizaciones.js';
+import { resumenSla } from '../src/data/sla.js';
 import { filasCsv } from '../src/data/csv.js';
 import { auditar, listarAuditoria } from './auditoria.js';
 import {
@@ -380,6 +385,9 @@ async function asegurarCodigos() {
     END $$`);
   await query('ALTER TABLE wa_conversaciones ADD COLUMN IF NOT EXISTS etapa TEXT');
   await query('ALTER TABLE wa_conversaciones ADD COLUMN IF NOT EXISTS monto_estimado NUMERIC');
+  // Orden vinculada a la oportunidad: cierra el circulo chat -> cotizacion -> orden.
+  await query('ALTER TABLE wa_conversaciones ADD COLUMN IF NOT EXISTS orden_id TEXT');
+  await query('CREATE INDEX IF NOT EXISTS idx_wa_conversaciones_orden ON wa_conversaciones (orden_id)');
   await query(`CREATE TABLE IF NOT EXISTS wa_notas (
     id TEXT PRIMARY KEY,
     conversacion_id TEXT,
@@ -416,6 +424,31 @@ async function asegurarCodigos() {
     cerrada_en TIMESTAMPTZ
   )`);
   await query('CREATE INDEX IF NOT EXISTS idx_wa_tareas_vence ON wa_tareas (estado, vence)');
+  // Indice para medir SLA sin recorrer toda la tabla de mensajes.
+  await query('CREATE INDEX IF NOT EXISTS idx_wa_mensajes_dir ON wa_mensajes (conversacion_id, direccion, fecha DESC)');
+  // Automatizaciones de seguimiento: reglas prendidas y umbral en dias.
+  await query(`CREATE TABLE IF NOT EXISTS wa_automatizaciones (
+    clave TEXT PRIMARY KEY,
+    activo BOOLEAN DEFAULT TRUE,
+    dias INTEGER DEFAULT 2,
+    actualizado_en TIMESTAMPTZ DEFAULT now()
+  )`);
+  // Idempotencia: una regla no crea dos tareas para la misma oportunidad/orden.
+  await query(`CREATE TABLE IF NOT EXISTS wa_automatizaciones_log (
+    id TEXT PRIMARY KEY,
+    clave TEXT NOT NULL,
+    referencia TEXT NOT NULL,
+    tarea_id TEXT,
+    detalle TEXT,
+    fecha TIMESTAMPTZ DEFAULT now(),
+    UNIQUE (clave, referencia)
+  )`);
+  await query('CREATE INDEX IF NOT EXISTS idx_wa_auto_fecha ON wa_automatizaciones_log (clave, fecha DESC)');
+  // Reglas por defecto (prendidas, con el umbral del catalogo).
+  await query(`INSERT INTO wa_automatizaciones (clave, activo, dias) VALUES
+      ('seguimiento_presupuesto', true, 2),
+      ('retiro_pendiente', true, 3)
+    ON CONFLICT (clave) DO NOTHING`);
   // Avisos automaticos: que avisos estan prendidos y cuales ya se mandaron
   // (la clave (orden, plantilla) evita mandar dos veces el mismo aviso).
   await query('CREATE TABLE IF NOT EXISTS wa_avisos_config (evento TEXT PRIMARY KEY, activo BOOLEAN DEFAULT TRUE)');
@@ -1113,6 +1146,7 @@ async function puedeDecidirCotizacion(req, orden) {
 }
 
 app.post('/api/ordenes/:id/cotizacion/aprobar', publicLimiter, async (req, res) => {
+  let cambio = null;
   await tx(async (client) => {
     const o = await client.query('SELECT * FROM ordenes WHERE id = $1', [req.params.id]);
     const orden = o.rows[0];
@@ -1120,11 +1154,20 @@ app.post('/api/ordenes/:id/cotizacion/aprobar', publicLimiter, async (req, res) 
     if (!(await puedeDecidirCotizacion(req, orden))) throw { status: 403, message: 'Sin permisos para esta cotizacion' };
     if (orden.estado !== 'quoted') throw { status: 400, message: 'La orden no esta en estado cotizada' };
     await transition(client, orden, 'approved', 'Cotización aprobada por el cliente.', actorDe(req));
+    // El CRM se entera solo: la oportunidad pasa a "ganado".
+    cambio = await moverEtapaPorOrden(client, orden.id, 'ganado', 'Cotización aprobada por el cliente.');
   });
-  return res.json({ ok: true });
+  if (cambio) {
+    await auditar({
+      req, tabla: 'wa_conversaciones', registroId: cambio.conversacion_id, accion: 'etapa_automatica',
+      antes: { etapa: cambio.anterior }, despues: { etapa: cambio.nueva }, detalle: 'Cotización aprobada',
+    });
+  }
+  return res.json({ ok: true, etapa: cambio?.nueva || null });
 });
 
 app.post('/api/ordenes/:id/cotizacion/rechazar', publicLimiter, async (req, res) => {
+  let cambio = null;
   await tx(async (client) => {
     const o = await client.query('SELECT * FROM ordenes WHERE id = $1', [req.params.id]);
     const orden = o.rows[0];
@@ -1132,9 +1175,102 @@ app.post('/api/ordenes/:id/cotizacion/rechazar', publicLimiter, async (req, res)
     if (!(await puedeDecidirCotizacion(req, orden))) throw { status: 403, message: 'Sin permisos para esta cotizacion' };
     if (orden.estado !== 'quoted') throw { status: 400, message: 'La orden no esta en estado cotizada' };
     await transition(client, orden, 'cancelled', 'Cotización rechazada por el cliente. Orden cancelada.', actorDe(req));
+    cambio = await moverEtapaPorOrden(client, orden.id, 'perdido', 'Cotización rechazada');
   });
-  return res.json({ ok: true });
+  if (cambio) {
+    await auditar({
+      req, tabla: 'wa_conversaciones', registroId: cambio.conversacion_id, accion: 'etapa_automatica',
+      antes: { etapa: cambio.anterior }, despues: { etapa: cambio.nueva }, detalle: 'Cotización rechazada',
+    });
+  }
+  return res.json({ ok: true, etapa: cambio?.nueva || null });
 });
+
+// Crea la orden (y la bateria si es nueva) dentro de una transaccion. Se usa
+// tanto en POST /api/ordenes como al cotizar desde la bandeja: asi las dos
+// puertas crean exactamente lo mismo.
+async function crearOrdenTx(client, {
+  serieT, tipo, voltaje, capacidad, aplicacion, marca, modelo, equipo,
+  clienteT, fallaT, tecnico_id,
+}, actor) {
+  let bat = (await client.query('SELECT * FROM baterias WHERE numero_serie = $1', [serieT])).rows[0];
+  if (!bat) {
+    const batId = await nextId('bat', client);
+    await client.query(
+      `INSERT INTO baterias (id, numero_serie, tipo, voltaje, capacidad, aplicacion, marca, modelo, equipo, fecha_fabricacion, cliente_id, ciclos_estimados, estado_vida)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,300,'activa')`,
+      [batId, serieT, limStr(tipo, 40) || 'Plomo-Acido', limStr(voltaje, 12) || '12V', Number(capacidad) || 60, limStr(aplicacion, 40) || 'Automotriz', limStr(marca, 60) || 'Generica', limStr(modelo, 60) || 'Estandar', limStr(equipo, 120) || serieT, new Date().toISOString().slice(0, 10), clienteT]
+    );
+    bat = { id: batId, numero_serie: serieT };
+  }
+  const evId = await nextId('ev', client);
+  const ordId = await nextId('ord', client);
+  const codigo = await generarCodigoUnico(async (cod) => {
+    const r = await client.query('SELECT 1 FROM ordenes WHERE codigo_seguimiento = $1', [cod]);
+    return r.rowCount > 0;
+  });
+  await client.query(
+    `INSERT INTO ordenes (id, codigo_seguimiento, bateria_serie, cliente_id, tecnico_id, falla, motivo, estado, fecha_ingreso, hora_entrega, eventos, cotizacion, estado_cotizacion, insumos_utilizados, prueba_final, diagnostico)
+     VALUES ($1,$2,$3,$4,$5,$6,$6,'received',$7,$8,$9::jsonb,NULL,NULL,'[]'::jsonb,'{"estado":"pending"}',NULL)`,
+    [
+      ordId, codigo, serieT, clienteT, tecnico_id ? limStr(tecnico_id, 32) : null, fallaT,
+      nowIso(), new Date(Date.now() + 24 * 3600000).toISOString(),
+      JSON.stringify([{ id: evId, tipo: 'ingreso', detalle: `Batería ${serieT} ingresada al taller. Falla reportada: ${fallaT}`, fecha: nowIso(), usuario: actor }]),
+    ]
+  );
+  return ordId;
+}
+
+// Arma el detalle de la cotizacion (monto + renglones) con topes de seguridad.
+function armarDetalleCotizacion(montoN, servicios, insumos) {
+  return {
+    monto: montoN,
+    servicios_costos: (servicios || []).slice(0, 50).map((s) => ({ nombre: limStr(s.nombre, 120) || 'Servicio', monto: Math.max(0, Math.min(Number(s.monto) || 0, 1e9)) })),
+    insumos: (insumos || []).slice(0, 50).map((i) => ({ nombre: limStr(i.nombre, 120) || 'Insumo', cantidad: Math.max(0, Math.min(Number(i.cantidad) || 1, 1e4)), precio: Math.max(0, Math.min(Number(i.precio) || 0, 1e9)) })),
+  };
+}
+
+// Cotiza (o recotiza) una orden dentro de una transaccion: deja la version en
+// el historial y el evento. La validacion de permisos la hace el endpoint.
+async function cotizarOrdenTx(client, ordenId, { montoN, detalleCot }, actor) {
+  const o = (await client.query('SELECT * FROM ordenes WHERE id = $1 FOR UPDATE', [ordenId])).rows[0];
+  if (!o) throw { status: 404, message: 'Orden no encontrada' };
+  if (esEstadoCerrado(o.estado)) {
+    throw { status: 400, message: `La orden ya está ${(ESTADO_LABEL[o.estado] || o.estado).toLowerCase()}: no se puede recotizar.` };
+  }
+  await client.query(
+    `UPDATE ordenes SET cotizacion = $2::jsonb, estado = 'quoted', estado_cotizacion = 'pending' WHERE id = $1`,
+    [o.id, JSON.stringify(detalleCot)]
+  );
+  const cotId = await nextId('cot', client);
+  await client.query(
+    'INSERT INTO cotizaciones_historial (id, orden_id, monto, detalle, usuario) VALUES ($1,$2,$3,$4::jsonb,$5::jsonb)',
+    [cotId, o.id, montoN, JSON.stringify(detalleCot), JSON.stringify(actor)]
+  );
+  await pushEvento(client, o.id, 'cotizacion', `Cotización generada por ${fmtARS.format(montoN)}.`, actor);
+  return { ...o, estado: 'quoted', estado_cotizacion: 'pending', cotizacion: detalleCot };
+}
+
+// Mueve la etapa de la conversacion vinculada a una orden (aprobacion o
+// rechazo del cliente). Devuelve el cambio para poder auditarlo.
+async function moverEtapaPorOrden(client, ordenId, nuevaEtapa, motivo, usuario = 'sistema') {
+  const conv = (await client.query(
+    'SELECT id, etapa, monto_estimado FROM wa_conversaciones WHERE orden_id = $1 ORDER BY ultima_fecha DESC NULLS LAST LIMIT 1',
+    [ordenId]
+  )).rows[0];
+  if (!conv) return null;
+  const anterior = normalizarEtapa(conv.etapa);
+  const nueva = normalizarEtapa(nuevaEtapa);
+  if (anterior === nueva) return null;
+  await client.query('UPDATE wa_conversaciones SET etapa = $2 WHERE id = $1', [conv.id, nueva]);
+  const histId = await nextId('weh', client);
+  await client.query(
+    `INSERT INTO wa_etapa_historial (id, conversacion_id, anterior, nueva, monto, motivo, usuario)
+     VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+    [histId, conv.id, anterior, nueva, conv.monto_estimado, limStr(motivo, 300) || null, usuario]
+  );
+  return { conversacion_id: conv.id, anterior, nueva };
+}
 
 app.post('/api/ordenes', authRequired, permisoRequerido('crear_orden'), async (req, res) => {
   const { serie, tipo, voltaje, capacidad, aplicacion, marca, modelo, equipo, cliente_id, falla, tecnico_id } = req.body || {};
@@ -1144,34 +1280,9 @@ app.post('/api/ordenes', authRequired, permisoRequerido('crear_orden'), async (r
   if (!serieT || !clienteT || !fallaT) {
     return res.status(400).json({ error: 'Faltan datos obligatorios (serie, cliente y falla)' });
   }
-  const ordId = await tx(async (client) => {
-    let bat = (await client.query('SELECT * FROM baterias WHERE numero_serie = $1', [serieT])).rows[0];
-    if (!bat) {
-      const batId = await nextId('bat', client);
-      await client.query(
-        `INSERT INTO baterias (id, numero_serie, tipo, voltaje, capacidad, aplicacion, marca, modelo, equipo, fecha_fabricacion, cliente_id, ciclos_estimados, estado_vida)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,300,'activa')`,
-        [batId, serieT, limStr(tipo, 40) || 'Plomo-Acido', limStr(voltaje, 12) || '12V', Number(capacidad) || 60, limStr(aplicacion, 40) || 'Automotriz', limStr(marca, 60) || 'Generica', limStr(modelo, 60) || 'Estandar', limStr(equipo, 120) || serieT, new Date().toISOString().slice(0, 10), clienteT]
-      );
-      bat = { id: batId, numero_serie: serieT };
-    }
-    const evId = await nextId('ev', client);
-    const ordId = await nextId('ord', client);
-    const codigo = await generarCodigoUnico(async (cod) => {
-      const r = await client.query('SELECT 1 FROM ordenes WHERE codigo_seguimiento = $1', [cod]);
-      return r.rowCount > 0;
-    });
-    await client.query(
-      `INSERT INTO ordenes (id, codigo_seguimiento, bateria_serie, cliente_id, tecnico_id, falla, motivo, estado, fecha_ingreso, hora_entrega, eventos, cotizacion, estado_cotizacion, insumos_utilizados, prueba_final, diagnostico)
-       VALUES ($1,$2,$3,$4,$5,$6,$6,'received',$7,$8,$9::jsonb,NULL,NULL,'[]'::jsonb,'{"estado":"pending"}',NULL)`,
-      [
-        ordId, codigo, serieT, clienteT, tecnico_id ? limStr(tecnico_id, 32) : null, fallaT,
-        nowIso(), new Date(Date.now() + 24 * 3600000).toISOString(),
-        JSON.stringify([{ id: evId, tipo: 'ingreso', detalle: `Batería ${serieT} ingresada al taller. Falla reportada: ${fallaT}`, fecha: nowIso(), usuario: actorDe(req) }]),
-      ]
-    );
-    return ordId;
-  });
+  const ordId = await tx(async (client) => crearOrdenTx(client, {
+    serieT, tipo, voltaje, capacidad, aplicacion, marca, modelo, equipo, clienteT, fallaT, tecnico_id,
+  }, actorDe(req)));
   await auditar({
     req, tabla: 'ordenes', registroId: ordId, accion: 'crear',
     despues: { bateria_serie: serieT, cliente_id: clienteT, falla: fallaT, tecnico_id: tecnico_id || null, estado: 'received' },
@@ -1237,37 +1348,17 @@ app.post('/api/ordenes/:id/diagnostico', authRequired, permisoRequerido('diagnos
 app.post('/api/ordenes/:id/cotizacion', authRequired, permisoRequerido('cotizar'), async (req, res) => {
   const { monto, servicios, insumos } = req.body || {};
   const montoN = Math.max(0, Math.min(Number(monto) || 0, 1e9));
-  if (!arrBounded(servicios) || !arrBounded(insumos)) {
+  if (!arrBounded(servicios || []) || !arrBounded(insumos || [])) {
     return res.status(400).json({ error: 'Demasiados renglones en la cotizacion' });
   }
   const orden = await one('SELECT * FROM ordenes WHERE id = $1', [req.params.id]);
   if (!orden) return res.status(404).json({ error: 'Orden no encontrada' });
   if (!puedeEscribirOrden(req, orden)) return res.status(403).json({ error: 'Sin permisos para esta orden' });
   if (rechazarSiCerrada(orden, res)) return;
-  const detalleCot = {
-    monto: montoN,
-    servicios_costos: (servicios || []).slice(0, 50).map((s) => ({ nombre: limStr(s.nombre, 120) || 'Servicio', monto: Math.max(0, Math.min(Number(s.monto) || 0, 1e9)) })),
-    insumos: (insumos || []).slice(0, 50).map((i) => ({ nombre: limStr(i.nombre, 120) || 'Insumo', cantidad: Math.max(0, Math.min(Number(i.cantidad) || 1, 1e4)), precio: Math.max(0, Math.min(Number(i.precio) || 0, 1e9)) })),
-  };
+  const detalleCot = armarDetalleCotizacion(montoN, servicios, insumos);
   // Cotizacion + version en el historial + evento, todo en UNA transaccion: si
   // algo falla no queda una cotizacion sin su rastro de auditoria.
-  await tx(async (client) => {
-    const o = (await client.query('SELECT * FROM ordenes WHERE id = $1 FOR UPDATE', [orden.id])).rows[0];
-    if (!o) throw { status: 404, message: 'Orden no encontrada' };
-    if (esEstadoCerrado(o.estado)) {
-      throw { status: 400, message: `La orden ya está ${(ESTADO_LABEL[o.estado] || o.estado).toLowerCase()}: no se puede recotizar.` };
-    }
-    await client.query(
-      `UPDATE ordenes SET cotizacion = $2::jsonb, estado = 'quoted', estado_cotizacion = 'pending' WHERE id = $1`,
-      [o.id, JSON.stringify(detalleCot)]
-    );
-    const cotId = await nextId('cot', client);
-    await client.query(
-      'INSERT INTO cotizaciones_historial (id, orden_id, monto, detalle, usuario) VALUES ($1,$2,$3,$4::jsonb,$5::jsonb)',
-      [cotId, o.id, montoN, JSON.stringify(detalleCot), JSON.stringify(actorDe(req))]
-    );
-    await pushEvento(client, o.id, 'cotizacion', `Cotización generada por ${fmtARS.format(montoN)}.`, actorDe(req));
-  });
+  await tx(async (client) => cotizarOrdenTx(client, orden.id, { montoN, detalleCot }, actorDe(req)));
   await auditar({
     req, tabla: 'ordenes', registroId: orden.id, accion: 'cotizar',
     antes: { monto: orden.cotizacion?.monto ?? null },
@@ -2448,11 +2539,9 @@ async function guardarMensaje({ conversacion, direccion, tipo, texto, plantilla 
   });
 }
 
-// Guarda el mensaje, lo encola y hace un intento inmediato. Si Meta falla por
-// algo transitorio, la fila queda en la cola y el worker lo reintenta; si el
-// error es definitivo, se responde 400 como antes. La respuesta HTTP la arma
-// el que llama (asi el mismo camino sirve para texto, plantilla o adjunto).
-async function enviarPorOutbox(res, {
+// Guarda el mensaje, lo encola y hace un intento inmediato. Devuelve el status
+// y el cuerpo para que el endpoint decida (texto normal, cotizacion, etc.).
+async function guardarYEnviar({
   conv, tipo, texto, plantilla = null, parametros = [], media = null,
 }) {
   const mensajeId = await guardarMensaje({
@@ -2486,24 +2575,44 @@ async function enviarPorOutbox(res, {
     if (mensajeId) {
       await query("UPDATE wa_mensajes SET estado = 'error', error = $2 WHERE id = $1", [mensajeId, `No se pudo encolar: ${e.message}`]);
     }
-    return res.status(500).json({ error: `No se pudo encolar el mensaje: ${e.message}` });
+    return { status: 500, body: { error: `No se pudo encolar el mensaje: ${e.message}` }, mensajeId, envioId: null };
   }
   const r = await procesarEnvio(envioId);
   const base = { conversacion_id: conv.id, media_url: media?.url || null, media_tipo: media?.tipo || null };
-  if (r.estado === 'enviado') return res.json({ ok: true, id: r.waMessageId || null, estado: 'enviado', ...base });
+  if (r.estado === 'enviado') {
+    return { status: 200, body: { ok: true, id: r.waMessageId || null, estado: 'enviado', ...base }, mensajeId, envioId };
+  }
   if (r.estado === 'pendiente') {
-    return res.status(202).json({
-      ok: true, enCola: true, estado: 'pendiente', ...base,
-      aviso: 'WhatsApp no respondió: el mensaje quedó en cola y se reintenta solo.',
-    });
+    return {
+      status: 202,
+      body: {
+        ok: true, enCola: true, estado: 'pendiente', ...base,
+        aviso: 'WhatsApp no respondió: el mensaje quedó en cola y se reintenta solo.',
+      },
+      mensajeId, envioId,
+    };
   }
   if (r.estado === 'incierto') {
-    return res.status(202).json({
-      ok: true, enCola: true, incierto: true, estado: 'incierto', ...base,
-      aviso: 'No sabemos si el mensaje llegó. Revisalo en Sistema → Envíos antes de reenviarlo.',
-    });
+    return {
+      status: 202,
+      body: {
+        ok: true, enCola: true, incierto: true, estado: 'incierto', ...base,
+        aviso: 'No sabemos si el mensaje llegó. Revisalo en Sistema → Envíos antes de reenviarlo.',
+      },
+      mensajeId, envioId,
+    };
   }
-  return res.status(400).json({ ok: false, error: r.error || 'No se pudo enviar el mensaje', estado: r.estado });
+  return {
+    status: 400,
+    body: { ok: false, error: r.error || 'No se pudo enviar el mensaje', estado: r.estado },
+    mensajeId, envioId,
+  };
+}
+
+// Version para los endpoints que solo quieren responder el resultado.
+async function enviarPorOutbox(res, opciones) {
+  const r = await guardarYEnviar(opciones);
+  return res.status(r.status).json(r.body);
 }
 
 
@@ -2568,7 +2677,12 @@ async function avisarOrden(ordenId) {
     const conv = await conversacionDe(cliente.telefono);
     if (!conv) return;
     if (!(await reservarAviso(orden.id, plantilla))) return; // ya se mando (o lo esta mandando otro)
-    const parametros = parametrosAviso(orden.estado, { cliente, orden, sitio: PUBLIC_URL });
+    const parametros = parametrosAviso(orden.estado, {
+      cliente, orden, sitio: PUBLIC_URL,
+      // El enlace público exige el token firmado: sin esto el cliente abría
+      // una cotización que la API rechaza.
+      linkCotizacion: `${PUBLIC_URL}/cotizacion/${orden.id}?t=${hornoSigCot(orden.id)}`,
+    });
     const texto = resumenAviso(orden.estado, { orden });
     const mensajeId = await guardarMensaje({
       conversacion: conv, direccion: 'out', tipo: 'template', plantilla, texto, estado: 'en_cola',
@@ -2661,6 +2775,183 @@ app.post('/api/whatsapp/avisos/garantias', authRequired, permisoRequerido('aviso
   return res.json(await avisarGarantias());
 });
 
+// ---------- Automatizaciones de seguimiento (crean tareas, no mandan solas) ----------
+let cacheAuto = { valor: null, hasta: 0 };
+
+async function configAutomatizaciones({ forzar = false } = {}) {
+  if (!forzar && cacheAuto.valor && Date.now() < cacheAuto.hasta) return cacheAuto.valor;
+  const filas = await query('SELECT clave, activo, dias FROM wa_automatizaciones');
+  const guardado = Object.fromEntries(filas.map((f) => [f.clave, { activo: f.activo === true, dias: f.dias }]));
+  const valor = normalizarAutomatizaciones(guardado);
+  cacheAuto = { valor, hasta: Date.now() + 15000 };
+  return valor;
+}
+
+// Crea la tarea y anota la regla en el log. El UNIQUE (clave, referencia) es la
+// garantia de que no se duplica aunque el worker corra dos veces a la vez.
+async function crearTareaAutomatica({ clave, referencia, tarea }) {
+  return tx(async (client) => {
+    const logId = `wal_${randomUUID()}`;
+    const reserva = await client.query(
+      `INSERT INTO wa_automatizaciones_log (id, clave, referencia, detalle)
+       VALUES ($1,$2,$3,$4)
+       ON CONFLICT (clave, referencia) DO NOTHING
+       RETURNING id`,
+      [logId, clave, referencia, tarea.detalle || null]
+    );
+    if (!reserva.rows.length) return null;
+    const tareaId = await nextId('wat', client);
+    await client.query(
+      `INSERT INTO wa_tareas (id, conversacion_id, orden_id, cliente_id, titulo, vence, asignado_a, estado, creada_por)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,'pendiente','automatizacion')`,
+      [
+        tareaId, tarea.conversacion_id || null, tarea.orden_id || null, tarea.cliente_id || null,
+        tarea.titulo, tarea.vence || new Date(Date.now() + 86400000).toISOString(), tarea.asignado_a || null,
+      ]
+    );
+    await client.query('UPDATE wa_automatizaciones_log SET tarea_id = $2 WHERE id = $1', [logId, tareaId]);
+    return tareaId;
+  });
+}
+
+// Corre las reglas prendidas. Se llama sola cada 6 horas y a mano desde el panel.
+async function revisarAutomatizaciones() {
+  const resumen = { presupuesto: 0, retiro: 0, errores: 0, apagado: false };
+  try {
+    const cfg = await configAutomatizaciones({ forzar: true });
+    if (!cfg.seguimiento_presupuesto.activo && !cfg.retiro_pendiente.activo) {
+      return { ...resumen, apagado: true };
+    }
+
+    if (cfg.seguimiento_presupuesto.activo) {
+      const filas = await query(
+        `SELECT c.id, c.telefono, c.asignado_a, c.etapa, c.ultima_fecha,
+                COALESCE(cl.nombre, c.nombre_perfil, c.telefono) AS nombre
+           FROM wa_conversaciones c
+           LEFT JOIN clientes cl ON cl.id = c.cliente_id
+          WHERE c.etapa IN ('presupuestado', 'negociando')
+            AND c.ultima_fecha IS NOT NULL
+            AND c.ultima_fecha < now() - ($1::int * interval '1 day')
+            AND c.ultima_fecha > now() - interval '120 days'
+            AND NOT EXISTS (SELECT 1 FROM wa_tareas t WHERE t.conversacion_id = c.id AND t.estado = 'pendiente')
+            AND NOT EXISTS (SELECT 1 FROM wa_automatizaciones_log l WHERE l.clave = 'seguimiento_presupuesto' AND l.referencia = c.id)
+            AND NOT EXISTS (SELECT 1 FROM wa_consentimiento k WHERE k.telefono = c.telefono AND k.estado = 'baja')
+          ORDER BY c.ultima_fecha ASC LIMIT 100`,
+        [cfg.seguimiento_presupuesto.dias]
+      );
+      for (const f of filas) {
+        if (!debeSeguirPresupuesto(
+          { etapa: f.etapa, ultimaFecha: f.ultima_fecha, enBaja: false, tareaAbierta: false },
+          { dias: cfg.seguimiento_presupuesto.dias }
+        )) continue;
+        try {
+          const tareaId = await crearTareaAutomatica({
+            clave: 'seguimiento_presupuesto',
+            referencia: f.id,
+            tarea: {
+              conversacion_id: f.id,
+              asignado_a: f.asignado_a || null,
+              titulo: tituloSeguimiento(f.nombre),
+              detalle: `Presupuesto sin respuesta (${cfg.seguimiento_presupuesto.dias} días).`,
+            },
+          });
+          if (tareaId) resumen.presupuesto += 1;
+        } catch (e) {
+          resumen.errores += 1;
+          console.error('[automatizaciones] no se pudo crear la tarea de presupuesto:', e.message);
+        }
+      }
+    }
+
+    if (cfg.retiro_pendiente.activo) {
+      // El tecnico_id de la orden es informativo; si tiene usuario, la tarea se
+      // le asigna a esa persona, si no queda en el pool.
+      const tecnicos = await query("SELECT tecnico_id, email FROM usuarios WHERE activo = true AND tecnico_id IS NOT NULL");
+      const emailPorTecnico = Object.fromEntries(tecnicos.map((t) => [t.tecnico_id, t.email]));
+      const filas = await query(
+        `SELECT o.id, o.bateria_serie, o.cliente_id, o.tecnico_id, o.hora_entrega, o.fecha_ingreso,
+                COALESCE(cl.nombre, 'el cliente') AS cliente_nombre
+           FROM ordenes o
+           LEFT JOIN clientes cl ON cl.id = o.cliente_id
+          WHERE o.estado = 'ready'
+            AND COALESCE(o.hora_entrega, o.fecha_ingreso) < now() - ($1::int * interval '1 day')
+            AND COALESCE(o.hora_entrega, o.fecha_ingreso) > now() - interval '120 days'
+            AND NOT EXISTS (SELECT 1 FROM wa_tareas t WHERE t.orden_id = o.id AND t.estado = 'pendiente')
+            AND NOT EXISTS (SELECT 1 FROM wa_automatizaciones_log l WHERE l.clave = 'retiro_pendiente' AND l.referencia = o.id)
+          ORDER BY COALESCE(o.hora_entrega, o.fecha_ingreso) ASC LIMIT 100`,
+        [cfg.retiro_pendiente.dias]
+      );
+      for (const o of filas) {
+        if (!debePedirRetiro({
+          estado: 'ready', horaEntrega: o.hora_entrega, fechaIngreso: o.fecha_ingreso, tareaAbierta: false,
+        }, { dias: cfg.retiro_pendiente.dias })) continue;
+        try {
+          const tareaId = await crearTareaAutomatica({
+            clave: 'retiro_pendiente',
+            referencia: o.id,
+            tarea: {
+              orden_id: o.id,
+              cliente_id: o.cliente_id,
+              asignado_a: emailPorTecnico[o.tecnico_id] || null,
+              titulo: tituloRetiro(o.cliente_nombre, o.bateria_serie),
+              detalle: `Orden lista hace ${cfg.retiro_pendiente.dias} días o más.`,
+            },
+          });
+          if (tareaId) resumen.retiro += 1;
+        } catch (e) {
+          resumen.errores += 1;
+          console.error('[automatizaciones] no se pudo crear la tarea de retiro:', e.message);
+        }
+      }
+    }
+  } catch (e) {
+    resumen.error = e.message;
+    console.error('[automatizaciones] revisión fallida:', e.message);
+  }
+  return resumen;
+}
+
+let timerAuto = null;
+function iniciarAutomatizaciones({ intervaloMs = 6 * 60 * 60 * 1000 } = {}) {
+  if (timerAuto) return;
+  timerAuto = setInterval(() => { revisarAutomatizaciones(); }, intervaloMs);
+  if (timerAuto.unref) timerAuto.unref();
+  const primera = setTimeout(() => { revisarAutomatizaciones(); }, 90 * 1000);
+  if (primera.unref) primera.unref();
+}
+
+// Configuracion y catalog of para el panel.
+app.get('/api/whatsapp/automatizaciones', authRequired, permisoRequerido('avisos_whatsapp'), async (req, res) => {
+  const ultima = await one('SELECT max(fecha) AS fecha FROM wa_automatizaciones_log');
+  return res.json({
+    catalogo: AUTOMATIZACIONES,
+    config: await configAutomatizaciones({ forzar: true }),
+    ultima: ultima?.fecha || null,
+  });
+});
+
+app.put('/api/whatsapp/automatizaciones', authRequired, permisoRequerido('avisos_whatsapp'), async (req, res) => {
+  const config = normalizarAutomatizaciones(req.body?.config ?? req.body);
+  for (const a of AUTOMATIZACIONES) {
+    const c = config[a.clave];
+    await query(
+      `INSERT INTO wa_automatizaciones (clave, activo, dias, actualizado_en)
+       VALUES ($1,$2,$3, now())
+       ON CONFLICT (clave) DO UPDATE SET activo = EXCLUDED.activo, dias = EXCLUDED.dias, actualizado_en = now()`,
+      [a.clave, c.activo, c.dias]
+    );
+  }
+  cacheAuto = { valor: null, hasta: 0 };
+  await auditar({ req, tabla: 'wa_automatizaciones', accion: 'editar', antes: null, despues: config, detalle: 'Configuración de automatizaciones' });
+  return res.json({ catalogo: AUTOMATIZACIONES, config: await configAutomatizaciones({ forzar: true }) });
+});
+
+app.post('/api/whatsapp/automatizaciones/revisar', authRequired, permisoRequerido('avisos_whatsapp'), async (req, res) => {
+  const r = await revisarAutomatizaciones();
+  await auditar({ req, tabla: 'wa_automatizaciones', accion: 'revisar', detalle: `presupuesto=${r.presupuesto} retiro=${r.retiro} errores=${r.errores}` });
+  return res.json(r);
+});
+
 // Tarea diaria: a los 2 minutos de arrancar el servicio y cada 24 h.
 // No frena el proceso (unref) y no rompe nada si Meta no responde.
 const tareaGarantias = setInterval(() => { avisarGarantias(); }, 24 * 3600 * 1000);
@@ -2702,6 +2993,7 @@ app.get('/api/whatsapp/conversaciones', authRequired, permisoRequerido('whatsapp
   const asignado = limStr(req.query?.asignado, 120);
   const etapa = limStr(req.query?.etapa, 24);
   const soloSinLeer = String(req.query?.sin_leer || '') === '1';
+  const soloSinResponder = String(req.query?.sin_responder || '') === '1';
   const cond = [];
   const args = [];
   if (q) {
@@ -2723,8 +3015,18 @@ app.get('/api/whatsapp/conversaciones', authRequired, permisoRequerido('whatsapp
     cond.push(`COALESCE(c.etapa, 'nuevo') = $${args.length}`);
   }
   if (soloSinLeer) cond.push('c.no_leidos > 0');
-  const convs = await query(`SELECT c.*, cl.nombre AS cliente_nombre, cl.email AS cliente_email
-    FROM wa_conversaciones c LEFT JOIN clientes cl ON cl.id = c.cliente_id
+  if (soloSinResponder) cond.push("sla.ultima_entrada > COALESCE(sla.ultima_salida, 'epoch'::timestamptz)");
+  const convs = await query(`SELECT c.*, cl.nombre AS cliente_nombre, cl.email AS cliente_email,
+      o.estado AS orden_estado, o.bateria_serie AS orden_serie,
+      sla.ultima_entrada, sla.ultima_salida
+    FROM wa_conversaciones c
+    LEFT JOIN clientes cl ON cl.id = c.cliente_id
+    LEFT JOIN ordenes o ON o.id = c.orden_id
+    LEFT JOIN LATERAL (
+      SELECT max(m.fecha) FILTER (WHERE m.direccion = 'in') AS ultima_entrada,
+             max(m.fecha) FILTER (WHERE m.direccion = 'out') AS ultima_salida
+        FROM wa_mensajes m WHERE m.conversacion_id = c.id
+    ) sla ON true
     ${cond.length ? `WHERE ${cond.join(' AND ')}` : ''}
     ORDER BY c.ultima_fecha DESC NULLS LAST, c.id DESC LIMIT 100`, args);
   return res.json(convs);
@@ -2980,6 +3282,19 @@ app.patch('/api/whatsapp/conversaciones/:id', authRequired, permisoRequerido('cr
     args.push(clienteId || null);
     campos.push(`cliente_id = $${args.length}`);
   }
+  // Vincular una orden concreta a la oportunidad (la que se cotiza y sigue).
+  if (req.body?.orden_id !== undefined) {
+    const ordenId = limStr(req.body.orden_id, 40);
+    if (ordenId) {
+      const o = await one('SELECT id, cliente_id, estado FROM ordenes WHERE id = $1', [ordenId]);
+      if (!o) return res.status(404).json({ error: 'Esa orden no existe' });
+      if (conv.cliente_id && o.cliente_id !== conv.cliente_id) {
+        return res.status(400).json({ error: 'Esa orden pertenece a otro cliente: no se puede vincular a esta conversación.' });
+      }
+    }
+    args.push(ordenId || null);
+    campos.push(`orden_id = $${args.length}`);
+  }
   // Embudo comercial: mover la oportunidad de etapa (queda el historial, que es
   // lo que permite medir conversion y tiempo por etapa) y guardar el monto.
   let cambioEtapa = null;
@@ -3022,10 +3337,120 @@ app.patch('/api/whatsapp/conversaciones/:id', authRequired, permisoRequerido('cr
   return res.json(upd);
 });
 
+// Cotizar desde la bandeja: vincula la conversacion con la orden (existente o
+// nueva), genera la cotizacion y, si se pide, manda el link firmado por WhatsApp.
+// Es el puente que faltaba entre "me dijo que si" y la orden del taller.
+app.post('/api/whatsapp/conversaciones/:id/cotizacion', authRequired, permisoRequerido('cotizar'), async (req, res) => {
+  const conv = await one('SELECT * FROM wa_conversaciones WHERE id = $1', [req.params.id]);
+  if (!conv) return res.status(404).json({ error: 'Conversación no encontrada' });
+  if (!conv.cliente_id) {
+    return res.status(400).json({ error: 'Primero vinculá la conversación con un cliente (o creá la ficha) para poder cotizar.' });
+  }
+  const cliente = await one('SELECT id, nombre, telefono, deleted_at FROM clientes WHERE id = $1', [conv.cliente_id]);
+  if (!cliente || cliente.deleted_at) return res.status(400).json({ error: 'El cliente de esta conversación no está disponible.' });
+  const montoN = normalizarMonto(req.body?.monto);
+  if (montoN === null) return res.status(400).json({ error: 'Falta un monto válido para la cotización.' });
+  if (!arrBounded(req.body?.servicios || []) || !arrBounded(req.body?.insumos || [])) {
+    return res.status(400).json({ error: 'Demasiados renglones en la cotización' });
+  }
+  const detalleCot = armarDetalleCotizacion(montoN, req.body?.servicios, req.body?.insumos);
+  const ordenIdPedida = limStr(req.body?.orden_id, 40);
+  const enviar = req.body?.enviar !== false && String(req.body?.enviar) !== 'false';
+  if (!ordenIdPedida && !tienePermiso(req.user.permisos, 'crear_orden')) {
+    return res.status(403).json({ error: 'Para crear una orden nueva desde el chat hace falta el permiso «Crear órdenes» (admin). Podés vincular una orden existente.' });
+  }
+
+  let ordenFinal = null;
+  let cambioEtapa = null;
+  await tx(async (client) => {
+    const convTx = (await client.query('SELECT * FROM wa_conversaciones WHERE id = $1 FOR UPDATE', [conv.id])).rows[0];
+    const etapaActual = normalizarEtapa(convTx.etapa);
+    if (['ganado', 'perdido'].includes(etapaActual)) {
+      throw { status: 400, message: `La oportunidad ya está ${etapaActual === 'ganado' ? 'ganada' : 'perdida'}: movela de etapa antes de cotizar de nuevo.` };
+    }
+
+    let orden;
+    if (ordenIdPedida) {
+      orden = (await client.query('SELECT * FROM ordenes WHERE id = $1 FOR UPDATE', [ordenIdPedida])).rows[0];
+      if (!orden) throw { status: 404, message: 'La orden indicada no existe' };
+      if (orden.cliente_id !== conv.cliente_id) throw { status: 400, message: 'Esa orden es de otro cliente: elegí una de la misma ficha o creá una nueva.' };
+      if (esEstadoCerrado(orden.estado)) throw { status: 400, message: 'Esa orden ya está cerrada: no se puede cotizar.' };
+      if (!puedeEscribirOrden(req, orden)) throw { status: 403, message: 'Sin permisos para esa orden' };
+      await client.query('UPDATE wa_conversaciones SET orden_id = $2 WHERE id = $1', [convTx.id, orden.id]);
+    } else {
+      const serieT = limStr(req.body?.serie, 64);
+      if (!serieT) throw { status: 400, message: 'Falta el número de serie de la batería para crear la orden.' };
+      const fallaT = limStr(req.body?.falla, 500) || 'Consulta por WhatsApp';
+      const nuevaId = await crearOrdenTx(client, {
+        serieT,
+        tipo: req.body?.tipo,
+        voltaje: req.body?.voltaje,
+        capacidad: req.body?.capacidad,
+        aplicacion: req.body?.aplicacion,
+        marca: req.body?.marca,
+        modelo: req.body?.modelo,
+        equipo: req.body?.equipo,
+        clienteT: conv.cliente_id,
+        fallaT,
+        tecnico_id: req.body?.tecnico_id,
+      }, actorDe(req));
+      orden = (await client.query('SELECT * FROM ordenes WHERE id = $1', [nuevaId])).rows[0];
+      await client.query('UPDATE wa_conversaciones SET orden_id = $2 WHERE id = $1', [convTx.id, nuevaId]);
+    }
+
+    await cotizarOrdenTx(client, orden.id, { montoN, detalleCot }, actorDe(req));
+    await client.query('UPDATE wa_conversaciones SET monto_estimado = $2 WHERE id = $1', [convTx.id, montoN]);
+    if (etapaActual === 'nuevo') {
+      await client.query("UPDATE wa_conversaciones SET etapa = 'presupuestado' WHERE id = $1", [convTx.id]);
+      const histId = await nextId('weh', client);
+      await client.query(
+        `INSERT INTO wa_etapa_historial (id, conversacion_id, anterior, nueva, monto, motivo, usuario)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [histId, convTx.id, 'nuevo', 'presupuestado', montoN, 'Cotización enviada desde la bandeja', actorDe(req)?.email || 'panel']
+      );
+      cambioEtapa = { anterior: 'nuevo', nueva: 'presupuestado' };
+    }
+    ordenFinal = orden;
+  });
+
+  const cotizacionUrl = `${PUBLIC_URL}/cotizacion/${ordenFinal.id}?t=${hornoSigCot(ordenFinal.id)}`;
+  let envio = null;
+  if (enviar) {
+    if (await estaEnBaja(conv.telefono)) {
+      envio = { estado: 'omitido', error: 'El cliente pidió no recibir mensajes: la cotización quedó creada pero no se envió.' };
+    } else {
+      const nombre = String(cliente.nombre || '').trim().split(/\s+/)[0] || 'cliente';
+      const mensaje = limStr(req.body?.mensaje, 1000)
+        || `Hola ${nombre}, te paso el presupuesto de ${ordenFinal.bateria_serie} por ${fmtARS.format(montoN)}. Podés verlo y aprobarlo acá: ${cotizacionUrl}`;
+      const r = await guardarYEnviar({ conv, tipo: 'texto', texto: mensaje });
+      envio = { estado: r.body.estado || null, enCola: Boolean(r.body.enCola), incierto: Boolean(r.body.incierto), error: r.body.error || null, aviso: r.body.aviso || null };
+    }
+  } else {
+    // Sin envío inmediato: si el aviso de "presupuesto listo" está prendido, el
+    // cliente recibe la plantilla con el link firmado.
+    avisarOrden(ordenFinal.id);
+  }
+
+  await auditar({
+    req, tabla: 'wa_conversaciones', registroId: conv.id, accion: 'cotizar_desde_bandeja',
+    antes: { etapa: conv.etapa, monto_estimado: conv.monto_estimado },
+    despues: { etapa: cambioEtapa?.nueva || normalizarEtapa(conv.etapa), monto_estimado: montoN, orden_id: ordenFinal.id },
+    detalle: `Orden ${ordenFinal.id} · ${enviar ? 'link enviado' : 'link no enviado'}`,
+  });
+  return res.status(201).json({
+    ok: true,
+    orden_id: ordenFinal.id,
+    cotizacion_url: cotizacionUrl,
+    monto: montoN,
+    envio,
+    etapa: cambioEtapa?.nueva || normalizarEtapa(conv.etapa),
+  });
+});
+
 // Metricas del embudo comercial: conversion, tasa de cierre, tiempo medio en cada
 // etapa y motivos de perdida. El calculo vive en src/data/crm.js (probado aparte).
 app.get('/api/whatsapp/metricas', authRequired, permisoRequerido('metricas_whatsapp'), async (req, res) => {
-  const conversaciones = await query('SELECT id, etapa, monto_estimado, ultima_fecha FROM wa_conversaciones');
+  const conversaciones = await query('SELECT id, etapa, monto_estimado, ultima_fecha, orden_id FROM wa_conversaciones');
   const historial = await query(
     'SELECT conversacion_id, anterior, nueva, monto, motivo, fecha FROM wa_etapa_historial ORDER BY fecha ASC LIMIT 5000'
   );
@@ -3033,9 +3458,87 @@ app.get('/api/whatsapp/metricas', authRequired, permisoRequerido('metricas_whats
   const primeras = await query(
     "SELECT conversacion_id, min(fecha) AS primera FROM wa_mensajes WHERE direccion = 'in' GROUP BY conversacion_id"
   );
+  // Cierre real: ordenes vinculadas a una oportunidad (monto cotizado y cobrado).
+  const ordenes = await query(`
+    SELECT o.id, o.estado, o.cotizacion, o.monto_cobrado
+      FROM ordenes o
+     WHERE o.id IN (SELECT orden_id FROM wa_conversaciones WHERE orden_id IS NOT NULL)`);
   const porPrimera = {};
   for (const p of primeras) porPrimera[p.conversacion_id] = p.primera;
-  return res.json(calcularMetricas({ conversaciones, historial, primeras: porPrimera }));
+  return res.json(calcularMetricas({ conversaciones, historial, primeras: porPrimera, ordenes }));
+});
+
+// SLA de atencion: primera respuesta, conversaciones sin responder y carga por
+// responsable. El calculo vive en src/data/sla.js (probado aparte).
+app.get('/api/whatsapp/sla', authRequired, permisoRequerido('metricas_whatsapp'), async (req, res) => {
+  const filas = await query(`
+    SELECT c.id, c.telefono, c.nombre_perfil, c.asignado_a, c.etapa,
+           cl.nombre AS cliente_nombre,
+           sla.primera_entrada, sla.primera_salida, sla.ultima_entrada, sla.ultima_salida
+      FROM wa_conversaciones c
+      LEFT JOIN clientes cl ON cl.id = c.cliente_id
+      LEFT JOIN LATERAL (
+        SELECT min(m.fecha) FILTER (WHERE m.direccion = 'in')  AS primera_entrada,
+               min(m.fecha) FILTER (WHERE m.direccion = 'out') AS primera_salida,
+               max(m.fecha) FILTER (WHERE m.direccion = 'in')  AS ultima_entrada,
+               max(m.fecha) FILTER (WHERE m.direccion = 'out') AS ultima_salida
+          FROM wa_mensajes m WHERE m.conversacion_id = c.id
+      ) sla ON true
+     ORDER BY c.ultima_fecha DESC NULLS LAST`);
+  const normalizadas = filas.map((f) => ({
+    id: f.id,
+    telefono: f.telefono,
+    nombre: f.cliente_nombre || f.nombre_perfil || f.telefono,
+    asignado_a: f.asignado_a,
+    etapa: normalizarEtapa(f.etapa),
+    primeraEntrada: f.primera_entrada,
+    primeraSalida: f.primera_salida,
+    ultimaEntrada: f.ultima_entrada,
+    ultimaSalida: f.ultima_salida,
+  }));
+  return res.json(resumenSla(normalizadas));
+});
+
+// Reparto por carga: toma las conversaciones sin responsable y las distribuye
+// entre quien puede responder, empezando por el que tiene menos abiertas.
+app.post('/api/whatsapp/repartir', authRequired, requireRol('admin'), async (req, res) => {
+  const usuarios = await query("SELECT email, rol, permisos FROM usuarios WHERE activo = true AND rol IN ('admin','tecnico') ORDER BY email");
+  const agentes = usuarios
+    .filter((u) => {
+      const efectivos = permisosEfectivos({ rol: u.rol, permisos: u.permisos });
+      return tienePermiso(efectivos, 'whatsapp') && tienePermiso(efectivos, 'responder_whatsapp');
+    })
+    .map((u) => u.email);
+  if (!agentes.length) {
+    return res.status(400).json({ error: 'No hay usuarios activos con permiso para ver y responder WhatsApp.' });
+  }
+  const pendientes = await query(
+    `SELECT id FROM wa_conversaciones
+      WHERE (asignado_a IS NULL OR asignado_a = '') AND COALESCE(estado, 'abierta') <> 'cerrada'
+      ORDER BY ultima_fecha ASC NULLS FIRST, id ASC LIMIT 500`
+  );
+  if (!pendientes.length) {
+    return res.json({ ok: true, asignadas: 0, porAgente: Object.fromEntries(agentes.map((a) => [a, 0])) });
+  }
+  const cargas = await query(
+    `SELECT asignado_a, count(*)::int AS n FROM wa_conversaciones
+      WHERE asignado_a = ANY($1) AND COALESCE(estado, 'abierta') <> 'cerrada'
+      GROUP BY asignado_a`,
+    [agentes]
+  );
+  const porAgente = Object.fromEntries(agentes.map((a) => [a, 0]));
+  for (const c of cargas) if (porAgente[c.asignado_a] !== undefined) porAgente[c.asignado_a] = Number(c.n) || 0;
+  for (const conv of pendientes) {
+    const agente = agentes.reduce((mejor, actual) => (porAgente[actual] < porAgente[mejor] ? actual : mejor), agentes[0]);
+    await query('UPDATE wa_conversaciones SET asignado_a = $2 WHERE id = $1', [conv.id, agente]);
+    porAgente[agente] += 1;
+  }
+  await auditar({
+    req, tabla: 'wa_conversaciones', accion: 'repartir',
+    detalle: `${pendientes.length} conversación(es) repartidas por carga`,
+    despues: { porAgente },
+  });
+  return res.json({ ok: true, asignadas: pendientes.length, porAgente });
 });
 
 // Historial de etapas de una conversacion (para ver como se movio la oportunidad).
@@ -3200,7 +3703,24 @@ app.get('/api/whatsapp/conversaciones/:id', authRequired, permisoRequerido('what
     ? await query("SELECT id, bateria_serie, garantia FROM ordenes WHERE cliente_id = $1 AND garantia IS NOT NULL ORDER BY garantia->>'vence' DESC NULLS LAST LIMIT 10", [conv.cliente_id])
     : [];
   const consentimiento = await consentimientoDe(conv.telefono);
-  return res.json({ conversacion: { ...conv, no_leidos: 0 }, mensajes, cliente, ordenes, notas, consentimiento, ficha: ficha ? { ...ficha, garantias } : null });
+  // Orden vinculada a la oportunidad (la que se cotiza y se sigue desde aca).
+  const orden = conv.orden_id
+    ? await one(`SELECT id, bateria_serie, codigo_seguimiento, estado, estado_cotizacion, cotizacion,
+                        monto_cobrado, garantia, medio_pago, fecha_ingreso, fecha_entrega
+                   FROM ordenes WHERE id = $1`, [conv.orden_id])
+    : null;
+  const cotizacionUrl = orden ? `${PUBLIC_URL}/cotizacion/${orden.id}?t=${hornoSigCot(orden.id)}` : null;
+  // SLA del hilo: ultima entrada vs ultima salida (para el cartel "sin responder").
+  const entradas = mensajes.filter((m) => m.direccion === 'in').map((m) => new Date(m.fecha).getTime());
+  const salidas = mensajes.filter((m) => m.direccion === 'out').map((m) => new Date(m.fecha).getTime());
+  const ultimaEntrada = entradas.length ? Math.max(...entradas) : null;
+  const ultimaSalida = salidas.length ? Math.max(...salidas) : null;
+  const sinResponder = ultimaEntrada !== null && (ultimaSalida === null || ultimaEntrada > ultimaSalida);
+  const sla = {
+    sinResponder,
+    minutosSinResponder: sinResponder ? Math.max(0, Math.round((Date.now() - ultimaEntrada) / 60000)) : null,
+  };
+  return res.json({ conversacion: { ...conv, no_leidos: 0 }, mensajes, cliente, ordenes, orden, cotizacion_url: cotizacionUrl, sla, notas, consentimiento, ficha: ficha ? { ...ficha, garantias } : null });
 });
 
 // Mensaje libre: vale dentro de las 24 h desde el ultimo mensaje del cliente.
@@ -3495,6 +4015,7 @@ asegurarCodigos()
     // por entorno (tests de integracion) para que la corrida sea determinista.
     if (process.env.OUTBOX_WORKER !== '0') iniciarOutbox();
     if (process.env.MONITOREO !== '0') iniciarMonitoreo();
+    if (process.env.AUTOMATIZACIONES !== '0') iniciarAutomatizaciones();
   })
   .catch((err) => {
     console.error('Fallo la migracion de codigos:', err.message);

@@ -240,11 +240,12 @@ Limpia todas las tablas de demo y re-siembra desde `src/data/seed.js` (corre `no
 | Método | Ruta | Notas |
 | --- | --- | --- |
 | `GET` | `/whatsapp/estado` | Admin. Si el canal está configurado, qué falta y las estadísticas (recibidos, enviados, con error, conversaciones, sin leer) + la URL del webhook. Nunca devuelve el token. |
-| `GET` | `/whatsapp/conversaciones` | Admin/técnico. Bandeja: conversaciones con último mensaje, no leídos y el cliente vinculado. |
-| `GET` | `/whatsapp/conversaciones/:id` | Admin/técnico. Hilo completo + ficha del cliente + sus últimas 5 órdenes. Marca la conversación como leída. |
+| `GET` | `/whatsapp/conversaciones` | Admin/técnico. Bandeja: conversaciones con último mensaje, no leídos, cliente vinculado, orden vinculada y `ultima_entrada`/`ultima_salida`. Filtros: `q`, `etiqueta`, `asignado`, `etapa`, `sin_leer=1`, `sin_responder=1`. |
+| `GET` | `/whatsapp/conversaciones/:id` | Admin/técnico. Hilo completo + ficha del cliente + sus últimas 5 órdenes + la **orden vinculada** (`orden`), `cotizacion_url` firmada y `sla` (`sinResponder`, `minutosSinResponder`). Marca la conversación como leída. |
 | `POST` | `/whatsapp/conversaciones/:id/responder` | Admin/técnico. Body `{ texto }`. Mensaje libre (vale dentro de las 24 h desde el último mensaje del cliente). |
 | `POST` | `/whatsapp/enviar` | Admin/técnico. Body `{ telefono, texto }`. Envía a un número suelto (pruebas del canal). |
-| `PATCH` | `/whatsapp/conversaciones/:id` | Admin/técnico. `{ asignado_a?, etiquetas?, etapa?, monto_estimado? }` (CRM de la conversación). |
+| `PATCH` | `/whatsapp/conversaciones/:id` | Admin/técnico. `{ asignado_a?, etiquetas?, etapa?, monto_estimado?, cliente_id?, orden_id? }` (CRM de la conversación). |
+| `POST` | `/whatsapp/conversaciones/:id/cotizacion` | Admin/técnico con `cotizar`. Body `{ orden_id? , serie?, falla?, tipo?, voltaje?, capacidad?, aplicacion?, monto, servicios?, insumos?, enviar?, mensaje? }`. Vincula una orden existente o crea una nueva (crear exige `crear_orden`), la cotiza, guarda el monto en el embudo y, si `enviar` (default `true`), manda el **link firmado** por WhatsApp. Pasa la etapa a `presupuestado` si estaba en `nuevo`. Devuelve `{ orden_id, cotizacion_url, monto, envio, etapa }`. |
 | `POST` | `/whatsapp/conversaciones/:id/notas` | Admin/técnico. Body `{ texto }`. Nota interna (no se le envía al cliente). |
 | `DELETE` | `/whatsapp/conversaciones/:id/notas/:notaId` | Admin/técnico. Borra una nota: **solo el autor o un admin**. |
 | `GET` | `/whatsapp/webhook` | Público. Verificación del webhook de Meta (`hub.verify_token` → `hub.challenge`). |
@@ -253,7 +254,12 @@ Limpia todas las tablas de demo y re-siembra desde `src/data/seed.js` (corre `no
 | `GET/POST/PATCH/DELETE` | `/whatsapp/respuestas` | Admin. Respuestas rápidas con atajo y variables `{{nombre}}`, `{{telefono}}`, `{{serie}}`, `{{link}}`. |
 | `GET` | `/whatsapp/buscar?q=` | Admin/técnico. Busca dentro del texto de los mensajes (escapando `%` y `_`) y devuelve fragmento, fecha y conversación. |
 | `GET` | `/whatsapp/export?desde=&hasta=&conversacion=` | Admin. CSV (con BOM) de las conversaciones; deja registro de quién exportó en el log. |
-| `GET` | `/whatsapp/metricas` | Admin. Embudo: conversión por etapa, tasa de cierre, tiempo medio y motivos de pérdida. |
+| `GET` | `/whatsapp/metricas` | Admin. Embudo: conversión por etapa, tasa de cierre, tiempo medio y motivos de pérdida. Incluye `ordenes{conOrden,tasaOrden,cotizado,cobrado,entregadas,tasaCobro}` con las órdenes vinculadas. |
+| `GET` | `/whatsapp/sla` | Admin/técnico con `metricas_whatsapp`. `{ total, medidas, primeraRespuestaPromedioMs, primeraRespuestaP90Ms, respondidasEn30Min, pctEn30Min, sinResponder[], porAgente[] }`. |
+| `POST` | `/whatsapp/repartir` | **Admin.** Reparte las conversaciones sin responsable entre quienes pueden ver y responder WhatsApp, empezando por el que tiene menos abiertas. Devuelve `{ asignadas, porAgente }`. |
+| `GET` | `/whatsapp/automatizaciones` | Admin. `{ catalogo[], config, ultima }` de las reglas de seguimiento. |
+| `PUT` | `/whatsapp/automatizaciones` | Admin. Body `{ config: { seguimiento_presupuesto: { activo, dias }, retiro_pendiente: { activo, dias } } }`. Días entre 1 y 30. |
+| `POST` | `/whatsapp/automatizaciones/revisar` | Admin. Corre las reglas ahora y devuelve `{ presupuesto, retiro, errores }`. Las reglas crean **tareas** (`wa_tareas`) una sola vez por oportunidad/orden, no mandan mensajes solas. |
 | `GET/POST/PATCH/DELETE` | `/whatsapp/tareas` | Admin/técnico. Tareas con vencimiento y responsable. |
 | `GET` | `/permisos/catalogo` | Admin. Filas agrupadas, columnas y plantillas para la matriz de permisos. |
 

@@ -36,7 +36,7 @@ export default function WhatsAppBandeja() {
   const [convs, setConvs] = useState([]);
   const [agentes, setAgentes] = useState([]);
   const [errorConvs, setErrorConvs] = useState(null);
-  const [filtro, setFiltro] = useState({ q: '', etiqueta: '', asignado: '', sinLeer: false });
+  const [filtro, setFiltro] = useState({ q: '', etiqueta: '', asignado: '', sinLeer: false, sinResponder: false });
   const [sel, setSel] = useState(null);
   const [hilo, setHilo] = useState(null);
   const [texto, setTexto] = useState('');
@@ -62,6 +62,12 @@ export default function WhatsAppBandeja() {
   const [tareaNueva, setTareaNueva] = useState(null);
   const [enviando, setEnviando] = useState(false);
   const [cargando, setCargando] = useState(true);
+  // Fase 2: automatizaciones de seguimiento, SLA y cotización desde el chat.
+  const [automatizaciones, setAutomatizaciones] = useState(null);
+  const [sla, setSla] = useState(null);
+  const [cotizar, setCotizar] = useState(null);
+  const [repartiendo, setRepartiendo] = useState(false);
+  const [guardandoCot, setGuardandoCot] = useState(false);
   // Etiquetas administrables, respuestas rápidas y búsqueda dentro de los mensajes.
   const [respuestas, setRespuestas] = useState([]);
   const [etiquetasCat, setEtiquetasCat] = useState([]);
@@ -108,6 +114,12 @@ export default function WhatsAppBandeja() {
   };
   const cargarMetricas = async () => {
     try { setMetricas(await api('/whatsapp/metricas')); } catch (e) { toastShow(e.message, 'error'); }
+  };
+  const cargarAutomatizaciones = async () => {
+    try { setAutomatizaciones(await api('/whatsapp/automatizaciones')); } catch { setAutomatizaciones(null); }
+  };
+  const cargarSla = async () => {
+    try { setSla(await api('/whatsapp/sla')); } catch { setSla(null); }
   };
   // Perder una oportunidad exige motivo: se pide antes de guardar (queda en el
   // historial de etapas y alimenta el ranking de motivos).
@@ -217,6 +229,7 @@ export default function WhatsAppBandeja() {
     if (f.etiqueta) p.set('etiqueta', f.etiqueta);
     if (f.asignado) p.set('asignado', f.asignado);
     if (f.sinLeer) p.set('sin_leer', '1');
+    if (f.sinResponder) p.set('sin_responder', '1');
     const qs = p.toString();
     try { setConvs(await api(`/whatsapp/conversaciones${qs ? `?${qs}` : ''}`)); setErrorConvs(null); }
     catch (e) { setErrorConvs(e.message || 'No se pudo cargar la bandeja'); }
@@ -234,13 +247,13 @@ export default function WhatsAppBandeja() {
   }, [filtro]);
 
   useEffect(() => {
-    const t = setInterval(() => { cargarEstado(); cargarConvs(filtro); }, 15000);
+    const t = setInterval(() => { cargarEstado(); cargarConvs(filtro); if (vista === 'atencion') cargarSla(); }, 15000);
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtro]);
+  }, [filtro, vista]);
 
   useEffect(() => {
-    Promise.all([cargarEstado(), cargarAgentes(), cargarAvisos(), cargarRespuestas(), cargarEtiquetas()]).finally(() => setCargando(false));
+    Promise.all([cargarEstado(), cargarAgentes(), cargarAvisos(), cargarRespuestas(), cargarEtiquetas(), cargarAutomatizaciones()]).finally(() => setCargando(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -256,6 +269,7 @@ export default function WhatsAppBandeja() {
   useEffect(() => {
     if (vista === 'embudo') cargarEmbudo();
     if (vista === 'metricas') cargarMetricas();
+    if (vista === 'atencion') cargarSla();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vista]);
 
@@ -460,7 +474,113 @@ export default function WhatsAppBandeja() {
     }
   };
 
-  // Descarga de las conversaciones en CSV (admin), con el rango de fechas elegido.
+  // ---- Fase 2: cotizar desde el chat ----
+  const abrirCotizar = () => {
+    if (!hilo?.conversacion?.cliente_id) {
+      return toastShow('Primero vinculá la conversación con un cliente (o creá la ficha) para poder cotizar.', 'warn');
+    }
+    const vinculada = hilo.orden && !['delivered', 'cancelled'].includes(hilo.orden.estado) ? hilo.orden : null;
+    const primeras = ordenesParaCotizar;
+    setCotizar({
+      modo: vinculada || primeras.length ? 'existente' : 'nueva',
+      orden_id: vinculada?.id || primeras[0]?.id || '',
+      serie: vinculada?.bateria_serie || '',
+      falla: '',
+      tipo: 'Plomo-Acido',
+      voltaje: '12V',
+      capacidad: '55',
+      aplicacion: 'Automotriz',
+      monto: vinculada?.cotizacion?.monto ?? hilo.conversacion.monto_estimado ?? '',
+      enviar: true,
+      mensaje: '',
+    });
+  };
+
+  const guardarCotizacion = async () => {
+    const montoN = normalizarMonto(cotizar?.monto);
+    if (montoN === null) return toastShow('Poné un monto válido para la cotización', 'warn');
+    if (cotizar.modo === 'existente' && !cotizar.orden_id) return toastShow('Elegí una orden o creá una nueva', 'warn');
+    if (cotizar.modo === 'nueva' && !String(cotizar.serie || '').trim()) return toastShow('Falta el número de serie de la batería', 'warn');
+    setGuardandoCot(true);
+    try {
+      const body = { monto: montoN, enviar: cotizar.enviar };
+      if (cotizar.mensaje.trim()) body.mensaje = cotizar.mensaje.trim();
+      if (cotizar.modo === 'existente') {
+        body.orden_id = cotizar.orden_id;
+      } else {
+        Object.assign(body, {
+          serie: cotizar.serie.trim(),
+          falla: cotizar.falla.trim(),
+          tipo: cotizar.tipo,
+          voltaje: cotizar.voltaje,
+          capacidad: cotizar.capacidad,
+          aplicacion: cotizar.aplicacion,
+        });
+      }
+      const r = await api(`/whatsapp/conversaciones/${sel}/cotizacion`, { method: 'POST', body });
+      const e = r.envio;
+      if (e?.error) toastShow(`Cotización creada. ${e.error}`, 'warn');
+      else if (e?.enCola) toastShow('Cotización creada; el link quedó en cola y se reintenta solo', 'warn');
+      else if (e?.estado === 'enviado') toastShow('Cotización creada y link enviado por WhatsApp', 'ok');
+      else toastShow('Cotización creada', 'ok');
+      setCotizar(null);
+      await abrir(sel);
+      cargarConvs(filtro);
+      cargarEmbudo();
+      if (vista === 'metricas') cargarMetricas();
+      if (vista === 'atencion') cargarSla();
+      await sync();
+    } catch (e) {
+      toastShow(e.message, 'error');
+    } finally {
+      setGuardandoCot(false);
+    }
+  };
+
+  // ---- Fase 2: automatizaciones de seguimiento ----
+  const cambiarAuto = async (clave, cambios) => {
+    const actual = automatizaciones?.config || {};
+    const config = { ...actual, [clave]: { ...actual[clave], ...cambios } };
+    setAutomatizaciones((a) => ({ ...a, config }));
+    try {
+      const r = await api('/whatsapp/automatizaciones', { method: 'PUT', body: { config } });
+      setAutomatizaciones(r);
+      toastShow('Automatizaciones actualizadas', 'ok');
+    } catch (e) {
+      toastShow(e.message, 'error');
+      cargarAutomatizaciones();
+    }
+  };
+  const revisarAuto = async () => {
+    try {
+      const r = await api('/whatsapp/automatizaciones/revisar', { method: 'POST' });
+      toastShow(
+        r.apagado ? 'Las automatizaciones están apagadas'
+          : `Revisado: ${r.presupuesto} seguimiento(s) y ${r.retiro} retiro(s)${r.errores ? ` · ${r.errores} error(es)` : ''}`,
+        r.errores ? 'warn' : 'ok'
+      );
+      await sync();
+      cargarAutomatizaciones();
+    } catch (e) {
+      toastShow(e.message, 'error');
+    }
+  };
+
+  // ---- Fase 2: reparto por carga (admin) ----
+  const repartir = async () => {
+    setRepartiendo(true);
+    try {
+      const r = await api('/whatsapp/repartir', { method: 'POST' });
+      toastShow(r.asignadas ? `${r.asignadas} conversación(es) repartidas por carga` : 'No había conversaciones sin asignar', 'ok');
+      cargarConvs(filtro);
+      cargarSla();
+    } catch (e) {
+      toastShow(e.message, 'error');
+    } finally {
+      setRepartiendo(false);
+    }
+  };
+
   const exportarConversaciones = async () => {
     try {
       const p = new URLSearchParams();
@@ -515,7 +635,7 @@ export default function WhatsAppBandeja() {
 
   if (cargando) return <p className="muted">Cargando el canal de WhatsApp...</p>;
 
-  const hayFiltro = Boolean(filtro.q || filtro.etiqueta || filtro.asignado || filtro.sinLeer);
+  const hayFiltro = Boolean(filtro.q || filtro.etiqueta || filtro.asignado || filtro.sinLeer || filtro.sinResponder);
   const embudoResumen = resumenEmbudo(embudo);
   const columnas = agruparEmbudo(embudo);
   // Clientes para el buscador de "Vincular cliente".
@@ -527,6 +647,13 @@ export default function WhatsAppBandeja() {
     return base.slice(0, 20);
   })();
   const etiquetasHilo = listaDe(hilo?.conversacion?.etiquetas);
+  const ordenesParaCotizar = (() => {
+    const lista = (hilo?.ordenes || []).filter((o) => !['delivered', 'cancelled'].includes(o.estado));
+    if (hilo?.orden && !['delivered', 'cancelled'].includes(hilo.orden.estado) && !lista.some((o) => o.id === hilo.orden.id)) {
+      lista.unshift(hilo.orden);
+    }
+    return lista;
+  })();
   const enBaja = hilo?.consentimiento?.estado === 'baja';
   const porVencer = (hilo?.ficha?.garantias || []).filter((g) => {
     const v = g.garantia?.vence;
@@ -642,6 +769,56 @@ export default function WhatsAppBandeja() {
         </div>
       )}
 
+      {/* Automatizaciones de seguimiento: crean tareas para una persona. */}
+      {puedeAvisos && automatizaciones?.catalogo && (
+        <div className="card">
+          <div className="card-title"><Icon name="clock" size={14} /> Seguimiento automático (tareas)</div>
+          <p className="muted" style={{ fontSize: 12, margin: '4px 0 10px' }}>
+            No manda mensajes solos: cuando una oportunidad se enfría o una batería queda sin retirar, crea una tarea
+            para que alguien la retome. Se revisa solo cada 6 horas y también desde el botón.
+          </p>
+          <div className="col" style={{ gap: 10 }}>
+            {automatizaciones.catalogo.map((a) => {
+              const cfg = automatizaciones.config?.[a.clave] || {};
+              return (
+                <div key={a.clave} className="row wrap" style={{ gap: 8, alignItems: 'center' }}>
+                  <label className="row" style={{ gap: 6, fontSize: 12.5, minWidth: 210 }} title={a.detalle}>
+                    <input
+                      type="checkbox" checked={Boolean(cfg.activo)}
+                      onChange={(e) => cambiarAuto(a.clave, { activo: e.target.checked })}
+                    />
+                    {a.etiqueta}
+                  </label>
+                  <span className="muted" style={{ fontSize: 12 }}>después de</span>
+                  <input
+                    className="input" type="number" min={a.minDias} max={a.maxDias} style={{ width: 68 }}
+                    value={cfg.dias ?? a.dias}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setAutomatizaciones((prev) => ({
+                        ...prev,
+                        config: { ...prev.config, [a.clave]: { ...prev.config?.[a.clave], dias: v } },
+                      }));
+                    }}
+                    onBlur={() => cambiarAuto(a.clave, { dias: Number(automatizaciones.config?.[a.clave]?.dias) || a.dias })}
+                  />
+                  <span className="muted" style={{ fontSize: 12 }}>días</span>
+                  <span className="muted" style={{ fontSize: 11.5, flex: 1, minWidth: 200 }}>{a.detalle}</span>
+                </div>
+              );
+            })}
+          </div>
+          <div className="row wrap" style={{ gap: 8, marginTop: 10, alignItems: 'center' }}>
+            <button className="btn sm" onClick={revisarAuto}>
+              <Icon name="refresh" size={12} /> Revisar ahora
+            </button>
+            <span className="muted" style={{ fontSize: 11.5 }}>
+              {automatizaciones.ultima ? `Última tarea automática: ${fmtFecha(automatizaciones.ultima)}` : 'Todavía no creó tareas automáticas.'}
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Bandeja / Embudo comercial / Métricas */}
       <div className="row wrap" style={{ gap: 8, alignItems: 'center' }}>
         <button className={`chip${vista === 'bandeja' ? ' on' : ''}`} onClick={() => setVista('bandeja')}>
@@ -652,6 +829,9 @@ export default function WhatsAppBandeja() {
         </button>
         <button className={`chip${vista === 'metricas' ? ' on' : ''}`} onClick={() => setVista('metricas')}>
           <Icon name="gauge" size={12} /> Métricas
+        </button>
+        <button className={`chip${vista === 'atencion' ? ' on' : ''}`} onClick={() => setVista('atencion')}>
+          <Icon name="clock" size={12} /> Atención
         </button>
         {vista === 'embudo' && (
           <span className="muted" style={{ fontSize: 12 }}>
@@ -713,6 +893,13 @@ export default function WhatsAppBandeja() {
                 <div className="kpi"><div className="kpi-label">Ganado</div><div className="kpi-value" style={{ fontSize: 20 }}>$ {Number(metricas.ganado.monto).toLocaleString('es-AR')}</div><div className="kpi-sub">monto estimado</div></div>
               </div>
 
+              <div className="grid4">
+                <div className="kpi"><div className="kpi-label">Con orden vinculada</div><div className="kpi-value">{metricas.ordenes?.conOrden || 0}</div><div className="kpi-sub">{formatearTasa(metricas.ordenes?.tasaOrden)} de las oportunidades</div></div>
+                <div className="kpi"><div className="kpi-label">Cotizado real</div><div className="kpi-value" style={{ fontSize: 20 }}>$ {Number(metricas.ordenes?.cotizado || 0).toLocaleString('es-AR')}</div><div className="kpi-sub">órdenes vinculadas</div></div>
+                <div className="kpi"><div className="kpi-label">Cobrado</div><div className="kpi-value" style={{ fontSize: 20 }}>$ {Number(metricas.ordenes?.cobrado || 0).toLocaleString('es-AR')}</div><div className="kpi-sub">{metricas.ordenes?.entregadas || 0} entregadas</div></div>
+                <div className="kpi"><div className="kpi-label">Conversión a entrega</div><div className="kpi-value">{formatearTasa(metricas.ordenes?.tasaCobro)}</div><div className="kpi-sub">de las órdenes vinculadas</div></div>
+              </div>
+
               <div className="card">
                 <div className="card-title"><Icon name="bolt" size={14} /> Conversión etapa por etapa</div>
                 <div style={{ overflowX: 'auto' }}>
@@ -766,6 +953,86 @@ export default function WhatsAppBandeja() {
               <p className="muted" style={{ fontSize: 11.5 }}>
                 El tiempo por etapa se mide con el historial de cambios de etapa y arranca desde el primer mensaje del cliente
                 (las oportunidades viejas empiezan a medirse desde que se muevan).
+              </p>
+            </>
+          )}
+        </div>
+      ) : vista === 'atencion' ? (
+        <div className="col">
+          {!sla ? (
+            <p className="muted">Cargando la atención…</p>
+          ) : (
+            <>
+              <div className="grid4">
+                <div className="kpi"><div className="kpi-label">Sin responder</div><div className="kpi-value" style={{ color: sla.sinResponder.length ? 'var(--amber)' : undefined }}>{sla.sinResponder.length}</div><div className="kpi-sub">{sla.sinResponder[0] ? `la más vieja hace ${formatearDuracion(sla.sinResponder[0].minutos * 60000)}` : 'todo contestado'}</div></div>
+                <div className="kpi"><div className="kpi-label">Primera respuesta</div><div className="kpi-value" style={{ fontSize: 20 }}>{formatearDuracion(sla.primeraRespuestaPromedioMs)}</div><div className="kpi-sub">p90: {formatearDuracion(sla.primeraRespuestaP90Ms)}</div></div>
+                <div className="kpi"><div className="kpi-label">En 30 min</div><div className="kpi-value">{sla.pctEn30Min === null ? '—' : `${sla.pctEn30Min} %`}</div><div className="kpi-sub">{sla.respondidasEn30Min} de {sla.medidas} medidas</div></div>
+                <div className="kpi"><div className="kpi-label">Conversaciones</div><div className="kpi-value">{sla.total}</div><div className="kpi-sub">{sla.medidas} con primera respuesta medida</div></div>
+              </div>
+
+              {esAdmin && (
+                <div className="row wrap" style={{ gap: 8, alignItems: 'center' }}>
+                  <button className="btn primary sm" onClick={repartir} disabled={repartiendo}>
+                    <Icon name="users" size={13} /> {repartiendo ? 'Repartiendo...' : 'Repartir sin asignar por carga'}
+                  </button>
+                  <span className="muted" style={{ fontSize: 11.5 }}>
+                    Toma las conversaciones sin responsable y las reparte entre quienes pueden responder WhatsApp, empezando por el que tiene menos abiertas.
+                  </span>
+                </div>
+              )}
+
+              <div className="card pad0">
+                <div className="row" style={{ padding: '12px 16px 8px', alignItems: 'baseline', gap: 10 }}>
+                  <h3 className="card-title" style={{ margin: 0 }}><Icon name="warn" size={15} /> Sin responder ({sla.sinResponder.length})</h3>
+                  <span className="muted grow" style={{ fontSize: 12 }}>El último mensaje es del cliente. Las más viejas primero.</span>
+                </div>
+                {sla.sinResponder.length === 0 ? (
+                  <p className="muted" style={{ padding: '4px 16px 16px', fontSize: 12.5 }}>No hay conversaciones esperando respuesta.</p>
+                ) : (
+                  <div style={{ padding: '0 8px 8px', overflowX: 'auto' }}>
+                    <table className="tbl">
+                      <thead><tr><th>Cliente</th><th>Esperando</th><th>Responsable</th><th>Etapa</th><th /></tr></thead>
+                      <tbody>
+                        {sla.sinResponder.map((c) => (
+                          <tr key={c.id}>
+                            <td><b>{c.nombre}</b><div className="muted mono" style={{ fontSize: 11 }}>{c.telefono}</div></td>
+                            <td><span className="badge amber">{formatearDuracion(c.minutos * 60000)}</span></td>
+                            <td>{c.asignado_a ? String(c.asignado_a).split('@')[0] : <span className="muted">sin asignar</span>}</td>
+                            <td>{ETAPAS.find((e) => e.key === c.etapa)?.label || c.etapa}</td>
+                            <td style={{ textAlign: 'right' }}>
+                              <button className="btn sm" onClick={() => { setVista('bandeja'); abrir(c.id); }}>Abrir</button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              <div className="card pad0">
+                <div className="card-title" style={{ padding: '12px 16px 8px' }}><Icon name="users" size={15} /> Por responsable</div>
+                <div style={{ padding: '0 8px 8px', overflowX: 'auto' }}>
+                  <table className="tbl">
+                    <thead><tr><th>Responsable</th><th className="num">Asignadas</th><th className="num">Sin responder</th><th className="num">Primera respuesta</th><th className="num">Ganadas</th></tr></thead>
+                    <tbody>
+                      {sla.porAgente.map((a) => (
+                        <tr key={a.agente}>
+                          <td>{a.agente === 'sin_asignar' ? <span className="muted">Sin asignar</span> : a.agente}</td>
+                          <td className="num">{a.asignadas}</td>
+                          <td className="num">{a.sinResponder > 0 ? <span className="badge amber">{a.sinResponder}</span> : 0}</td>
+                          <td className="num">{formatearDuracion(a.primeraRespuestaPromedioMs)}</td>
+                          <td className="num">{a.ganadas}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <p className="muted" style={{ fontSize: 11.5 }}>
+                La primera respuesta se mide desde el primer mensaje del cliente hasta la primera respuesta nuestra.
+                «En 30 min» cuenta sobre las conversaciones que ya tienen respuesta. Se recalcula cada 15 segundos.
               </p>
             </>
           )}
@@ -829,6 +1096,7 @@ export default function WhatsAppBandeja() {
             )}
             <div className="row wrap" style={{ gap: 6 }}>
               <button className={`chip${filtro.sinLeer ? ' on' : ''}`} onClick={() => setFiltro({ ...filtro, sinLeer: !filtro.sinLeer })}>Sin leer</button>
+              <button className={`chip${filtro.sinResponder ? ' on' : ''}`} onClick={() => setFiltro({ ...filtro, sinResponder: !filtro.sinResponder })}>Sin responder</button>
               <button
                 className={`chip${filtro.asignado && filtro.asignado === yo?.email ? ' on' : ''}`}
                 onClick={() => setFiltro({ ...filtro, asignado: filtro.asignado === yo?.email ? '' : (yo?.email || '') })}
@@ -837,7 +1105,7 @@ export default function WhatsAppBandeja() {
                 <button key={t} className={`chip${filtro.etiqueta === t ? ' on' : ''}`} onClick={() => setFiltro({ ...filtro, etiqueta: filtro.etiqueta === t ? '' : t })}>{t}</button>
               ))}
               {hayFiltro && (
-                <button className="chip" onClick={() => setFiltro({ q: '', etiqueta: '', asignado: '', sinLeer: false })}>Limpiar ✕</button>
+                <button className="chip" onClick={() => setFiltro({ q: '', etiqueta: '', asignado: '', sinLeer: false, sinResponder: false })}>Limpiar ✕</button>
               )}
             </div>
           </div>
@@ -856,6 +1124,9 @@ export default function WhatsAppBandeja() {
               <div className="row between" style={{ gap: 6 }}>
                 <b style={{ fontSize: 13 }}>{c.cliente_nombre || c.nombre_perfil || c.telefono}</b>
                 {c.no_leidos > 0 && <span className="badge amber">{c.no_leidos}</span>}
+                {c.ultima_entrada && (!c.ultima_salida || new Date(c.ultima_entrada) > new Date(c.ultima_salida)) && (
+                  <span className="badge amber" style={{ fontSize: 10 }} title="El último mensaje es del cliente">sin responder</span>
+                )}
               </div>
               <div className="muted" style={{ fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.ultimo_texto || '—'}</div>
               <div className="muted" style={{ fontSize: 11 }}>{c.ultima_fecha ? fmtFecha(c.ultima_fecha) : ''}{c.cliente_id ? ' · cliente registrado' : ''}</div>
@@ -881,6 +1152,11 @@ export default function WhatsAppBandeja() {
                     {hilo.conversacion.telefono}
                     {hilo.cliente?.telefono && ` · ficha: ${hilo.cliente.telefono}`}
                     {hilo.cliente?.wa_optin && ' · acepta WhatsApp'}
+                    {hilo.sla?.sinResponder && (
+                      <span className="badge amber" style={{ marginLeft: 6 }}>
+                        sin responder hace {formatearDuracion((hilo.sla.minutosSinResponder || 0) * 60000)}
+                      </span>
+                    )}
                   </div>
                   {hilo.consentimiento?.estado === 'baja' && (
                     <div className="row wrap" style={{ gap: 6, marginTop: 5, alignItems: 'center' }}>
@@ -913,6 +1189,52 @@ export default function WhatsAppBandeja() {
                     {hilo.ordenes.map((o) => (
                       <span key={o.id} className="badge">{o.id} · {o.bateria_serie} · {o.estado}</span>
                     ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Orden vinculada: el puente entre el chat y la venta del taller. */}
+              <div className="wa-orden" style={{ margin: '10px 14px 0', padding: '10px 12px', border: '1px solid var(--line)', borderRadius: 10, background: 'var(--bg2, #f8f9fb)' }}>
+                {hilo.orden ? (
+                  <div className="row between wrap" style={{ gap: 8, alignItems: 'center' }}>
+                    <div style={{ fontSize: 13 }}>
+                      <b>Orden {hilo.orden.id}</b>
+                      <span className="muted"> · {hilo.orden.bateria_serie} · {hilo.orden.estado}</span>
+                      {hilo.orden.cotizacion?.monto != null && (
+                        <span className="badge blue" style={{ marginLeft: 6 }}>$ {Number(hilo.orden.cotizacion.monto).toLocaleString('es-AR')}</span>
+                      )}
+                      {hilo.orden.monto_cobrado != null && (
+                        <span className="badge green" style={{ marginLeft: 4 }}>cobrado $ {Number(hilo.orden.monto_cobrado).toLocaleString('es-AR')}</span>
+                      )}
+                    </div>
+                    <div className="row" style={{ gap: 6 }}>
+                      {hilo.cotizacion_url && (
+                        <button
+                          className="btn sm"
+                          onClick={() => { navigator.clipboard?.writeText(hilo.cotizacion_url); toastShow('Link de cotización copiado', 'ok'); }}
+                        >
+                          <Icon name="clipboard" size={12} /> Copiar link
+                        </button>
+                      )}
+                      {!['delivered', 'cancelled'].includes(hilo.orden.estado) && (
+                        <button className="btn sm primary" onClick={abrirCotizar}>
+                          <Icon name="calculator" size={12} /> Recotizar
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="row between wrap" style={{ gap: 8, alignItems: 'center' }}>
+                    <span className="muted" style={{ fontSize: 12.5 }}>
+                      {hilo.conversacion.cliente_id
+                        ? 'Sin orden vinculada: cotizá desde acá para cerrar la venta y seguir el trabajo.'
+                        : 'Vinculá un cliente a la conversación para poder cotizar.'}
+                    </span>
+                    {hilo.conversacion.cliente_id && (
+                      <button className="btn sm primary" onClick={abrirCotizar}>
+                        <Icon name="calculator" size={12} /> Cotizar / vincular orden
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -1128,6 +1450,121 @@ export default function WhatsAppBandeja() {
                 onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); confirmarPerdida(); } }}
               />
             </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Cotizar desde el chat: vincula/crea la orden y manda el link firmado. */}
+      {cotizar && (
+        <Modal
+          size="md"
+          title="Cotizar desde el chat"
+          sub={hilo?.cliente?.nombre || hilo?.conversacion?.nombre_perfil || hilo?.conversacion?.telefono}
+          onClose={() => setCotizar(null)}
+          closeOnBackdrop={false}
+          footer={(
+            <>
+              <button type="button" className="btn" onClick={() => setCotizar(null)} disabled={guardandoCot}>Cancelar</button>
+              <button
+                type="button" className="btn primary"
+                disabled={guardandoCot || (cotizar.modo === 'nueva' && !esAdmin)}
+                onClick={guardarCotizacion}
+              >
+                <Icon name="calculator" size={14} /> {guardandoCot ? 'Cotizando...' : 'Crear cotización'}
+              </button>
+            </>
+          )}
+        >
+          <div className="col">
+            <div className="field">
+              <label>Orden del taller</label>
+              <select
+                className="input"
+                value={cotizar.modo === 'nueva' ? '__nueva' : cotizar.orden_id}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v === '__nueva') return setCotizar({ ...cotizar, modo: 'nueva', orden_id: '' });
+                  const o = ordenesParaCotizar.find((x) => x.id === v);
+                  setCotizar({
+                    ...cotizar, modo: 'existente', orden_id: v,
+                    serie: o?.bateria_serie || cotizar.serie,
+                    monto: o?.cotizacion?.monto ?? cotizar.monto,
+                  });
+                }}
+              >
+                {ordenesParaCotizar.map((o) => (
+                  <option key={o.id} value={o.id}>{o.id} · {o.bateria_serie} · {o.estado}</option>
+                ))}
+                <option value="__nueva">+ Crear una orden nueva</option>
+              </select>
+            </div>
+
+            {cotizar.modo === 'nueva' && (
+              <>
+                <FormGrid cols={2}>
+                  <div className="field">
+                    <label>N° de serie *</label>
+                    <input className="input" value={cotizar.serie} onChange={(e) => setCotizar({ ...cotizar, serie: e.target.value })} placeholder="BAT-..." />
+                  </div>
+                  <div className="field">
+                    <label>Falla reportada *</label>
+                    <input className="input" value={cotizar.falla} onChange={(e) => setCotizar({ ...cotizar, falla: e.target.value })} placeholder="No arranca / no retiene carga" />
+                  </div>
+                  <div className="field">
+                    <label>Tipo</label>
+                    <select className="input" value={cotizar.tipo} onChange={(e) => setCotizar({ ...cotizar, tipo: e.target.value })}>
+                      {['Plomo-Acido', 'Litio / Ion-Litio', 'Industrial Pesado'].map((t) => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </div>
+                  <div className="field">
+                    <label>Voltaje</label>
+                    <input className="input" value={cotizar.voltaje} onChange={(e) => setCotizar({ ...cotizar, voltaje: e.target.value })} placeholder="12V" />
+                  </div>
+                  <div className="field">
+                    <label>Capacidad (Ah)</label>
+                    <input className="input" value={cotizar.capacidad} onChange={(e) => setCotizar({ ...cotizar, capacidad: e.target.value })} placeholder="55" />
+                  </div>
+                  <div className="field">
+                    <label>Aplicación</label>
+                    <select className="input" value={cotizar.aplicacion} onChange={(e) => setCotizar({ ...cotizar, aplicacion: e.target.value })}>
+                      {['Automotriz', 'Autoelevador', 'Ferroviario', 'Industrial / UPS', 'Marino'].map((a) => <option key={a} value={a}>{a}</option>)}
+                    </select>
+                  </div>
+                </FormGrid>
+                {!esAdmin && (
+                  <div className="alerta">Solo un administrador puede crear una orden nueva. Podés vincular una orden existente del cliente.</div>
+                )}
+              </>
+            )}
+
+            <div className="field">
+              <label>Monto de la cotización *</label>
+              <input
+                className="input" value={cotizar.monto} placeholder="15000"
+                onChange={(e) => setCotizar({ ...cotizar, monto: e.target.value })}
+              />
+            </div>
+
+            <label className="row" style={{ gap: 8, fontSize: 13, alignItems: 'center' }}>
+              <input type="checkbox" checked={cotizar.enviar} onChange={(e) => setCotizar({ ...cotizar, enviar: e.target.checked })} />
+              Enviar el link firmado por WhatsApp
+            </label>
+
+            {cotizar.enviar && (
+              <div className="field">
+                <label>Mensaje (opcional)</label>
+                <textarea
+                  className="input" rows={3} value={cotizar.mensaje}
+                  onChange={(e) => setCotizar({ ...cotizar, mensaje: e.target.value })}
+                  placeholder="Si lo dejás vacío, mandamos el monto y el link automáticamente."
+                />
+              </div>
+            )}
+
+            <p className="muted" style={{ fontSize: 12 }}>
+              La cotización queda guardada en la orden y el cliente puede verla y aprobarla desde el link.
+              Si la oportunidad estaba en «Nuevo», pasa a «Presupuestado»; cuando el cliente aprueba, pasa a «Ganado».
+            </p>
           </div>
         </Modal>
       )}

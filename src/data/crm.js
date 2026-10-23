@@ -124,7 +124,7 @@ const aFecha = (v) => {
 
 // Metricas del embudo a partir de las conversaciones, el historial de etapas y
 // la primera fecha de cada conversacion (para saber cuando entro a "nuevo").
-export function calcularMetricas({ conversaciones = [], historial = [], primeras = {}, ahora = Date.now() } = {}) {
+export function calcularMetricas({ conversaciones = [], historial = [], primeras = {}, ordenes = [], ahora = Date.now() } = {}) {
   const convs = Array.isArray(conversaciones) ? conversaciones : [];
   const hist = Array.isArray(historial) ? historial : [];
   const resumen = resumenEmbudo(convs);
@@ -219,6 +219,36 @@ export function calcularMetricas({ conversaciones = [], historial = [], primeras
     tiempoPorEtapa[e.key] = { promedioMs: a.muestras ? Math.round(a.totalMs / a.muestras) : null, muestras: a.muestras };
   }
 
+  // 4) Cierre real: oportunidades con orden vinculada, monto cotizado y cobrado.
+  //    El embudo mide intenciones; esto mide lo que llego al taller.
+  const ordenesPorId = new Map((Array.isArray(ordenes) ? ordenes : []).map((o) => [o.id, o]));
+  let conOrden = 0;
+  let cotizado = 0;
+  let cobrado = 0;
+  let entregadas = 0;
+  const ordenesVistas = new Set();
+  for (const c of convs) {
+    const o = c?.orden_id ? ordenesPorId.get(c.orden_id) : null;
+    if (!o) continue;
+    conOrden += 1;
+    // Si dos conversaciones apuntan a la misma orden, el monto se cuenta una vez.
+    if (ordenesVistas.has(o.id)) continue;
+    ordenesVistas.add(o.id);
+    cotizado += normalizarMonto(o.cotizacion?.monto) || 0;
+    if (String(o.estado || '').toLowerCase() === 'delivered') {
+      entregadas += 1;
+      cobrado += normalizarMonto(o.monto_cobrado) || 0;
+    }
+  }
+  const ordenesResumen = {
+    conOrden,
+    tasaOrden: total ? red2(conOrden / total) : 0,
+    cotizado: red2(cotizado),
+    cobrado: red2(cobrado),
+    entregadas,
+    tasaCobro: conOrden ? red2(entregadas / conOrden) : null,
+  };
+
   return {
     total,
     porEtapa: resumen.porEtapa,
@@ -229,6 +259,7 @@ export function calcularMetricas({ conversaciones = [], historial = [], primeras
     tasaCierre,
     motivos,
     tiempoPorEtapa,
+    ordenes: ordenesResumen,
   };
 }
 

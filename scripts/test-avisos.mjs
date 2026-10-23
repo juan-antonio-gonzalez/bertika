@@ -50,6 +50,11 @@ test('las variables de cada plantilla son las que espera Meta', () => {
   const orden = { id: 'ord_07', bateria_serie: 'BAT-AUT-003' };
   assert.deepEqual(parametrosAviso('received', { cliente, orden, sitio: 'https://bertika.com' }), ['Juan', 'BAT-AUT-003', 'https://bertika.com/seguimiento']);
   assert.deepEqual(parametrosAviso('quoted', { cliente, orden, sitio: 'https://bertika.com' }), ['Juan', 'BAT-AUT-003', 'https://bertika.com/cotizacion/ord_07']);
+  // El servidor pasa el enlace firmado: sin token el cliente no puede aprobar.
+  assert.deepEqual(
+    parametrosAviso('quoted', { cliente, orden, sitio: 'https://bertika.com', linkCotizacion: 'https://bertika.com/cotizacion/ord_07?t=abc' }),
+    ['Juan', 'BAT-AUT-003', 'https://bertika.com/cotizacion/ord_07?t=abc']
+  );
   assert.deepEqual(parametrosAviso('ready', { cliente, orden }), ['Juan', 'BAT-AUT-003']);
   assert.deepEqual(parametrosAviso('delivered', { cliente, orden }), []);
   // Sin nombre de cliente igual sale algo razonable.

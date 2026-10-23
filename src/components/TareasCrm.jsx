@@ -149,6 +149,9 @@ export default function TareasCrm() {
                     <tr key={t.id} style={vencida ? { background: 'var(--amber-bg)' } : undefined}>
                       <td>
                         <b>{t.titulo}</b>
+                        {t.creada_por === 'automatizacion' && (
+                          <span className="badge blue" style={{ marginLeft: 6, fontSize: 10 }} title="La creó el seguimiento automático">auto</span>
+                        )}
                         {t.cliente_nombre && <span className="muted"> · {t.cliente_nombre}</span>}
                       </td>
                       <td>

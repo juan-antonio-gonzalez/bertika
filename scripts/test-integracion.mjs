@@ -17,6 +17,7 @@
 
 import assert from 'node:assert/strict';
 import { spawn, execFileSync } from 'node:child_process';
+import { createHmac } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { rmSync } from 'node:fs';
@@ -48,6 +49,8 @@ const MOCK_PORT = Number(process.env.TEST_MOCK_PORT || 3998);
 const UPLOAD_DIR = path.join('/tmp', `bertika-test-uploads-${process.pid}`);
 const ADMIN_PASS = 'admin12345';
 const TEC_PASS = 'tec12345';
+const JWT_SECRET_TEST = 'test-secret-b3rt1k4-integracion-0123456789';
+const firmaCotizacion = (ordenId) => createHmac('sha256', JWT_SECRET_TEST).update(`cot:${ordenId}`).digest('hex');
 
 let servidor = null;
 let mockMeta = null;
@@ -156,11 +159,12 @@ function arrancarServidor() {
       ...process.env,
       DATABASE_URL: DB_URL,
       PORT: String(PORT),
-      JWT_SECRET: 'test-secret-b3rt1k4-integracion-0123456789',
+      JWT_SECRET: JWT_SECRET_TEST,
       PUBLIC_URL: BASE,
       UPLOAD_DIR,
       OUTBOX_WORKER: '0', // el test decide cuándo procesar la cola
       MONITOREO: '0',
+      AUTOMATIZACIONES: '0', // se disparan a mano desde el endpoint
       WHATSAPP_API_BASE: `http://127.0.0.1:${MOCK_PORT}`,
       WHATSAPP_TOKEN: 'token-de-prueba',
       WHATSAPP_PHONE_ID: '123456789',
@@ -295,6 +299,181 @@ async function main() {
     assert.equal(entrega.status, 403);
     const audit = await pedir('/auditoria', { token: tokenTec });
     assert.equal(audit.status, 403);
+  });
+
+  // ---------- Fase 2: conversación -> cotización -> orden ----------
+  let convCot = null;
+  let ordenCot = null;
+
+  await test('cotizar desde el chat vincula la orden y manda el link firmado', async () => {
+    const envio = await pedir('/whatsapp/enviar', {
+      method: 'POST', token: tokenAdmin, body: { telefono: '11 5555-7777', texto: 'Consulta de cotización' },
+    });
+    assert.equal(envio.status, 200, envio.texto);
+    convCot = (await db.query('SELECT id FROM wa_conversaciones WHERE telefono = $1', ['5491155557777'])).rows[0]?.id;
+    assert.ok(convCot, 'la conversación tiene que existir');
+    const vinc = await pedir(`/whatsapp/conversaciones/${convCot}`, {
+      method: 'PATCH', token: tokenAdmin, body: { cliente_id: clienteId },
+    });
+    assert.equal(vinc.status, 200, vinc.texto);
+
+    const o = await pedir('/ordenes', {
+      method: 'POST', token: tokenAdmin,
+      body: {
+        serie: `TEST-COT-${Date.now()}`, cliente_id: clienteId, falla: 'No retiene carga',
+        tipo: 'Plomo-Acido', voltaje: '12V', capacidad: 60, aplicacion: 'Automotriz',
+      },
+    });
+    assert.equal(o.status, 201, o.texto);
+    ordenCot = o.json.id;
+
+    const q = await pedir(`/whatsapp/conversaciones/${convCot}/cotizacion`, {
+      method: 'POST', token: tokenAdmin,
+      body: { orden_id: ordenCot, monto: 18000, enviar: true, mensaje: 'Tu presupuesto está listo' },
+    });
+    assert.equal(q.status, 201, q.texto);
+    assert.equal(q.json.orden_id, ordenCot);
+    assert.match(q.json.cotizacion_url, /\?t=[a-f0-9]{64}$/);
+    assert.equal(q.json.envio?.estado, 'enviado');
+
+    const conv = (await db.query('SELECT orden_id, etapa, monto_estimado FROM wa_conversaciones WHERE id = $1', [convCot])).rows[0];
+    assert.equal(conv.orden_id, ordenCot);
+    assert.equal(conv.etapa, 'presupuestado');
+    assert.equal(Number(conv.monto_estimado), 18000);
+    const orden = (await db.query("SELECT estado, cotizacion->>'monto' AS monto FROM ordenes WHERE id = $1", [ordenCot])).rows[0];
+    assert.equal(orden.estado, 'quoted');
+    assert.equal(Number(orden.monto), 18000);
+
+    const detalle = await pedir(`/whatsapp/conversaciones/${convCot}`, { token: tokenAdmin });
+    assert.equal(detalle.status, 200);
+    assert.equal(detalle.json.orden?.id, ordenCot);
+    assert.match(detalle.json.cotizacion_url, /\?t=/);
+    assert.ok(detalle.json.sla, 'el hilo trae datos de SLA');
+
+    const audit = await pedir(`/auditoria?tabla=wa_conversaciones&registro_id=${convCot}`, { token: tokenAdmin });
+    assert.ok(audit.json.filas.some((f) => f.accion === 'cotizar_desde_bandeja'));
+  });
+
+  await test('aprobar la cotización mueve la oportunidad a ganado', async () => {
+    const t = firmaCotizacion(ordenCot);
+    const r = await pedir(`/ordenes/${ordenCot}/cotizacion/aprobar?t=${t}`, { method: 'POST' });
+    assert.equal(r.status, 200, r.texto);
+    assert.equal(r.json.etapa, 'ganado');
+    const conv = (await db.query('SELECT etapa FROM wa_conversaciones WHERE id = $1', [convCot])).rows[0];
+    assert.equal(conv.etapa, 'ganado');
+    const orden = (await db.query('SELECT estado FROM ordenes WHERE id = $1', [ordenCot])).rows[0];
+    assert.equal(orden.estado, 'approved');
+    const hist = (await db.query(
+      "SELECT nueva, motivo FROM wa_etapa_historial WHERE conversacion_id = $1 AND nueva = 'ganado' ORDER BY fecha DESC LIMIT 1",
+      [convCot]
+    )).rows[0];
+    assert.ok(hist, 'tiene que quedar el historial de etapa');
+    // Para las métricas de cierre real, la orden aprobada se entrega.
+    await db.query("UPDATE ordenes SET estado = 'delivered', monto_cobrado = 18000, fecha_entrega = now() WHERE id = $1", [ordenCot]);
+  });
+
+  await test('rechazar la cotización mueve la oportunidad a perdido con motivo', async () => {
+    const envio = await pedir('/whatsapp/enviar', {
+      method: 'POST', token: tokenAdmin, body: { telefono: '11 5555-8888', texto: 'Otra consulta' },
+    });
+    assert.equal(envio.status, 200, envio.texto);
+    const conv = (await db.query('SELECT id FROM wa_conversaciones WHERE telefono = $1', ['5491155558888'])).rows[0]?.id;
+    await pedir(`/whatsapp/conversaciones/${conv}`, { method: 'PATCH', token: tokenAdmin, body: { cliente_id: clienteId } });
+    const o = await pedir('/ordenes', {
+      method: 'POST', token: tokenAdmin,
+      body: { serie: `TEST-RECH-${Date.now()}`, cliente_id: clienteId, falla: 'Otra falla' },
+    });
+    assert.equal(o.status, 201, o.texto);
+    const q = await pedir(`/whatsapp/conversaciones/${conv}/cotizacion`, {
+      method: 'POST', token: tokenAdmin, body: { orden_id: o.json.id, monto: 9000, enviar: false },
+    });
+    assert.equal(q.status, 201, q.texto);
+    const t = firmaCotizacion(o.json.id);
+    const r = await pedir(`/ordenes/${o.json.id}/cotizacion/rechazar?t=${t}`, { method: 'POST' });
+    assert.equal(r.status, 200, r.texto);
+    assert.equal(r.json.etapa, 'perdido');
+    const convDb = (await db.query('SELECT etapa FROM wa_conversaciones WHERE id = $1', [conv])).rows[0];
+    assert.equal(convDb.etapa, 'perdido');
+    const hist = (await db.query(
+      "SELECT motivo FROM wa_etapa_historial WHERE conversacion_id = $1 AND nueva = 'perdido' ORDER BY fecha DESC LIMIT 1",
+      [conv]
+    )).rows[0];
+    assert.equal(hist.motivo, 'Cotización rechazada');
+  });
+
+  await test('las métricas del embudo incluyen cotizado y cobrado real', async () => {
+    const r = await pedir('/whatsapp/metricas', { token: tokenAdmin });
+    assert.equal(r.status, 200);
+    assert.ok(r.json.ordenes.conOrden >= 2, 'las dos oportunidades tienen orden');
+    assert.ok(r.json.ordenes.cotizado >= 27000);
+    assert.ok(r.json.ordenes.cobrado >= 18000);
+    assert.ok(r.json.ordenes.entregadas >= 1);
+    assert.equal(typeof r.json.ordenes.tasaCobro, 'number');
+  });
+
+  // ---------- Fase 2: SLA y reparto ----------
+  await test('el SLA detecta la conversación sin responder y mide la primera respuesta', async () => {
+    await db.query(`INSERT INTO wa_conversaciones (id, telefono, nombre_perfil, ultima_fecha)
+      VALUES ('conv_sla_1', '5491100000001', 'SLA Uno', now()), ('conv_sla_2', '5491100000002', 'SLA Dos', now())`);
+    await db.query(`INSERT INTO wa_mensajes (id, conversacion_id, direccion, telefono, tipo, texto, estado, fecha) VALUES
+      ('wams_sla_1_in', 'conv_sla_1', 'in', '5491100000001', 'text', 'Consulta', 'recibido', now() - interval '3 hours'),
+      ('wams_sla_1_out', 'conv_sla_1', 'out', '5491100000001', 'text', 'Respuesta', 'enviado', now() - interval '2 hours 50 minutes'),
+      ('wams_sla_2_in', 'conv_sla_2', 'in', '5491100000002', 'text', 'Otra consulta', 'recibido', now() - interval '10 minutes')`);
+    const r = await pedir('/whatsapp/sla', { token: tokenAdmin });
+    assert.equal(r.status, 200, r.texto);
+    assert.ok(r.json.medidas >= 1);
+    assert.ok(r.json.sinResponder.some((c) => c.id === 'conv_sla_2'));
+    assert.ok(r.json.primeraRespuestaPromedioMs !== null);
+    assert.ok(Array.isArray(r.json.porAgente));
+    const filtro = await pedir('/whatsapp/conversaciones?sin_responder=1', { token: tokenAdmin });
+    assert.equal(filtro.status, 200);
+    assert.ok(filtro.json.some((c) => c.id === 'conv_sla_2'), 'el filtro de la bandeja trae la conversación pendiente');
+  });
+
+  await test('el admin puede repartir las conversaciones sin asignar por carga', async () => {
+    const r = await pedir('/whatsapp/repartir', { method: 'POST', token: tokenAdmin });
+    assert.equal(r.status, 200, r.texto);
+    assert.ok(r.json.asignadas >= 2, r.texto);
+    const sla2 = (await db.query('SELECT asignado_a FROM wa_conversaciones WHERE id = $1', ['conv_sla_2'])).rows[0];
+    assert.ok(sla2.asignado_a, 'la conversación sin asignar tiene que quedar con responsable');
+  });
+
+  // ---------- Fase 2: automatizaciones ----------
+  await test('las automatizaciones crean tareas una sola vez', async () => {
+    const cfg = await pedir('/whatsapp/automatizaciones', {
+      method: 'PUT', token: tokenAdmin,
+      body: { config: { seguimiento_presupuesto: { activo: true, dias: 1 }, retiro_pendiente: { activo: true, dias: 1 } } },
+    });
+    assert.equal(cfg.status, 200, cfg.texto);
+
+    await db.query(`INSERT INTO wa_conversaciones (id, telefono, cliente_id, nombre_perfil, etapa, ultima_fecha, asignado_a)
+      VALUES ('conv_auto_pres', '5491100000003', $1, 'Auto Presupuesto', 'presupuestado', now() - interval '3 days', 'admin@bertika.com')`,
+      [clienteId]);
+    const o = await pedir('/ordenes', {
+      method: 'POST', token: tokenAdmin,
+      body: { serie: `TEST-RETIRO-${Date.now()}`, cliente_id: clienteId, falla: 'Lista sin retirar' },
+    });
+    assert.equal(o.status, 201, o.texto);
+    await db.query("UPDATE ordenes SET estado = 'ready', hora_entrega = now() - interval '4 days' WHERE id = $1", [o.json.id]);
+
+    const primera = await pedir('/whatsapp/automatizaciones/revisar', { method: 'POST', token: tokenAdmin });
+    assert.equal(primera.status, 200, primera.texto);
+    assert.ok(primera.json.presupuesto >= 1, primera.texto);
+    assert.ok(primera.json.retiro >= 1, primera.texto);
+
+    const tarea = (await db.query("SELECT * FROM wa_tareas WHERE conversacion_id = 'conv_auto_pres' AND creada_por = 'automatizacion'")).rows[0];
+    assert.ok(tarea, 'tiene que quedar la tarea de seguimiento');
+    const tareaRetiro = (await db.query("SELECT * FROM wa_tareas WHERE orden_id = $1 AND creada_por = 'automatizacion'", [o.json.id])).rows[0];
+    assert.ok(tareaRetiro, 'tiene que quedar la tarea de retiro');
+
+    const segunda = await pedir('/whatsapp/automatizaciones/revisar', { method: 'POST', token: tokenAdmin });
+    assert.equal(segunda.status, 200);
+    assert.equal(segunda.json.presupuesto, 0, 'no duplica la tarea en la segunda pasada');
+    assert.equal(segunda.json.retiro, 0);
+
+    const lista = await pedir('/whatsapp/automatizaciones', { token: tokenAdmin });
+    assert.equal(lista.status, 200);
+    assert.equal(lista.json.config.seguimiento_presupuesto.dias, 1);
   });
 
   await test('un mensaje normal sale por WhatsApp y queda como enviado', async () => {

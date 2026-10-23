@@ -44,12 +44,13 @@ export function primerNombre(nombre) {
 }
 
 // Variables que espera cada plantilla (en orden). La {{3}} de "recibida" es el
-// enlace de seguimiento y la de "cotización" el enlace para aprobar.
-export function parametrosAviso(evento, { cliente, orden, sitio = 'https://bertika.com' } = {}) {
+// enlace de seguimiento y la de "cotización" el enlace para aprobar. El server
+// pasa `linkCotizacion` firmado; si no viene, se usa el enlace pelado (compat).
+export function parametrosAviso(evento, { cliente, orden, sitio = 'https://bertika.com', linkCotizacion = '' } = {}) {
   const nombre = primerNombre(cliente?.nombre);
   const serie = String(orden?.bateria_serie || 'tu batería').slice(0, 60);
   if (evento === 'received') return [nombre, serie, `${sitio}/seguimiento`];
-  if (evento === 'quoted') return [nombre, serie, `${sitio}/cotizacion/${orden?.id || ''}`];
+  if (evento === 'quoted') return [nombre, serie, linkCotizacion || `${sitio}/cotizacion/${orden?.id || ''}`];
   if (evento === 'ready') return [nombre, serie];
   return [];
 }

@@ -157,6 +157,27 @@ test('la tasa de cierre es ganado / (ganado + perdido)', () => {
   assert.equal(calcularMetricas({ conversaciones: [], ahora: AHORA }).tasaCierre, null, 'sin cerradas no se inventa un porcentaje');
 });
 
+test('mide el cierre real con las órdenes vinculadas', () => {
+  const convs = [
+    { id: 'c1', etapa: 'ganado', monto_estimado: 3000, orden_id: 'ord_1' },
+    { id: 'c2', etapa: 'presupuestado', monto_estimado: 800, orden_id: null },
+  ];
+  const ordenes = [
+    { id: 'ord_1', estado: 'delivered', cotizacion: { monto: 2800 }, monto_cobrado: 2500 },
+    { id: 'ord_2', estado: 'quoted', cotizacion: { monto: 1000 }, monto_cobrado: null },
+  ];
+  const m = calcularMetricas({ conversaciones: convs, ordenes, ahora: AHORA });
+  assert.equal(m.ordenes.conOrden, 1, 'solo cuenta la orden vinculada a una oportunidad');
+  assert.equal(m.ordenes.tasaOrden, 0.5);
+  assert.equal(m.ordenes.cotizado, 2800);
+  assert.equal(m.ordenes.cobrado, 2500);
+  assert.equal(m.ordenes.entregadas, 1);
+  assert.equal(m.ordenes.tasaCobro, 1);
+  const vacio = calcularMetricas({ conversaciones: [], ahora: AHORA });
+  assert.equal(vacio.ordenes.conOrden, 0);
+  assert.equal(vacio.ordenes.tasaCobro, null);
+});
+
 test('no cuenta dos veces la misma etapa de la misma conversación', () => {
   const idaYVuelta = [
     ...HIST,

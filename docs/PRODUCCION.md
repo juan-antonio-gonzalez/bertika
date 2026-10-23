@@ -51,6 +51,8 @@ BACKUP_DIR=/var/backups/bertika
 # Se pueden apagar para depurar; en produccion tienen que quedar en 1.
 OUTBOX_WORKER=1
 MONITOREO=1
+# Worker de seguimiento (crea tareas de presupuesto/retiro cada 6 h).
+AUTOMATIZACIONES=1
 ```
 
 `GET /api/health` queda público y sin datos sensibles: sirve para un monitor de uptime

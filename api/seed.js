@@ -44,6 +44,7 @@ export async function seedDatabase() {
     for (const t of [
       'wa_notas', 'wa_mensajes', 'wa_conversaciones', 'wa_avisos_log', 'wa_avisos_config',
       'wa_tareas', 'wa_etapa_historial', 'wa_etiquetas', 'wa_respuestas', 'wa_export_log',
+      'wa_automatizaciones', 'wa_automatizaciones_log',
       'wa_outbox', 'alertas_log', 'auditoria',
       'cotizaciones_historial', 'insumos_movimientos', 'cotizaciones_visita',
       'cotizador_eventos', 'cotizador_config_historial', 'cotizador_config',

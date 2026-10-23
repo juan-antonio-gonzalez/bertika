@@ -346,3 +346,45 @@ plantilla, el administrador). Tiene tres pestanas:
 El monitor publico es `GET /api/health` (para un servicio de uptime). El servidor revisa
 cada 5 minutos la base, la cola, el respaldo y los errores 500, y avisa por email
 (`ALERTAS_EMAIL`, usa el SMTP de las consultas) o por webhook (`ALERTAS_WEBHOOK`).
+
+---
+
+## 12. CRM comercial de WhatsApp (cotizar, atender y seguir)
+
+### Cotizar desde el chat
+En el hilo de una conversación vinculada a un cliente aparece la tarjeta **Orden**:
+
+- Si no hay orden, **Cotizar / vincular orden** abre el formulario. Se puede elegir una
+  orden existente del cliente o **crear una orden nueva** (esto ultimo solo lo puede hacer
+  un administrador, porque crear ordenes es su permiso).
+- Se carga el monto, se puede escribir el mensaje y se deja tildado **Enviar el link
+  firmado por WhatsApp**. Si se deja vacio el mensaje, se manda solo con el monto y el link.
+- Al crear la cotizacion, la oportunidad pasa a **Presupuestado** (si estaba en Nuevo) y
+  queda el monto en el embudo. Cuando el cliente aprueba desde el link, pasa sola a
+  **Ganado**; si rechaza, pasa a **Perdido** con el motivo «Cotizacion rechazada».
+- La tarjeta muestra el estado de la orden, el monto cotizado y lo cobrado, y permite
+  **copiar el link** para mandarlo por otro medio o **recotizar**.
+
+### Atencion (SLA)
+La pestana **Atencion** de la bandeja muestra:
+
+- Cuantas conversaciones estan **sin responder** (el ultimo mensaje es del cliente) y hace
+  cuanto espera la mas vieja.
+- Primera respuesta promedio y p90, y que porcentaje se respondio en 30 minutos.
+- Una tabla por responsable con asignadas, sin responder, primera respuesta y ganadas.
+- El boton **Repartir sin asignar por carga** (admin) distribuye las conversaciones sin
+  responsable entre quienes pueden responder WhatsApp, empezando por el que tiene menos.
+
+En la bandeja hay un filtro **Sin responder** y un distintivo en cada conversacion.
+
+### Automatizaciones de seguimiento
+La tarjeta **Seguimiento automatico (tareas)** (admin) tiene dos reglas:
+
+- **Presupuesto sin respuesta**: si una oportunidad presupuestada queda X dias sin
+  movimiento, crea una tarea para retomarla.
+- **Bateria lista sin retirar**: si una orden lleva X dias lista, crea una tarea para
+  avisarle al cliente.
+
+Se revisan solas cada 6 horas y con **Revisar ahora**. Crean **tareas** (no mandan mensajes
+solos) y no se duplican: una misma oportunidad/orden no genera dos veces la misma tarea.
+Las tareas aparecen en **Tareas** con el distintivo `auto`.

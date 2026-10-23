@@ -38,6 +38,19 @@ Actions corre todo (`.github/workflows/ci.yml`) con un servicio PostgreSQL 16.
 - **Export CSV seguro**: neutraliza fórmulas de Excel (`=`, `+`, `-`, `@`) en Reportes y en
   el export de WhatsApp.
 
+## CRM comercial (Fase 2)
+
+- **Conversación → cotización → orden**: desde el hilo de WhatsApp se elige una orden del
+  cliente (o se crea una nueva), se carga el monto y se manda el **link firmado** para aprobar.
+  La oportunidad pasa a «Presupuestado»; al aprobar el cliente pasa a «Ganado» y al rechazar a
+  «Perdido» con motivo. Las métricas muestran cotizado, cobrado y conversión real.
+- **Atención (SLA)**: primera respuesta promedio y p90, porcentaje respondido en 30 minutos,
+  conversaciones sin responder (con filtro en la bandeja) y carga por responsable, más un
+  botón de **reparto por carga** para el admin.
+- **Automatizaciones de seguimiento**: reglas configurables (presupuesto sin respuesta y
+  batería lista sin retirar) que crean **tareas** idempotentes cada 6 horas; no mandan
+  mensajes solas. Se revisan también a mano desde la bandeja.
+
 ## Stack
 
 - Frontend: Vite + React 19, Zustand (store global reactivo) con persistencia en `localStorage`, React Router (rutas SPA), CSS propio.
