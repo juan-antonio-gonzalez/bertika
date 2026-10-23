@@ -6,6 +6,7 @@ import { MIN_CAPACIDAD_PCT } from '../data/reglas';
 import { esStockCritico } from '../data/inventario';
 import { OrdenTrabajo, ComprobanteEntrega } from './DocumentosTaller';
 import { CONTACTO, OFICIAL } from '../data/siteData';
+import { enlaceSeguimiento } from '../data/respuestas';
 import EtiquetaBateria from './EtiquetaBateria';
 
 function Warning({ text }) {
@@ -388,7 +389,10 @@ export default function OrdenDetalle({ orden, role, onClose, onEntregado, onBaja
   const garantiaVigente = historial.find((h) => h.id !== orden.id && h.garantia?.vence
     && new Date(h.garantia.vence) > new Date());
   const waCliente = cliente?.telefono ? waNumero(cliente.telefono) : '';
-  const msgCliente = `Hola ${cliente?.nombre || ''}, te escribimos del taller Bertika por la batería ${orden.bateria_serie} (orden ${orden.id}). Seguimiento en tiempo real: ${window.location.origin}/tracker/${orden.id}`;
+  // El enlace de seguimiento lleva el codigo de 16 digitos, no el id interno:
+  // ese id no abre la pantalla publica (y esa pantalla es la que ve el cliente).
+  const linkSeguimiento = enlaceSeguimiento(orden, window.location.origin) || `${window.location.origin}/seguimiento`;
+  const msgCliente = `Hola ${cliente?.nombre || ''}, te escribimos del taller Bertika por la batería ${orden.bateria_serie} (orden ${orden.id}). Seguimiento en tiempo real: ${linkSeguimiento}`;
 
   const deliver = () => {
     deliverOrder(orden.id, confirm?.monto, confirm?.meses, confirm?.ciclos, confirm?.medio);

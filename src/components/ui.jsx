@@ -261,7 +261,7 @@ export function nombreActor(usuario, data) {
   return usuario.email || usuario.rol || 'Sistema';
 }
 
-export function Timeline({ eventos }) {
+export function Timeline({ eventos, autor = true }) {
   const data = useStore((s) => s.data);
   if (!eventos) return null;
   const tipos = {
@@ -282,7 +282,10 @@ export function Timeline({ eventos }) {
             <div className="grow">
               <div style={{ fontSize: 13 }}>{ev.detalle}</div>
               <div className="muted" style={{ fontSize: 11.5, marginTop: 2 }}>
-                {fmtFecha(ev.fecha)} · <Icon name="user" size={10} /> {nombreActor(ev.usuario, data)}
+                {fmtFecha(ev.fecha)}
+                {/* En la vista publica (seguimiento del cliente) no se muestra
+                    quien cargo el evento: es informacion interna del taller. */}
+                {autor && <><span> · </span><Icon name="user" size={10} /> {nombreActor(ev.usuario, data)}</>}
               </div>
             </div>
           </div>

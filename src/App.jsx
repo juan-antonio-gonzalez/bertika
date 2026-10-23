@@ -144,7 +144,9 @@ export default function App() {
         <Route path="/tecnico/:tab" element={<AppLayout><RequireRol rol="tecnico"><Tecnico /></RequireRol></AppLayout>} />
         <Route path="/cliente" element={<AppLayout><RequireRol rol="cliente"><Cliente /></RequireRol></AppLayout>} />
         <Route path="/cliente/:tab" element={<AppLayout><RequireRol rol="cliente"><Cliente /></RequireRol></AppLayout>} />
-        <Route path="/tracker/:orden_id" element={<AppLayout><Tracker /></AppLayout>} />
+        {/* Seguimiento publico: pantalla completa y SIN el shell de la plataforma.
+            Se ve igual con o sin sesion abierta (siempre como cliente). */}
+        <Route path="/tracker/:orden_id" element={<Tracker />} />
         <Route path="/settings" element={<AppLayout><Protected><Settings /></Protected></AppLayout>} />
         <Route path="/reportes" element={<AppLayout><RequireSeccion><Reportes /></RequireSeccion></AppLayout>} />
         <Route path="/usuarios" element={<AppLayout><RequireSeccion><Usuarios /></RequireSeccion></AppLayout>} />

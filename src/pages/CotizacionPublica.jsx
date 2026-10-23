@@ -147,7 +147,14 @@ export default function CotizacionPublica() {
             )}
 
             <div className="center mt24">
-              <Link to={`/tracker/${orden.id}`} className="btn">Ver seguimiento de {orden.bateria_serie}</Link>
+              {/* El seguimiento publico se resuelve con el codigo de 16 digitos;
+                  con el id interno la pantalla no encontraria la orden. */}
+              <Link
+                to={String(orden.codigo || '').replace(/\D/g, '').length === 16 ? `/tracker/${String(orden.codigo).replace(/\D/g, '')}` : '/seguimiento'}
+                className="btn"
+              >
+                Ver seguimiento de {orden.bateria_serie}
+              </Link>
             </div>
             <div className="center muted" style={{ fontSize: 11.5, marginTop: 10 }}>
               {orden.fecha_ingreso ? `Ingreso: ${fmtDate(orden.fecha_ingreso)}` : ''}

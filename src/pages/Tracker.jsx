@@ -5,38 +5,87 @@ import { api } from '../store/api';
 import { EstadoPill, ProgressTracker, Icon, fmtFecha, fmtDate, Timeline } from '../components/ui';
 
 function fmtCodigo(codigo) {
-  const d = String(codigo || '').replace(/\D/g, '');
+  const d = String(codigo || '').replace(/\D/g, '').slice(0, 16);
   if (!d) return '';
-  return d.match(/.{1,4}/g).join('-');
+  return d.replace(/(.{4})/g, '$1-').replace(/-$/, '');
 }
 
+// Seguimiento publico de una orden.
+//
+// Esta pantalla se ve SIEMPRE como la ve el cliente, aunque haya una sesion
+// abierta (admin, tecnico o cliente). Por eso:
+//  - trae los datos SOLO del endpoint publico (`/public/ordenes/:codigo`), que
+//    no devuelve datos internos (tecnico, montos, autor de cada evento...);
+//  - no se muestra dentro del panel de la plataforma (no lleva AppShell);
+//  - no usa las ordenes que el store tenga cargadas: esas son la fila interna
+//    completa y no lo que debe ver un cliente.
 export default function Tracker() {
   const { orden_id } = useParams();
-  const data = useStore((s) => s.data);
-  const [apiOrden, setApiOrden] = useState(null);
-  const [noEncontrada, setNoEncontrada] = useState(false);
-  const local = data.ordenes.find((o) => o.id === orden_id);
-  const orden = apiOrden ?? local;
+  const user = useStore((s) => s.user);
+  const [orden, setOrden] = useState(null);
+  const [cargando, setCargando] = useState(true);
+  const [error, setError] = useState('');
+
+  // El codigo puede venir con guiones o solo digitos: se normaliza a 16.
+  const codigo = String(orden_id || '').replace(/\D/g, '').slice(0, 16);
 
   useEffect(() => {
-    if (local) return;
-    setNoEncontrada(false);
-    setApiOrden(null);
-    api(`/public/ordenes/${encodeURIComponent(orden_id)}`)
-      .then(setApiOrden)
-      .catch(() => setNoEncontrada(true));
-  }, [orden_id, local]);
+    let vigente = true;
+    setOrden(null);
+    setError('');
+    if (codigo.length !== 16) {
+      setCargando(false);
+      setError('El código de seguimiento tiene 16 dígitos. Está en el comprobante que te dio el taller.');
+      return () => { vigente = false; };
+    }
+    setCargando(true);
+    api(`/public/ordenes/${encodeURIComponent(codigo)}`)
+      .then((o) => {
+        if (!vigente) return;
+        setOrden(o);
+        setCargando(false);
+      })
+      .catch((e) => {
+        if (!vigente) return;
+        setError(e.message || 'No se pudo buscar la orden');
+        setCargando(false);
+      });
+    return () => { vigente = false; };
+  }, [codigo]);
 
-  if (!orden) {
+  if (cargando) {
     return (
       <div className="wrap page center">
-        <div className="empty"><div className="big"><Icon name="battery" size={40} /></div>{noEncontrada ? 'Orden no encontrada.' : 'Cargando...'}</div>
-        <Link to="/" className="btn">Volver al inicio</Link>
+        <div className="empty"><div className="big"><Icon name="battery" size={40} /></div>Cargando...</div>
       </div>
     );
   }
-  const bateria = orden.bateria || data.baterias.find((b) => b.numero_serie === orden.bateria_serie);
-  const cliente = orden.cliente ? { nombre: orden.cliente } : data.clientes.find((c) => c.id === orden.cliente_id);
+
+  if (!orden) {
+    return (
+      <div className="wrap page">
+        <div className="center mb8">
+          <div className="brand" style={{ justifyContent: 'center', marginBottom: 6 }}>
+            <span className="logo"><Icon name="bolt" size={16} /></span>
+            Bertika
+          </div>
+          <p className="muted" style={{ margin: 0 }}>Seguimiento público · sin necesidad de cuenta</p>
+        </div>
+        <div className="card mt16 center" style={{ maxWidth: 560, margin: '16px auto' }}>
+          <div className="big" style={{ marginBottom: 8 }}><Icon name="warn" size={32} /></div>
+          <h3 className="card-title" style={{ justifyContent: 'center' }}>No encontramos esa orden</h3>
+          <p className="muted" style={{ fontSize: 13 }}>{error || 'Revisá el código del comprobante.'}</p>
+          <Link to="/seguimiento" className="btn primary mt8"><Icon name="search" size={14} /> Buscar otro código</Link>
+          <div style={{ marginTop: 10 }}>
+            <Link to="/" className="btn sm ghost">Volver al inicio</Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const bateria = orden.bateria || null;
+  const cliente = orden.cliente || null;
   const ultimoEv = Array.isArray(orden.eventos) ? orden.eventos[orden.eventos.length - 1] : null;
 
   return (
@@ -57,10 +106,10 @@ export default function Tracker() {
             <div className="muted" style={{ fontSize: 13, marginTop: 3 }}>
               {bateria ? `${bateria.tipo} · ${bateria.voltaje} · ${bateria.capacidad}Ah · ${bateria.equipo}` : 'Tipo de equipo no especificado'}
             </div>
-            {cliente && <div className="muted" style={{ fontSize: 12.5 }}>Cliente: {cliente.nombre}</div>}
+            {cliente && <div className="muted" style={{ fontSize: 12.5 }}>Cliente: {cliente}</div>}
             {orden.codigo && (
               <div className="chip" style={{ marginTop: 6, background: 'var(--amber-bg)', color: 'var(--amber)', border: '1px solid rgba(255,176,32,0.4)' }}>
-                <Icon name="clipboard" size={12} /> Código de seguimiento: <span className="mono">{fmtCodigo(orden.codigo)}</span>
+                <Icon name="clipboard" size={12} /> Código de seguimiento: <span className="mono">{fmtCodigo(orden.codigo) || fmtCodigo(codigo)}</span>
               </div>
             )}
           </div>
@@ -85,11 +134,14 @@ export default function Tracker() {
 
         <details style={{ marginTop: 14, borderTop: '1px solid var(--line-soft)', paddingTop: 10 }}>
           <summary className="muted" style={{ fontWeight: 700, fontSize: 12.5, cursor: 'pointer' }}>Historial de eventos</summary>
-          <div className="mt8"><Timeline eventos={orden.eventos} /></div>
+          {/* Sin autor: quien hizo cada paso es informacion interna del taller. */}
+          <div className="mt8"><Timeline eventos={orden.eventos} autor={false} /></div>
         </details>
 
-        <div className="center mt24">
-          <Link to="/" className="btn"><Icon name="bolt" size={14} /> Ir al taller</Link>
+        <div className="center mt24 row" style={{ justifyContent: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <Link to="/seguimiento" className="btn"><Icon name="search" size={14} /> Buscar otro código</Link>
+          {user && <Link to="/home" className="btn sm"><Icon name="gear" size={13} /> Ir a la plataforma</Link>}
+          <Link to="/" className="btn sm ghost"><Icon name="bolt" size={13} /> Ir al taller</Link>
         </div>
       </div>
     </div>

@@ -25,9 +25,9 @@ Requiere token. Devuelve `{ tecnicos[], clientes[], baterias[], insumos[], orden
 | Método | Ruta | Descripción |
 | --- | --- | --- |
 | `GET` | `/public/stats` | `{ clientes, baterias, activas, entregadas }` para la landing. |
-| `GET` | `/public/ordenes?q=...` | Búsqueda por id de orden, número de serie o código de seguimiento (ILIKE, top 10). |
-| `GET` | `/public/ordenes/:id` | Seguimiento público: orden + `bateria` + `cliente` + `eventos`. |
-| `GET` | `/public/cotizacion/:orden_id` | Cotización pública: datos, `cotizacion`, `estado_cotizacion`, `bateria`, `cliente`. |
+| `GET` | `/public/ordenes?q=...` | Busca por **código de seguimiento de 16 dígitos** (se le quitan los guiones). Devuelve `[{ bateria_serie, estado, fecha_ingreso }]` o `[]`. No acepta id interno ni número de serie: sin esto se podía listar todo el taller sin sesión. |
+| `GET` | `/public/ordenes/:codigo` | Seguimiento público (el que ve el cliente, **también si hay sesión abierta**): `id`, `codigo` formateado, `bateria_serie`, `estado`, `falla`, `fecha_ingreso`, `hora_entrega`, `bateria`, `cliente` y `eventos` **sin el autor** de cada uno. Con menos de 16 dígitos responde 403. |
+| `GET` | `/public/cotizacion/:orden_id` | Cotización pública (exige el token firmado `?t=`): datos, `codigo` de seguimiento, `cotizacion`, `estado_cotizacion`, `bateria`, `cliente`. |
 | `POST` | `/ordenes/:id/cotizacion/aprobar` | Aprueba la cotización (solo si `estado === 'quoted'`). |
 | `POST` | `/ordenes/:id/cotizacion/rechazar` | Rechaza la cotización → la orden se **cancela**. |
 | `POST` | `/public/contacto` | Envía la consulta por correo a `ventas@bertika.com`. Si viene `serie`, además crea cliente (si no existe por email) + orden en `received`. Body: `{ nombre, email, mensaje, empresa?, telefono?, asunto?, serie?, cotizacion_codigo? }`. |

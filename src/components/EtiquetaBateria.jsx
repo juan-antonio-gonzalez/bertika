@@ -1,5 +1,6 @@
 import QrImage from './QrImage';
 import { CONTACTO } from '../data/siteData';
+import { enlaceSeguimiento } from '../data/respuestas';
 
 const fmt = (c) => String(c || '').replace(/\D/g, '').slice(0, 16).replace(/(.{4})/g, '$1-').replace(/-$/, '');
 
@@ -15,7 +16,9 @@ function LabelRow({ k, v }) {
 
 export default function EtiquetaBateria({ orden, bateria, cliente }) {
   const codigo = orden.codigo_seguimiento || '';
-  const url = `${window.location.origin}/tracker/${(codigo || orden.id)}`;
+  // El QR tiene que abrir la vista publica: se arma con el codigo de 16 digitos
+  // (sin codigo, mejor el buscador de seguimiento que un enlace al id interno).
+  const url = enlaceSeguimiento(orden, window.location.origin) || `${window.location.origin}/seguimiento`;
   const print = () => {
     document.body.classList.add('print-label');
     window.print();

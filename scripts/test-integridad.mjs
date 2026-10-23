@@ -1,5 +1,6 @@
 // Tests de la fase 2 de integridad (logica pura). Sin base de datos:  npm test
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { puedeTrabajarEnOrden, ESTADOS_CERRADOS, TRANSITIONS, esEstadoCerrado } from '../src/data/reglas.js';
 import { normalizarBooleano } from '../api/validaciones.js';
 
@@ -70,6 +71,36 @@ test('sin cartera asignada: cualquier tecnico trabaja con cualquier orden', () =
   assert.equal(puedeTrabajarEnOrden('tecnico'), true, 'el tecnico trabaja con ordenes de cualquier cliente');
   assert.equal(puedeTrabajarEnOrden('cliente'), false, 'el cliente no escribe ordenes');
   assert.equal(puedeTrabajarEnOrden(undefined), false);
+});
+
+console.log('\nSeguimiento publico (siempre se ve como el cliente)');
+
+const leerFuente = (ruta) => readFileSync(new URL(ruta, import.meta.url), 'utf8');
+
+test('la ruta /tracker no se envuelve en el panel de la plataforma', () => {
+  const app = leerFuente('../src/App.jsx');
+  const linea = app.split('\n').find((l) => l.includes('path="/tracker/:orden_id"'));
+  assert.ok(linea, 'existe la ruta del tracker');
+  assert.ok(!linea.includes('AppLayout'), 'el tracker no puede renderizarse dentro de AppLayout');
+});
+
+test('el tracker no lee las ordenes internas del store: siempre pide la vista publica', () => {
+  const tracker = leerFuente('../src/pages/Tracker.jsx');
+  assert.ok(tracker.includes('/public/ordenes/'), 'pide el detalle publico');
+  assert.ok(!tracker.includes('data.ordenes'), 'no usa la fila interna (trae tecnico, montos y autor de eventos)');
+});
+
+test('la landing navega con los 16 digitos: el buscador no devuelve el codigo', () => {
+  const seg = leerFuente('../src/pages/Seguimiento.jsx');
+  assert.ok(!seg.includes('rows[0].codigo'), 'el endpoint de busqueda no manda codigo (iria a /tracker/undefined)');
+  assert.ok(seg.includes('navigate(`/tracker/${digitos}`)'), 'navega con los digitos validados');
+});
+
+test('ningun enlace publico de seguimiento se arma con el id interno', () => {
+  for (const ruta of ['../src/components/OrdenDetalle.jsx', '../src/components/EtiquetaBateria.jsx', '../src/pages/CotizacionPublica.jsx']) {
+    const fuente = leerFuente(ruta);
+    assert.ok(!fuente.includes('/tracker/${orden.id}'), `${ruta} no debe armar el enlace con orden.id`);
+  }
 });
 
 console.log(`\n${pasaron} tests OK${process.exitCode ? ' (con fallas)' : ''}\n`);

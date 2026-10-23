@@ -758,6 +758,9 @@ app.get('/api/public/cotizacion/:orden_id', publicLimiter, async (req, res) => {
   const c = await one('SELECT nombre, email FROM clientes WHERE id = $1', [o.cliente_id]);
   return res.json({
     id: o.id,
+    // Codigo de seguimiento (formateado) para que la pantalla publica de la
+    // cotizacion pueda ofrecer el enlace al seguimiento sin usar el id interno.
+    codigo: formatearCodigo(o.codigo_seguimiento),
     bateria_serie: o.bateria_serie,
     estado: o.estado,
     estado_cotizacion: o.estado_cotizacion,
@@ -1138,9 +1141,12 @@ app.post('/api/ordenes/:id/compartir', authRequired, async (req, res) => {
   if (!o) return res.status(404).json({ error: 'Orden no encontrada' });
   if (!puedeEscribirOrden(req, o)) return res.status(403).json({ error: 'Sin permisos para esta orden' });
   const t = hornoSigCot(o.id);
+  const codigo = formatearCodigo(o.codigo_seguimiento);
   return res.json({
     cotizacion: `${PUBLIC_URL}/cotizacion/${o.id}?t=${t}`,
-    tracker: `${PUBLIC_URL}/tracker/${formatearCodigo(o.codigo_seguimiento) || o.id}`,
+    // Sin codigo (no deberia pasar: se genera al crear la orden) se manda al
+    // buscador publico: el id interno NO abre el seguimiento.
+    tracker: codigo ? `${PUBLIC_URL}/tracker/${codigo}` : `${PUBLIC_URL}/seguimiento`,
   });
 });
 

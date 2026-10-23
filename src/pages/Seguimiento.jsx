@@ -25,14 +25,18 @@ export default function Seguimiento() {
     e.preventDefault();
     const term = q.trim();
     if (!term) { toastShow('Ingresá el código de seguimiento (16 dígitos)', 'warn'); return; }
+    // Se navega con los digitos que escribio el cliente: el endpoint publico de
+    // busqueda no devuelve el codigo (el cliente ya lo tiene en el comprobante),
+    // asi que leerlo de la respuesta llevaba a /tracker/undefined.
+    const digitos = term.replace(/\D/g, '');
     try {
       // El seguimiento publico se resuelve SOLO con el codigo de 16 digitos del
       // comprobante: antes tambien aceptaba el numero de serie y el id interno,
       // y eso dejaba listar todas las ordenes del taller sin sesion.
-      const rows = await api(`/public/ordenes?q=${encodeURIComponent(term)}`);
-      if (rows.length === 1) {
-        navigate(`/tracker/${encodeURIComponent(rows[0].codigo)}`);
-      } else if (term.replace(/\D/g, '').length === 16) {
+      const rows = await api(`/public/ordenes?q=${encodeURIComponent(digitos)}`);
+      if (rows.length === 1 && digitos.length === 16) {
+        navigate(`/tracker/${digitos}`);
+      } else if (digitos.length === 16) {
         toastShow('No se encontró ninguna orden con ese código. Revisá los 16 dígitos del comprobante.', 'error');
       } else {
         toastShow('Ingresá el código de seguimiento completo (16 dígitos, como figura en el comprobante).', 'warn');
