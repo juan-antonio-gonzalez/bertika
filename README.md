@@ -8,6 +8,7 @@ Aplicacion web para gestionar el ciclo completo de una bateria en el taller: rec
 
 - **Fase 1 — Robustez:** ✅ implementada y en producción (cola de salida de WhatsApp, auditoría, salud/alertas, CSV seguro, tests y CI).
 - **Fase 2 — CRM comercial:** ✅ implementada y en producción (cotizar desde el chat, embudo automático, SLA/reparto, automatizaciones de seguimiento).
+- **Privacidad, cookies y legales:** ✅ implementada (páginas legales, banner de consentimiento, registro con hash, retiro de derechos, versionado y panel de privacidad). Ver [docs/PRIVACIDAD.md](docs/PRIVACIDAD.md).
 - **Fase 3 y pendientes de infraestructura:** ver [docs/FUTURO.md](docs/FUTURO.md).
 
 ## Como ejecutar
@@ -56,6 +57,20 @@ Actions corre todo (`.github/workflows/ci.yml`) con un servicio PostgreSQL 16.
 - **Automatizaciones de seguimiento**: reglas configurables (presupuesto sin respuesta y
   batería lista sin retirar) que crean **tareas** idempotentes cada 6 horas; no mandan
   mensajes solas. Se revisan también a mano desde la bandeja.
+
+## Privacidad y legales
+
+- **Páginas públicas**: `/legal/privacidad`, `/legal/cookies`, `/legal/terminos`,
+  `/legal/privacidad/retirar` y `/legal/versiones`.
+- **Banner de cookies** con aceptar todas, rechazar todas o elegir por categoría. Nada
+  premarcado; medición y marketing apagados por defecto. La decisión se guarda en el
+  navegador y en la base con versión e IP.
+- **Registro de consentimientos** en PostgreSQL, firmado con HMAC. Incluye versión, URL y
+  hash del texto aceptado. Se conserva 5 años y luego se anonimiza.
+- **Checkboxes separados** de términos y privacidad en contacto y cotizador, y formulario
+  de retiro/derechos. Panel: **Sistema → Privacidad**.
+- **Versiones congeladas** de cada documento con su hash, para acreditar qué texto aceptó
+  cada persona. Detalle técnico: [docs/PRIVACIDAD.md](docs/PRIVACIDAD.md).
 
 ## Stack
 

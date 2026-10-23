@@ -33,7 +33,13 @@ const Reportes = lazy(() => import('./pages/Reportes'));
 const Usuarios = lazy(() => import('./pages/Usuarios'));
 const Respaldos = lazy(() => import('./pages/Respaldos'));
 const Sistema = lazy(() => import('./pages/Sistema'));
+const Privacidad = lazy(() => import('./pages/Privacidad'));
+const Cookies = lazy(() => import('./pages/Cookies'));
+const Terminos = lazy(() => import('./pages/Terminos'));
+const PrivacidadRetirar = lazy(() => import('./pages/PrivacidadRetirar'));
+const VersionesLegales = lazy(() => import('./pages/VersionesLegales'));
 import WhatsAppFloat from './components/WhatsAppFloat';
+import CookieConsent from './components/CookieConsent';
 
 function CargandoRuta() {
   return (
@@ -80,6 +86,7 @@ function PublicLayout({ children }) {
       <SiteFooter />
       {!ocultarChatbot && <Chatbot />}
       <WhatsAppFloat />
+      <CookieConsent />
     </>
   );
 }
@@ -128,6 +135,12 @@ export default function App() {
         <Route path="/politica-ecologica" element={<PublicLayout><Ecologica /></PublicLayout>} />
         <Route path="/como-llegar" element={<PublicLayout><ComoLlegar /></PublicLayout>} />
         <Route path="/contacto" element={<PublicLayout><Contacto /></PublicLayout>} />
+        {/* Legal: públicas, con el mismo encabezado y pie del sitio. */}
+        <Route path="/legal/privacidad" element={<PublicLayout><Privacidad /></PublicLayout>} />
+        <Route path="/legal/privacidad/retirar" element={<PublicLayout><PrivacidadRetirar /></PublicLayout>} />
+        <Route path="/legal/cookies" element={<PublicLayout><Cookies /></PublicLayout>} />
+        <Route path="/legal/terminos" element={<PublicLayout><Terminos /></PublicLayout>} />
+        <Route path="/legal/versiones" element={<PublicLayout><VersionesLegales /></PublicLayout>} />
         {/* Pantalla completa propia: entra sin scroll, sin el header/footer del sitio */}
         <Route path="/cotizador" element={<Cotizador />} />
         <Route path="/seguimiento" element={<PublicLayout><Seguimiento /></PublicLayout>} />

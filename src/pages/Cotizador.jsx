@@ -5,6 +5,8 @@ import { api } from '../store/api';
 import { useStore } from '../store/store';
 import { imprimirDocumento } from '../components/DocumentosTaller';
 import { CONTACTO } from '../data/siteData';
+import { LEGAL_DOCS } from '../data/legal';
+import CookieConsent from '../components/CookieConsent';
 import {
   calcularVisita, normalizarConfig, CONFIG_DEFAULT, textoFueraCobertura,
   fmtUSD, fmtARS, NOTA_CAMBIO,
@@ -102,6 +104,8 @@ export default function Cotizador() {
   const [urgencia, setUrgencia] = useState('normal');
   const [turno, setTurno] = useState('comercial');
   const [cliente, setCliente] = useState({ nombre: '', empresa: '', email: '' });
+  const [consent, setConsent] = useState({ terminos: false, privacidad: false });
+  const [idem] = useState(() => (globalThis.crypto?.randomUUID?.() || `cot-${Date.now()}`));
   const [fechaPref, setFechaPref] = useState('');
   const [dolar, setDolar] = useState(null);
   const [enviando, setEnviando] = useState(false);
@@ -213,6 +217,11 @@ export default function Cotizador() {
   // Guarda la estimación en la API (el servidor recalcula el total) y sigue al
   // formulario con el código corto. Si falla, se conserva el envío por resumen.
   const solicitar = async () => {
+    const tieneDatos = Boolean(cliente.nombre.trim() || cliente.empresa.trim() || cliente.email.trim());
+    if (tieneDatos && (!consent.terminos || !consent.privacidad)) {
+      toastShow('Para guardar tus datos, aceptá los términos y la política de privacidad', 'warn');
+      return;
+    }
     const err = validarKm();
     if (err) {
       setErrorKm(err);
@@ -229,6 +238,11 @@ export default function Cotizador() {
           renglones: renglones.map((x) => ({ tipoId: x.tipoId, cantidad: Number(x.cantidad) || 0 })),
           extrasSel: extrasSel.map((x) => ({ id: x.id, cantidad: cantidadExtra(config.extras.find((e) => e.id === x.id)) })),
           urgencia, turno, ...cliente, fecha_preferida: fechaPref, website: '',
+          terminosVersion: LEGAL_DOCS.terminos.version,
+          privacidadVersion: LEGAL_DOCS.privacidad.version,
+          aceptaTerminos: consent.terminos,
+          aceptaPrivacidad: consent.privacidad,
+          idempotencyKey: idem,
         },
       });
       setCodigo(res.codigo);
@@ -425,6 +439,24 @@ export default function Cotizador() {
               <div className="cz-field"><label htmlFor="cz-email">Email</label><input id="cz-email" className="input" type="email" value={cliente.email} onChange={(e) => setCliente({ ...cliente, email: e.target.value })} placeholder="tu@email.com" /></div>
               <div className="cz-field"><label htmlFor="cz-fecha">Fecha preferida</label><input id="cz-fecha" className="input" type="date" value={fechaPref} onChange={(e) => setFechaPref(e.target.value)} /></div>
             </div>
+            {(cliente.nombre.trim() || cliente.empresa.trim() || cliente.email.trim()) && (
+              <div className="legal-checkboxes">
+                <label>
+                  <input
+                    type="checkbox" checked={consent.terminos}
+                    onChange={(e) => setConsent((c) => ({ ...c, terminos: e.target.checked }))}
+                  />
+                  <span>Leí y acepto los <Link to="/legal/terminos">Términos y Condiciones</Link>.</span>
+                </label>
+                <label>
+                  <input
+                    type="checkbox" checked={consent.privacidad}
+                    onChange={(e) => setConsent((c) => ({ ...c, privacidad: e.target.checked }))}
+                  />
+                  <span>Leí y acepto la <Link to="/legal/privacidad">Política de Privacidad</Link>.</span>
+                </label>
+              </div>
+            )}
           </details>
         </div>
 
@@ -590,6 +622,7 @@ export default function Cotizador() {
           <DocumentoCotizacion cot={r} codigo={codigo} km={km} dolar={dolar || {}} cliente={cliente} config={config} />
         </Modal>
       )}
+      <CookieConsent />
     </div>
   );
 }

@@ -391,3 +391,27 @@ La tarjeta **Seguimiento automatico (tareas)** (admin) tiene dos reglas:
 Se revisan solas cada 6 horas y con **Revisar ahora**. Crean **tareas** (no mandan mensajes
 solos) y no se duplican: una misma oportunidad/orden no genera dos veces la misma tarea.
 Las tareas aparecen en **Tareas** con el distintivo `auto`.
+
+---
+
+## 13. Privacidad, cookies y documentos legales
+
+En el pie del sitio hay enlaces a **Privacidad**, **Términos**, **Cookies**, **Tus datos**
+y **Cambiar preferencias**.
+
+- **Banner de cookies**: al entrar por primera vez se puede **aceptar todas**, **rechazar
+  todas** o **elegir por categoría**. Nada viene premarcado. Las categorías Medición y
+  Marketing están apagadas hasta que se autoricen; hoy no hay herramientas de medición
+  instaladas.
+- **Formularios**: contacto y cotizador piden dos aceptaciones separadas, términos y
+  privacidad, con enlaces a los textos. Sin las dos no se envía.
+- **Tus datos**: formulario para pedir acceso, rectificación, supresión u oposición, o
+  retirar el consentimiento. La solicitud queda registrada y se avisa a
+  `admin@bertika.com`.
+- **Panel**: en **Sistema → Privacidad** (admin) se ven los consentimientos, se filtran,
+  se exportan a CSV y se pueden anonimizar. Se conservan 5 años.
+- **Versiones**: cada cambio de texto se publica con fecha y versión, y queda el archivo
+  con el hash de lo que se aceptó.
+
+Los datos registrales que faltan (razón social, CUIT, domicilio legal e inscripción en la
+AAIP) figuran **en trámite** en los textos hasta que se completen.

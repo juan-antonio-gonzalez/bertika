@@ -24,6 +24,7 @@ import { rmSync } from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { LEGAL_DOCS } from '../src/data/legal.js';
 
 const RAIZ = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const API_DIR = path.join(RAIZ, 'api');
@@ -299,6 +300,139 @@ async function main() {
     assert.equal(entrega.status, 403);
     const audit = await pedir('/auditoria', { token: tokenTec });
     assert.equal(audit.status, 403);
+  });
+
+  // ---------- Privacidad, consentimientos y cookies ----------
+  const emailPriv = `priv-${Date.now()}@test.local`;
+  let consentCookiesId = '';
+  let consentContactoId = '';
+  let consentRetiroId = '';
+
+  await test('el consentimiento de cookies se guarda con versión y hash', async () => {
+    const r = await pedir('/consentimiento', {
+      method: 'POST',
+      body: {
+        cookies: { necesarias: true, analiticas: true, marketing: false },
+        cookiesVersion: LEGAL_DOCS.cookies.version,
+        source: 'banner', page: '/test', accion: 'aceptar-todo',
+      },
+    });
+    assert.equal(r.status, 201, r.texto);
+    assert.ok(r.json.id);
+    consentCookiesId = r.json.id;
+    const fila = (await db.query('SELECT * FROM consentimientos WHERE id = $1', [consentCookiesId])).rows[0];
+    assert.equal(fila.tipo, 'cookies');
+    assert.equal(fila.cookies_analiticas, true);
+    assert.equal(fila.cookies_marketing, false);
+    assert.equal(fila.cookies_version, LEGAL_DOCS.cookies.version);
+    assert.equal(fila.hash_version, 2);
+    assert.match(fila.hash, /^[a-f0-9]{64}$/);
+    assert.match(fila.hash_legal, /^[a-f0-9]{64}$/);
+  });
+
+  await test('una versión vieja de cookies se rechaza', async () => {
+    const r = await pedir('/consentimiento', {
+      method: 'POST',
+      body: {
+        cookies: { necesarias: true, analiticas: true, marketing: false },
+        cookiesVersion: '2020-01-01', source: 'banner', page: '/test', accion: 'aceptar-todo',
+      },
+    });
+    assert.equal(r.status, 400);
+    assert.match(r.json.error, /versión|cambió/i);
+  });
+
+  await test('el formulario de contacto exige términos y privacidad', async () => {
+    const sin = await pedir('/public/contacto', {
+      method: 'POST',
+      body: { nombre: 'Sin Consentimiento', email: emailPriv, mensaje: 'Hola' },
+    });
+    assert.equal(sin.status, 400);
+    assert.match(sin.json.error, /aceptar/i);
+
+    const con = await pedir('/public/contacto', {
+      method: 'POST',
+      body: {
+        nombre: 'Con Consentimiento', email: emailPriv, telefono: '11 5555-0000',
+        asunto: 'Consulta', mensaje: 'Hola, necesito un presupuesto', website: '',
+        terminosVersion: LEGAL_DOCS.terminos.version,
+        privacidadVersion: LEGAL_DOCS.privacidad.version,
+        aceptaTerminos: true, aceptaPrivacidad: true, idempotencyKey: 'contacto-test-1',
+      },
+    });
+    assert.equal(con.status, 201, con.texto);
+    const fila = (await db.query(
+      "SELECT * FROM consentimientos WHERE tipo = 'formulario' AND email = $1 ORDER BY creado_en DESC LIMIT 1",
+      [emailPriv]
+    )).rows[0];
+    assert.ok(fila, 'tiene que quedar el consentimiento del formulario');
+    consentContactoId = fila.id;
+    assert.equal(fila.acepta_terminos, true);
+    assert.equal(fila.acepta_privacidad, true);
+    assert.equal(fila.terminos_version, LEGAL_DOCS.terminos.version);
+    assert.equal(fila.privacidad_version, LEGAL_DOCS.privacidad.version);
+    assert.match(fila.hash, /^[a-f0-9]{64}$/);
+  });
+
+  await test('reenviar el mismo formulario no duplica el consentimiento', async () => {
+    const r = await pedir('/public/contacto', {
+      method: 'POST',
+      body: {
+        nombre: 'Con Consentimiento', email: emailPriv, telefono: '11 5555-0000',
+        asunto: 'Consulta', mensaje: 'Hola de nuevo', website: '',
+        terminosVersion: LEGAL_DOCS.terminos.version,
+        privacidadVersion: LEGAL_DOCS.privacidad.version,
+        aceptaTerminos: true, aceptaPrivacidad: true, idempotencyKey: 'contacto-test-1',
+      },
+    });
+    assert.equal(r.status, 201, r.texto);
+    assert.equal(r.json.duplicado, true);
+    const n = (await db.query("SELECT count(*)::int AS n FROM consentimientos WHERE tipo = 'formulario' AND email = $1", [emailPriv])).rows[0].n;
+    assert.equal(n, 1, 'el mismo idempotencyKey no crea otra fila');
+  });
+
+  await test('el retiro de consentimiento queda registrado', async () => {
+    const r = await pedir('/privacidad/solicitud', {
+      method: 'POST',
+      body: {
+        email: emailPriv, nombre: 'Con Consentimiento', tipo: 'Acceso a mis datos',
+        motivo: 'Quiero ver qué datos tienen', declara: true, website: '', idempotencyKey: 'retiro-test-1',
+      },
+    });
+    assert.equal(r.status, 201, r.texto);
+    assert.ok(r.json.id);
+    consentRetiroId = r.json.id;
+    const fila = (await db.query('SELECT * FROM consentimientos WHERE id = $1', [consentRetiroId])).rows[0];
+    assert.equal(fila.tipo, 'retiro');
+    assert.match(fila.motivo, /Acceso a mis datos/);
+  });
+
+  await test('el panel de privacidad lista, exporta y anonimiza', async () => {
+    const lista = await pedir('/privacidad/consentimientos', { token: tokenAdmin });
+    assert.equal(lista.status, 200, lista.texto);
+    assert.ok(lista.json.resumen.total >= 3);
+    assert.ok(lista.json.filas.some((f) => f.id === consentCookiesId));
+
+    const tec = await pedir('/privacidad/consentimientos', { token: tokenTec });
+    assert.equal(tec.status, 403);
+
+    const exp = await pedir('/privacidad/consentimientos/export', { token: tokenAdmin });
+    assert.equal(exp.status, 200);
+    assert.match(exp.headers.get('content-type') || '', /text\/csv/);
+    assert.ok(exp.texto.includes('cookies'));
+    assert.ok(exp.texto.includes(emailPriv));
+
+    const anon = await pedir(`/privacidad/consentimientos/${consentContactoId}/anonimizar`, { method: 'POST', token: tokenAdmin });
+    assert.equal(anon.status, 200, anon.texto);
+    const fila = (await db.query('SELECT nombre, email, ip, anonimizado_en, hash, hash_legal FROM consentimientos WHERE id = $1', [consentContactoId])).rows[0];
+    assert.equal(fila.nombre, null);
+    assert.equal(fila.email, null);
+    assert.equal(fila.ip, null);
+    assert.ok(fila.anonimizado_en);
+    assert.match(fila.hash, /^[a-f0-9]{64}$/, 'el hash se conserva como prueba');
+    assert.match(fila.hash_legal, /^[a-f0-9]{64}$/, 'el hash legal queda verificable tras anonimizar');
+    const otra = await pedir(`/privacidad/consentimientos/${consentContactoId}/anonimizar`, { method: 'POST', token: tokenAdmin });
+    assert.equal(otra.status, 409);
   });
 
   // ---------- Fase 2: conversación -> cotización -> orden ----------

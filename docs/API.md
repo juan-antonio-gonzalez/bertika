@@ -2,8 +2,9 @@
 
 Base URL en producción: `https://bertika.com/api` (en dev local: `http://localhost:5173/api`, que proxya a `http://localhost:3001`).
 
-> **Estado:** Fases 1 (robustez) y 2 (CRM comercial) implementadas y en producción. Los
-> endpoints de la Fase 3 todavía no existen; lo pendiente está en [FUTURO.md](FUTURO.md).
+> **Estado:** Fases 1 (robustez), 2 (CRM comercial) y el paquete de privacidad/cookies
+> implementados y en producción. Los endpoints de la Fase 3 todavía no existen; lo pendiente
+> está en [FUTURO.md](FUTURO.md).
 
 Formato: JSON. Autenticación con `Authorization: Bearer <token>` (obtenido en `POST /auth/login`). Los errores responden `{ "error": "mensaje" }` con su código HTTP y, desde la fase de robustez, también `reqId` (el mismo que sale en el header `x-request-id` y en el log del servidor).
 
@@ -33,7 +34,7 @@ Requiere token. Devuelve `{ tecnicos[], clientes[], baterias[], insumos[], orden
 | `GET` | `/public/cotizacion/:orden_id` | Cotización pública (exige el token firmado `?t=`): datos, `codigo` de seguimiento, `cotizacion`, `estado_cotizacion`, `bateria`, `cliente`. |
 | `POST` | `/ordenes/:id/cotizacion/aprobar` | Aprueba la cotización (solo si `estado === 'quoted'`). |
 | `POST` | `/ordenes/:id/cotizacion/rechazar` | Rechaza la cotización → la orden se **cancela**. |
-| `POST` | `/public/contacto` | Envía la consulta por correo a `ventas@bertika.com`. Si viene `serie`, además crea cliente (si no existe por email) + orden en `received`. Body: `{ nombre, email, mensaje, empresa?, telefono?, asunto?, serie?, cotizacion_codigo? }`. |
+| `POST` | `/public/contacto` | Envía la consulta por correo a `ventas@bertika.com`. Si viene `serie`, además crea cliente (si no existe por email) + orden en `received`. Body: `{ nombre, email, mensaje, empresa?, telefono?, asunto?, serie?, cotizacion_codigo?, aceptaTerminos, aceptaPrivacidad, terminosVersion, privacidadVersion, idempotencyKey }`. Las dos aceptaciones son obligatorias y se guardan antes de crear la orden o enviar el correo. |
 | `GET` | `/public/dolar` | Cotización del dólar oficial para el cotizador de visitas (proxy con caché de 10 min y respaldo entre proveedores). |
 | `GET` | `/public/cotizador` | Configuración vigente del cotizador (`config` normalizada + `actualizado` + `actualizadoPor`). La edita el admin. |
 | `POST` | `/public/cotizacion-visita` | Guarda la estimación del cotizador de visitas y devuelve su código (`CV-000123`). |
@@ -232,6 +233,46 @@ Estados: `pendiente` → `enviando` → `enviado`; si el error es de red, 429 o 
 queda `incierto` porque el mensaje pudo haber llegado: se reintenta a mano para no duplicarlo.
 `POST /whatsapp/conversaciones/:id/responder`, `POST /whatsapp/enviar` y los adjuntos
 devuelven `202 { ok: true, enCola: true }` cuando el mensaje quedó esperando reintento.
+
+## Privacidad y consentimientos
+
+### `POST /consentimiento` (público)
+Guarda la decisión del banner de cookies. Body:
+`{ cookies: { necesarias, analiticas, marketing }, cookiesVersion, source, page, accion }`.
+Valida la versión contra el documento publicado; si cambió, responde `400` y hay
+que recargar y aceptar de nuevo. Devuelve `{ ok, id, duplicado }`.
+
+### `POST /privacidad/solicitud` (público)
+Formulario de retiro de consentimiento o derechos (acceso, rectificación,
+supresión, oposición). Body:
+`{ email, nombre, tipo, motivo, declara, website (honeypot), idempotencyKey }`.
+Guarda la solicitud antes de mandar el aviso por correo a `PRIVACY_EMAIL`.
+Devuelve `{ ok, id, duplicado }`. Tiene el mismo límite anti-spam que contacto.
+
+### `GET /privacidad/consentimientos?tipo=&q=&desde=&hasta=&limite=`
+Requiere el permiso `sistema` (admin). Devuelve `{ filas, resumen }`. Filtra por
+tipo (`cookies`, `formulario`, `retiro`), nombre/email y fecha. Los datos
+identificatorios pueden estar anonimizados.
+
+### `GET /privacidad/consentimientos/export`
+Requiere `sistema`. CSV con BOM y separador `;` (apto para Excel en español), con
+el mismo escape de fórmulas que el resto de las exportaciones.
+
+### `POST /privacidad/consentimientos/:id/anonimizar`
+Requiere `sistema`. Quita nombre, email, IP y navegador; conserva fecha, versión y
+hash como prueba. `409` si ya estaba anonimizado. Queda en la auditoría.
+
+### Consentimiento en los formularios
+`POST /public/contacto` y `POST /public/cotizacion-visita` exigen, cuando hay
+datos personales, `terminosVersion`, `privacidadVersion`, `aceptaTerminos: true`
+y `aceptaPrivacidad: true`. El consentimiento se guarda **antes** de crear la
+orden o enviar el correo. `idempotencyKey` evita duplicados por reintentos.
+
+### Documentos y versiones
+Textos vigentes: `/legal/privacidad`, `/legal/cookies`, `/legal/terminos`.
+Archivo congelado y manifiesto con hashes: `/legal/versiones` y
+`/legal/versiones/index.json`. Para cambiar un texto: editar `src/data/legal.js`,
+subir la versión y correr `npm run legal:archivar`.
 
 ## Reset demo (admin)
 

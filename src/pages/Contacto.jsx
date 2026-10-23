@@ -4,6 +4,7 @@ import { Icon } from '../components/ui';
 import { useStore } from '../store/store';
 import { api } from '../store/api';
 import { CONTACTO, HORARIOS } from '../data/siteData';
+import { LEGAL_DOCS } from '../data/legal';
 
 const IcoMarker = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -26,6 +27,8 @@ export default function Contacto() {
   const [entregado, setEntregado] = useState(null);
   const [cotizacion, setCotizacion] = useState(null);
   const [form, setForm] = useState({ nombre: '', empresa: '', email: '', telefono: '', asunto: '', serie: '', mensaje: '', website: '' });
+  const [consent, setConsent] = useState({ terminos: false, privacidad: false });
+  const [idem, setIdem] = useState(() => (globalThis.crypto?.randomUUID?.() || `contacto-${Date.now()}`));
 
   useEffect(() => {
     const asunto = searchParams.get('asunto');
@@ -60,6 +63,8 @@ export default function Contacto() {
 
   const limpiar = () => {
     setForm({ nombre: '', empresa: '', email: '', telefono: '', asunto: '', serie: '', mensaje: '', website: '' });
+    setConsent({ terminos: false, privacidad: false });
+    setIdem(globalThis.crypto?.randomUUID?.() || `contacto-${Date.now()}`);
     formRef.current?.reset();
   };
 
@@ -73,6 +78,10 @@ export default function Contacto() {
       toastShow('Ingresá el número de serie de la batería a reparar', 'warn');
       return;
     }
+    if (!consent.terminos || !consent.privacidad) {
+      toastShow('Tenés que aceptar los términos y la política de privacidad para enviar', 'warn');
+      return;
+    }
     setEnviando(true);
     try {
       const res = await api('/public/contacto', {
@@ -82,8 +91,18 @@ export default function Contacto() {
           telefono: form.telefono, asunto: form.asunto,
           serie: form.serie.trim(), mensaje: form.mensaje, website: form.website,
           cotizacion_codigo: cotizacion?.id || '',
+          terminosVersion: LEGAL_DOCS.terminos.version,
+          privacidadVersion: LEGAL_DOCS.privacidad.version,
+          aceptaTerminos: consent.terminos,
+          aceptaPrivacidad: consent.privacidad,
+          idempotencyKey: idem,
         },
       });
+      if (res?.duplicado) {
+        toastShow('Ya recibimos esta consulta; no la duplicamos.', 'ok');
+        limpiar();
+        return;
+      }
       if (esReparacion && res?.codigo) setEntregado(res.codigo);
       toastShow(
         esReparacion
@@ -238,6 +257,26 @@ export default function Contacto() {
                 aria-hidden="true"
                 style={{ position: 'absolute', left: '-9999px', width: 1, height: 1, opacity: 0 }}
               />
+              <div className="legal-checkboxes">
+                <label>
+                  <input
+                    type="checkbox" checked={consent.terminos}
+                    onChange={(e) => setConsent((c) => ({ ...c, terminos: e.target.checked }))}
+                  />
+                  <span>Leí y acepto los <Link to="/legal/terminos">Términos y Condiciones</Link>.</span>
+                </label>
+                <label>
+                  <input
+                    type="checkbox" checked={consent.privacidad}
+                    onChange={(e) => setConsent((c) => ({ ...c, privacidad: e.target.checked }))}
+                  />
+                  <span>Leí y acepto la <Link to="/legal/privacidad">Política de Privacidad</Link>.</span>
+                </label>
+                <p className="muted" style={{ fontSize: 11.5, margin: 0 }}>
+                  Usamos tus datos para responder tu consulta y gestionar el servicio. Podés ejercer tus derechos en{' '}
+                  <Link to="/legal/privacidad/retirar">este formulario</Link>.
+                </p>
+              </div>
               <button className="btn primary lg block auth-submit" disabled={enviando}>
                 <Icon name="check" size={16} /> {enviando ? 'Enviando...' : 'Enviar mensaje'}
               </button>

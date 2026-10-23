@@ -2,7 +2,7 @@ import 'dotenv/config';
 import path from 'node:path';
 import { createReadStream, readdirSync, statSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { createHmac, timingSafeEqual, randomUUID } from 'node:crypto';
+import { createHmac, createHash, timingSafeEqual, randomUUID } from 'node:crypto';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -36,6 +36,8 @@ import {
 import { resumenSla } from '../src/data/sla.js';
 import { filasCsv } from '../src/data/csv.js';
 import { auditar, listarAuditoria } from './auditoria.js';
+import { LEGAL_DOCS, LEGAL_META, textoLegalCanonico } from '../src/data/legal.js';
+import { hashConsentimiento, hashLegalConsentimiento } from './privacidad-hash.js';
 import {
   encolar, procesarEnvio, procesarPendientes, reintentarEnvio, listarEnvios, resumenOutbox, iniciarOutbox,
 } from './outbox.js';
@@ -481,6 +483,44 @@ async function asegurarCodigos() {
   await query('CREATE INDEX IF NOT EXISTS idx_auditoria_fecha ON auditoria (fecha DESC)');
   await query('CREATE INDEX IF NOT EXISTS idx_auditoria_registro ON auditoria (tabla, registro_id, fecha DESC)');
   await query('CREATE INDEX IF NOT EXISTS idx_auditoria_actor ON auditoria (actor, fecha DESC)');
+  // Consentimientos: prueba de qué texto aceptó cada persona y qué cookies
+  // autorizó. El hash HMAC permite detectar si alguien alteró la fila.
+  await query(`CREATE TABLE IF NOT EXISTS consentimientos (
+    id TEXT PRIMARY KEY,
+    creado_en TIMESTAMPTZ DEFAULT now(),
+    tipo TEXT NOT NULL,
+    nombre TEXT,
+    email TEXT,
+    ip TEXT,
+    user_agent TEXT,
+    origen TEXT,
+    pagina TEXT,
+    acepta_terminos BOOLEAN DEFAULT FALSE,
+    terminos_version TEXT,
+    terminos_url TEXT,
+    terminos_hash TEXT,
+    acepta_privacidad BOOLEAN DEFAULT FALSE,
+    privacidad_version TEXT,
+    privacidad_url TEXT,
+    privacidad_hash TEXT,
+    cookies_necesarias BOOLEAN DEFAULT FALSE,
+    cookies_analiticas BOOLEAN DEFAULT FALSE,
+    cookies_marketing BOOLEAN DEFAULT FALSE,
+    cookies_version TEXT,
+    accion TEXT,
+    canal TEXT,
+    motivo TEXT,
+    idempotency_key TEXT,
+    hash_version INTEGER DEFAULT 2,
+    hash TEXT NOT NULL,
+    hash_legal TEXT,
+    anonimizado_en TIMESTAMPTZ
+  )`);
+  await query('CREATE INDEX IF NOT EXISTS idx_consent_fecha ON consentimientos (creado_en DESC)');
+  await query('CREATE INDEX IF NOT EXISTS idx_consent_email ON consentimientos (LOWER(email))');
+  await query('CREATE INDEX IF NOT EXISTS idx_consent_tipo ON consentimientos (tipo, creado_en DESC)');
+  await query('CREATE UNIQUE INDEX IF NOT EXISTS idx_consent_idem ON consentimientos (idempotency_key) WHERE idempotency_key IS NOT NULL');
+  await query('ALTER TABLE consentimientos ADD COLUMN IF NOT EXISTS hash_legal TEXT');
   // Outbox de WhatsApp: el mensaje se guarda antes de mandarse y se reintenta
   // solo si el error es transitorio. Ver api/outbox.js.
   await query(`CREATE TABLE IF NOT EXISTS wa_outbox (
@@ -666,6 +706,133 @@ function validarSigCot(ordenId, t) {
 const actorDe = (req) => (req?.user
   ? { id: req.user.sub, email: req.user.email, rol: req.user.rol, ref: req.user.tecnico_id || req.user.cliente_id || null }
   : null);
+
+// ---------- Privacidad y consentimientos ----------
+// El hash HMAC prueba que el registro no fue alterado. Se puede usar un secreto
+// propio (PRIVACY_HASH_SECRET) o, mientras no exista, el mismo JWT_SECRET.
+const PRIVACY_HASH_SECRET = process.env.PRIVACY_HASH_SECRET || SECRET;
+const PRIVACY_EMAIL = process.env.PRIVACY_EMAIL || LEGAL_META.emailPrivacidad;
+const hashesLegales = new Map();
+
+function hashLegal(clave) {
+  if (hashesLegales.has(clave)) return hashesLegales.get(clave);
+  const doc = LEGAL_DOCS[clave];
+  if (!doc) throw { status: 500, message: `Falta el documento legal ${clave}` };
+  const hash = createHash('sha256').update(textoLegalCanonico(doc.html), 'utf8').digest('hex');
+  hashesLegales.set(clave, hash);
+  return hash;
+}
+
+function documentoLegal(clave, version) {
+  const doc = LEGAL_DOCS[clave];
+  if (!doc) throw { status: 500, message: `Falta el documento legal ${clave}` };
+  if (String(version || '') !== doc.version) {
+    throw { status: 400, message: `La versión de ${doc.titulo.toLowerCase()} cambió. Recargá la página y volvé a aceptar.` };
+  }
+  return { version: doc.version, url: doc.url, hash: hashLegal(clave) };
+}
+
+// Guarda un consentimiento. Valida la versión contra el documento publicado y
+// exige las dos aceptaciones en los formularios. Devuelve { id, duplicado }.
+async function guardarConsentimientoLegal({
+  req, tipo, nombre = null, email = null, idempotencyKey = null,
+  canal = 'web', accion = null, motivo = null, cookies = null,
+  terminosVersion = null, privacidadVersion = null,
+  aceptaTerminos = false, aceptaPrivacidad = false,
+  origen = null, pagina = null,
+}) {
+  const tipoT = String(tipo || '').trim().toLowerCase();
+  if (!['cookies', 'formulario', 'retiro'].includes(tipoT)) {
+    throw { status: 400, message: 'Tipo de consentimiento inválido' };
+  }
+  const emailT = String(email || '').trim().toLowerCase();
+  const nombreT = limStr(nombre, 120) || null;
+  const ip = limStr(req?.ip, 60) || null;
+  const userAgent = limStr(req?.get?.('user-agent'), 400) || null;
+  const origenT = limStr(origen, 120) || null;
+  const paginaT = limStr(pagina, 200) || null;
+  const canalT = ['email', 'whatsapp', 'banner', 'web'].includes(String(canal)) ? String(canal) : 'web';
+  const accionT = limStr(accion, 40) || null;
+  const motivoT = limStr(motivo, 500) || null;
+  const idemT = limStr(idempotencyKey, 60) || null;
+
+  let term = { version: null, url: null, hash: null };
+  let priv = { version: null, url: null, hash: null };
+  let cookiesFilas = { necesarias: false, analiticas: false, marketing: false, version: null };
+
+  if (tipoT === 'formulario') {
+    if (normalizarBooleano(aceptaTerminos) !== true || normalizarBooleano(aceptaPrivacidad) !== true) {
+      throw { status: 400, message: 'Tenés que aceptar los términos y la política de privacidad para enviar el formulario.' };
+    }
+    term = documentoLegal('terminos', terminosVersion);
+    priv = documentoLegal('privacidad', privacidadVersion);
+  } else if (tipoT === 'cookies') {
+    cookiesFilas = {
+      necesarias: true,
+      analiticas: cookies?.analiticas === true,
+      marketing: cookies?.marketing === true,
+      version: documentoLegal('cookies', cookies?.version || null).version,
+    };
+  } else {
+    if (!validEmail(emailT)) throw { status: 400, message: 'Falta un email válido para la solicitud.' };
+  }
+
+  const fila = {
+    id: `cons_${randomUUID()}`,
+    tipo: tipoT,
+    nombre: nombreT,
+    email: emailT || null,
+    ip,
+    user_agent: userAgent,
+    origen: origenT,
+    pagina: paginaT,
+    acepta_terminos: tipoT === 'formulario',
+    terminos_version: term.version,
+    terminos_url: term.url,
+    terminos_hash: term.hash,
+    acepta_privacidad: tipoT === 'formulario',
+    privacidad_version: priv.version,
+    privacidad_url: priv.url,
+    privacidad_hash: priv.hash,
+    cookies_necesarias: tipoT === 'cookies' ? true : cookiesFilas.necesarias,
+    cookies_analiticas: tipoT === 'cookies' ? cookiesFilas.analiticas : false,
+    cookies_marketing: tipoT === 'cookies' ? cookiesFilas.marketing : false,
+    cookies_version: tipoT === 'cookies' ? cookiesFilas.version : null,
+    accion: accionT,
+    canal: canalT,
+    motivo: motivoT,
+    idempotency_key: idemT,
+    hash_version: 2,
+  };
+  fila.hash = hashConsentimiento(fila, PRIVACY_HASH_SECRET);
+  fila.hash_legal = hashLegalConsentimiento(fila, PRIVACY_HASH_SECRET);
+
+  try {
+    await query(
+      `INSERT INTO consentimientos
+        (id, tipo, nombre, email, ip, user_agent, origen, pagina,
+         acepta_terminos, terminos_version, terminos_url, terminos_hash,
+         acepta_privacidad, privacidad_version, privacidad_url, privacidad_hash,
+         cookies_necesarias, cookies_analiticas, cookies_marketing, cookies_version,
+         accion, canal, motivo, idempotency_key, hash_version, hash, hash_legal)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)`,
+      [
+        fila.id, fila.tipo, fila.nombre, fila.email, fila.ip, fila.user_agent, fila.origen, fila.pagina,
+        fila.acepta_terminos, fila.terminos_version, fila.terminos_url, fila.terminos_hash,
+        fila.acepta_privacidad, fila.privacidad_version, fila.privacidad_url, fila.privacidad_hash,
+        fila.cookies_necesarias, fila.cookies_analiticas, fila.cookies_marketing, fila.cookies_version,
+        fila.accion, fila.canal, fila.motivo, fila.idempotency_key, fila.hash_version, fila.hash, fila.hash_legal,
+      ]
+    );
+    return { id: fila.id, duplicado: false, hash: fila.hash };
+  } catch (e) {
+    if (e.code === '23505' && idemT) {
+      const existente = await one('SELECT id FROM consentimientos WHERE idempotency_key = $1', [idemT]);
+      if (existente) return { id: existente.id, duplicado: true, hash: fila.hash };
+    }
+    throw e;
+  }
+}
 
 // ---------- Salud del sistema y alertas ----------
 // /api/health es publico y minimo (para un monitor de uptime). El detalle
@@ -907,6 +1074,70 @@ app.get('/api/health', async (req, res) => {
   }
 });
 
+// Consentimiento de cookies (público). La versión se valida contra el texto
+// publicado; si el texto cambió, el navegador tiene que recargar y aceptar de nuevo.
+app.post('/api/consentimiento', publicLimiter, async (req, res) => {
+  const { cookies, source, page, cookiesVersion, accion } = req.body || {};
+  if (!cookies || typeof cookies !== 'object') {
+    return res.status(400).json({ error: 'Falta la decisión de cookies' });
+  }
+  const r = await guardarConsentimientoLegal({
+    req,
+    tipo: 'cookies',
+    cookies: {
+      necesarias: true,
+      analiticas: cookies.analiticas === true,
+      marketing: cookies.marketing === true,
+      version: cookiesVersion,
+    },
+    canal: 'banner',
+    accion: limStr(accion, 40) || 'configurar',
+    origen: limStr(source, 120) || 'banner',
+    pagina: limStr(page, 200) || null,
+  });
+  return res.status(201).json({ ok: true, id: r.id, duplicado: r.duplicado });
+});
+
+// Retiro de consentimiento y derechos de datos (público). Guarda la solicitud
+// antes de avisar por correo: si el correo falla, la solicitud no se pierde.
+app.post('/api/privacidad/solicitud', contactoLimiter, async (req, res) => {
+  const { email, nombre, tipo, motivo, declara, website, idempotencyKey } = req.body || {};
+  if (website) return res.status(201).json({ ok: true, descartado: true });
+  if (normalizarBooleano(declara) !== true) {
+    return res.status(400).json({ error: 'Tenés que declarar que sos el titular o que actuás en su nombre.' });
+  }
+  const emailT = String(email || '').trim();
+  if (!validEmail(emailT)) return res.status(400).json({ error: 'Falta un email válido.' });
+  const detalle = [limStr(tipo, 120), limStr(motivo, 500)].filter(Boolean).join(' · ');
+  const r = await guardarConsentimientoLegal({
+    req,
+    tipo: 'retiro',
+    email: emailT,
+    nombre: limStr(nombre, 120),
+    idempotencyKey,
+    motivo: detalle || 'Solicitud de derechos',
+    canal: 'web',
+    accion: 'retiro',
+    origen: 'formulario_privacidad',
+    pagina: '/legal/privacidad/retirar',
+  });
+  try {
+    if (mailer) {
+      await mailer.sendMail({
+        from: MAIL_FROM,
+        to: PRIVACY_EMAIL,
+        subject: '[Bertika] Solicitud de privacidad',
+        text: `Solicitud de privacidad\n\nTipo: ${detalle || '—'}\nNombre: ${limStr(nombre, 120) || '—'}\nEmail: ${emailT}\nFecha: ${nowIso()}\nRegistro: ${r.id}\n\nIngresá al panel (Sistema → Privacidad) para verificarla y responder.`,
+      });
+    } else {
+      console.warn('[privacidad] SMTP no configurado; la solicitud quedó guardada en el panel.');
+    }
+  } catch (e) {
+    console.error('[privacidad] no se pudo enviar el aviso por correo:', e.message);
+  }
+  return res.status(201).json({ ok: true, id: r.id, duplicado: r.duplicado });
+});
+
 // Detalle para el panel (Sistema): cola, respaldo, memoria y canales de alerta.
 app.get('/api/salud', authRequired, permisoRequerido('sistema'), async (req, res) => {
   return res.json(await estadoSistema());
@@ -928,6 +1159,107 @@ app.get('/api/auditoria', authRequired, permisoRequerido('sistema'), async (req,
     limite: req.query?.limite,
   });
   return res.json({ filas });
+});
+
+// Registro de consentimientos para el panel de privacidad (solo admin/sistema).
+function filtrosConsentimientos(req) {
+  const cond = [];
+  const args = [];
+  const tipo = limStr(req.query?.tipo, 20);
+  if (['cookies', 'formulario', 'retiro'].includes(tipo)) {
+    args.push(tipo);
+    cond.push(`tipo = $${args.length}`);
+  }
+  const q = limStr(req.query?.q, 120);
+  if (q) {
+    args.push(`%${q.replace(/[\\%_]/g, (m) => `\\${m}`)}%`);
+    cond.push(`(COALESCE(nombre, '') ILIKE $${args.length} OR COALESCE(email, '') ILIKE $${args.length})`);
+  }
+  const fecha = (v) => {
+    if (!v) return null;
+    const d = new Date(String(v));
+    return Number.isNaN(d.getTime()) ? null : d.toISOString();
+  };
+  const desde = fecha(req.query?.desde);
+  if (desde) { args.push(desde); cond.push(`creado_en >= $${args.length}`); }
+  const hasta = fecha(req.query?.hasta);
+  if (hasta) { args.push(hasta); cond.push(`creado_en <= $${args.length}`); }
+  return { cond, args };
+}
+
+app.get('/api/privacidad/consentimientos', authRequired, permisoRequerido('sistema'), async (req, res) => {
+  const { cond, args } = filtrosConsentimientos(req);
+  const limite = Math.max(1, Math.min(Number(req.query?.limite) || 100, 500));
+  args.push(limite);
+  const filas = await query(
+    `SELECT id, creado_en, tipo, nombre, email, ip, user_agent, origen, pagina,
+            acepta_terminos, terminos_version, terminos_url, terminos_hash,
+            acepta_privacidad, privacidad_version, privacidad_url, privacidad_hash,
+            cookies_necesarias, cookies_analiticas, cookies_marketing, cookies_version,
+            accion, canal, motivo, hash_version, hash, hash_legal, anonimizado_en
+       FROM consentimientos
+       ${cond.length ? `WHERE ${cond.join(' AND ')}` : ''}
+      ORDER BY creado_en DESC
+      LIMIT $${args.length}`,
+    args
+  );
+  const resumenFilas = await query('SELECT tipo, count(*)::int AS n FROM consentimientos GROUP BY tipo');
+  const resumen = { total: 0, cookies: 0, formulario: 0, retiro: 0 };
+  for (const r of resumenFilas) {
+    resumen[r.tipo] = Number(r.n) || 0;
+    resumen.total += Number(r.n) || 0;
+  }
+  return res.json({ filas, resumen });
+});
+
+app.get('/api/privacidad/consentimientos/export', authRequired, permisoRequerido('sistema'), async (req, res) => {
+  const { cond, args } = filtrosConsentimientos(req);
+  const filas = await query(
+    `SELECT creado_en, tipo, nombre, email, ip, origen, pagina, acepta_terminos, terminos_version,
+            acepta_privacidad, privacidad_version, cookies_necesarias, cookies_analiticas,
+            cookies_marketing, cookies_version, accion, canal, motivo, hash, hash_legal, anonimizado_en
+       FROM consentimientos
+       ${cond.length ? `WHERE ${cond.join(' AND ')}` : ''}
+      ORDER BY creado_en DESC
+      LIMIT 5000`,
+    args
+  );
+  const encabezado = ['fecha', 'tipo', 'nombre', 'email', 'ip', 'origen', 'pagina', 'acepta_terminos',
+    'terminos_version', 'acepta_privacidad', 'privacidad_version', 'cookies_necesarias', 'cookies_analiticas',
+    'cookies_marketing', 'cookies_version', 'accion', 'canal', 'motivo', 'hash', 'hash_legal', 'anonimizado_en'];
+  const csv = filasCsv([
+    encabezado,
+    ...filas.map((f) => [
+      f.creado_en instanceof Date ? f.creado_en.toISOString() : f.creado_en,
+      f.tipo, f.nombre, f.email, f.ip, f.origen, f.pagina,
+      f.acepta_terminos ? 'si' : 'no', f.terminos_version,
+      f.acepta_privacidad ? 'si' : 'no', f.privacidad_version,
+      f.cookies_necesarias ? 'si' : 'no', f.cookies_analiticas ? 'si' : 'no', f.cookies_marketing ? 'si' : 'no',
+      f.cookies_version, f.accion, f.canal, f.motivo, f.hash, f.hash_legal,
+      f.anonimizado_en instanceof Date ? f.anonimizado_en.toISOString() : f.anonimizado_en,
+    ]),
+  ], { separador: ';' });
+  await auditar({ req, tabla: 'consentimientos', accion: 'exportar', detalle: `${filas.length} registro(s)` });
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="bertika-privacidad-${new Date().toISOString().slice(0, 10)}.csv"`);
+  return res.send(csv);
+});
+
+app.post('/api/privacidad/consentimientos/:id/anonimizar', authRequired, permisoRequerido('sistema'), async (req, res) => {
+  const fila = await one('SELECT id, anonimizado_en FROM consentimientos WHERE id = $1', [req.params.id]);
+  if (!fila) return res.status(404).json({ error: 'Registro no encontrado' });
+  if (fila.anonimizado_en) return res.status(409).json({ error: 'Ese registro ya estaba anonimizado' });
+  await query(
+    `UPDATE consentimientos
+        SET nombre = NULL, email = NULL, ip = NULL, user_agent = NULL, anonimizado_en = now()
+      WHERE id = $1`,
+    [fila.id]
+  );
+  await auditar({
+    req, tabla: 'consentimientos', registroId: fila.id, accion: 'anonimizar',
+    detalle: 'Se quitaron los datos identificatorios y se conservó la prueba del consentimiento.',
+  });
+  return res.json({ ok: true });
 });
 
 // Cola de salida de WhatsApp: que se mando, que espera y que fallo.
@@ -2334,7 +2666,11 @@ app.get('/api/public/dolar', publicLimiter, async (req, res) => {
 // El servidor RECALCULA el total con el mismo módulo que usa la web: el precio
 // no depende de lo que mande el cliente.
 app.post('/api/public/cotizacion-visita', publicLimiter, async (req, res) => {
-  const { km, renglones, extrasSel, urgencia, turno, modo, nombre, empresa, email, telefono, fecha_preferida, website } = req.body || {};
+  const {
+    km, renglones, extrasSel, urgencia, turno, modo, nombre, empresa, email, telefono,
+    fecha_preferida, website, terminosVersion, privacidadVersion, aceptaTerminos, aceptaPrivacidad,
+    idempotencyKey,
+  } = req.body || {};
   if (website) return res.status(201).json({ ok: true, codigo: '', descartado: true });
 
   const { config, actualizado: configActualizada } = await configCotizador();
@@ -2352,6 +2688,27 @@ app.post('/api/public/cotizacion-visita', publicLimiter, async (req, res) => {
   }
   const emailT = email ? String(email).trim() : '';
   if (emailT && !validEmail(emailT)) return res.status(400).json({ error: 'El email no es válido' });
+
+  // Si la estimación lleva datos personales, se guarda el consentimiento antes
+  // de persistirla. Una estimación anónima no necesita aceptación.
+  const tieneDatos = Boolean(limStr(nombre, 120) || limStr(empresa, 120) || emailT || limStr(telefono, 40));
+  if (tieneDatos) {
+    await guardarConsentimientoLegal({
+      req,
+      tipo: 'formulario',
+      nombre: limStr(nombre, 120),
+      email: emailT,
+      idempotencyKey,
+      aceptaTerminos,
+      aceptaPrivacidad,
+      terminosVersion,
+      privacidadVersion,
+      canal: 'web',
+      accion: 'estimar',
+      origen: 'cotizador_visita',
+      pagina: '/cotizador',
+    });
+  }
 
   const dolar = await obtenerDolar();
   const cot = calcularVisita({ km: kmNum, renglones, extrasSel, urgencia, turno, modo: modoT, dolar, config });
@@ -2397,7 +2754,10 @@ app.get('/api/public/cotizacion-visita/:codigo', publicLimiter, async (req, res)
 
 // ---------- Contacto publico (crea orden si es reparacion + envia correo a ventas) ----------
 app.post('/api/public/contacto', contactoLimiter, async (req, res) => {
-  const { nombre, empresa, email, telefono, serie, asunto, mensaje, cotizacion_codigo, website } = req.body || {};
+  const {
+    nombre, empresa, email, telefono, serie, asunto, mensaje, cotizacion_codigo, website,
+    terminosVersion, privacidadVersion, aceptaTerminos, aceptaPrivacidad, idempotencyKey,
+  } = req.body || {};
   // Honeypot: campo oculto que solo completan bots. Se descarta silenciosamente.
   if (website) return res.status(201).json({ ok: true, emailEnviado: false, codigo: '' });
   const nombreT = limStr(nombre, 120);
@@ -2405,6 +2765,26 @@ app.post('/api/public/contacto', contactoLimiter, async (req, res) => {
   const mensajeT = limStr(mensaje, 2000);
   if (!nombreT || !validEmail(emailT) || !mensajeT) {
     return res.status(400).json({ error: 'Faltan nombre, email valido y mensaje' });
+  }
+  // Se guarda el consentimiento ANTES de crear la orden o mandar el correo:
+  // si el envío falla, la prueba de que la persona aceptó igual queda.
+  const consentimiento = await guardarConsentimientoLegal({
+    req,
+    tipo: 'formulario',
+    nombre: nombreT,
+    email: emailT,
+    idempotencyKey,
+    aceptaTerminos,
+    aceptaPrivacidad,
+    terminosVersion,
+    privacidadVersion,
+    canal: 'email',
+    accion: 'enviar',
+    origen: 'formulario_contacto',
+    pagina: '/contacto',
+  });
+  if (consentimiento.duplicado) {
+    return res.status(201).json({ ok: true, emailEnviado: true, codigo: '', duplicado: true });
   }
   const esReparacion = Boolean(serie && String(serie).trim());
   const serieTxt = esReparacion ? String(serie).trim().slice(0, 64) : '';
@@ -3050,7 +3430,7 @@ async function estaEnBaja(telefono) {
   return (await consentimientoDe(telefono)).estado === 'baja';
 }
 
-async function registrarConsentimiento({ telefono, estado, motivo = null, fuente = null, usuario = null }) {
+async function registrarConsentimientoWhatsApp({ telefono, estado, motivo = null, fuente = null, usuario = null }) {
   const t = normalizarTelefono(telefono);
   if (!t) return null;
   return one(`INSERT INTO wa_consentimiento (telefono, estado, motivo, fuente, usuario, actualizado)
@@ -3741,7 +4121,7 @@ app.post('/api/whatsapp/conversaciones/:id/optin', authRequired, permisoRequerid
   const conv = await one('SELECT * FROM wa_conversaciones WHERE id = $1', [req.params.id]);
   if (!conv) return res.status(404).json({ error: 'Conversación no encontrada' });
   const estado = String(req.body?.estado || '').toLowerCase() === 'baja' ? 'baja' : 'alta';
-  const fila = await registrarConsentimiento({
+  const fila = await registrarConsentimientoWhatsApp({
     telefono: conv.telefono, estado, motivo: req.body?.motivo || (estado === 'baja' ? 'Dado de baja desde el panel' : 'Habilitado desde el panel'),
     fuente: 'panel', usuario: actorDe(req)?.email,
   });
@@ -3910,7 +4290,7 @@ app.post('/api/whatsapp/webhook', async (req, res) => {
         // y no se le vuelve a escribir. Se le confirma una sola vez.
         const pidioBaja = pideBaja(texto);
         if (pidioBaja) {
-          await registrarConsentimiento({
+          await registrarConsentimientoWhatsApp({
             telefono: conv.telefono, estado: 'baja', fuente: 'whatsapp',
             motivo: `El cliente escribió: ${limStr(texto, 40)}`,
           });

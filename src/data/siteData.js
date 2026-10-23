@@ -55,6 +55,15 @@ export const CONTACTO = {
   emailVentas: 'ventas@bertika.com',
   emailSoporte: 'soporte.tecnico@bertika.com',
   emailCobranzas: 'cobranzas@bertika.com',
+  // Correo para privacidad, cookies y derechos de datos.
+  emailPrivacidad: 'admin@bertika.com',
+};
+
+// Analitica: vacia hasta que se den de alta los IDs. El banner de cookies
+// solo carga estas herramientas DESPUES del consentimiento de "Medicion".
+export const ANALYTICS = {
+  gtmId: '',
+  gaId: '',
 };
 
 export const OFICIAL = 'Representante oficial de AMSA Forbat';

@@ -70,6 +70,8 @@ está en [README](../README.md), [INSTRUCTIVO_USO](../INSTRUCTIVO_USO.md) y [API
 
 ## Infraestructura y seguridad (no es Fase 3, pero falta)
 
+- [ ] **Completar datos legales**: razón social, CUIT, domicilio legal e inscripción en la AAIP
+      (hoy figuran «en trámite»), y revisión final por un abogado.
 - [ ] **Respaldo fuera del VPS** (S3/R2) y simulacro de restauración mensual.
 - [ ] **Monitor externo de uptime** apuntando a `/api/health`.
 - [ ] **2FA para admin** y revocación de sesiones a distancia.

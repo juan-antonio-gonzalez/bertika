@@ -4,13 +4,14 @@
 //   1. Estado: si la base responde, cómo viene la cola, el último respaldo.
 //   2. Envíos: qué mensajes esperan, cuáles fallaron y reintentarlos.
 //   3. Auditoría: quién cambió qué, con el antes y el después.
+//   4. Privacidad: consentimientos, versiones legales, exportación y anonimización.
 //
 // Solo la ve quien tenga el permiso "sistema" (por plantilla, el admin).
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { api } from '../store/api';
+import { api, apiDescargar } from '../store/api';
 import { useStore } from '../store/store';
-import { Icon, Modal } from '../components/ui';
+import { Icon, Modal, ConfirmDialog } from '../components/ui';
 
 const fmtF = (iso) => (iso ? new Date(iso).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' }) : '—');
 const hace = (iso) => {
@@ -439,6 +440,189 @@ function Auditoria() {
   );
 }
 
+
+function Privacidad() {
+  const toastShow = useStore((s) => s.toastShow);
+  const [filas, setFilas] = useState([]);
+  const [resumen, setResumen] = useState(null);
+  const [filtros, setFiltros] = useState({ tipo: '', q: '', desde: '' });
+  const [cargando, setCargando] = useState(true);
+  const [error, setError] = useState('');
+  const [aAnonimizar, setAAnonimizar] = useState(null);
+  const [anonimizando, setAnonimizando] = useState(false);
+
+  const query = (f = filtros) => {
+    const p = new URLSearchParams();
+    if (f.tipo) p.set('tipo', f.tipo);
+    if (f.q) p.set('q', f.q.trim());
+    if (f.desde) p.set('desde', f.desde);
+    p.set('limite', '200');
+    return p.toString();
+  };
+
+  const cargar = useCallback(async (f = { tipo: '', q: '', desde: '' }) => {
+    setCargando(true);
+    try {
+      const r = await api(`/privacidad/consentimientos?${query(f)}`);
+      setFilas(r.filas || []);
+      setResumen(r.resumen || null);
+      setError('');
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setCargando(false);
+    }
+  }, []);
+
+  useEffect(() => { cargar(); }, [cargar]);
+
+  const buscar = (e) => {
+    e.preventDefault();
+    cargar(filtros);
+  };
+
+  const limpiar = () => {
+    const vacio = { tipo: '', q: '', desde: '' };
+    setFiltros(vacio);
+    cargar(vacio);
+  };
+
+  const exportar = async () => {
+    try {
+      await apiDescargar(`/privacidad/consentimientos/export?${query()}`, `bertika-privacidad-${new Date().toISOString().slice(0, 10)}.csv`);
+      toastShow('Exportación descargada', 'ok');
+    } catch (e) {
+      toastShow(e.message, 'error');
+    }
+  };
+
+  const anonimizar = async () => {
+    if (!aAnonimizar) return;
+    setAnonimizando(true);
+    try {
+      await api(`/privacidad/consentimientos/${aAnonimizar.id}/anonimizar`, { method: 'POST' });
+      toastShow('Registro anonimizado; se conservó la prueba del consentimiento', 'ok');
+      setAAnonimizar(null);
+      cargar(filtros);
+    } catch (e) {
+      toastShow(e.message, 'error');
+    } finally {
+      setAnonimizando(false);
+    }
+  };
+
+  const tipoTono = { cookies: 'blue', formulario: 'green', retiro: 'amber' };
+
+  return (
+    <div className="col">
+      <div className="grid4">
+        <Kpi label="Registros" valor={resumen?.total ?? '—'} sub="prueba de consentimiento" />
+        <Kpi label="Cookies" valor={resumen?.cookies ?? '—'} sub="decisiones del banner" />
+        <Kpi label="Formularios" valor={resumen?.formulario ?? '—'} sub="términos y privacidad" />
+        <Kpi label="Retiros / derechos" valor={resumen?.retiro ?? '—'} sub="solicitudes recibidas" />
+      </div>
+
+      <form className="card" onSubmit={buscar}>
+        <div className="row wrap" style={{ gap: 10, alignItems: 'flex-end' }}>
+          <div className="field" style={{ margin: 0, minWidth: 150 }}>
+            <label>Tipo</label>
+            <select className="input" value={filtros.tipo} onChange={(e) => setFiltros({ ...filtros, tipo: e.target.value })}>
+              <option value="">Todos</option>
+              <option value="cookies">Cookies</option>
+              <option value="formulario">Formularios</option>
+              <option value="retiro">Retiros / derechos</option>
+            </select>
+          </div>
+          <div className="field" style={{ margin: 0, minWidth: 200, flex: 1 }}>
+            <label>Buscar</label>
+            <input className="input" value={filtros.q} onChange={(e) => setFiltros({ ...filtros, q: e.target.value })} placeholder="nombre o email" />
+          </div>
+          <div className="field" style={{ margin: 0 }}>
+            <label>Desde</label>
+            <input className="input" type="date" value={filtros.desde} onChange={(e) => setFiltros({ ...filtros, desde: e.target.value })} />
+          </div>
+          <button className="btn primary" type="submit" disabled={cargando}><Icon name="search" size={13} /> Filtrar</button>
+          <button className="btn" type="button" onClick={limpiar} disabled={cargando}>Limpiar</button>
+          <button className="btn" type="button" onClick={exportar}><Icon name="truck" size={13} /> Exportar CSV</button>
+        </div>
+        <p className="muted" style={{ fontSize: 11.5, margin: '10px 0 0' }}>
+          Se conservan 5 años. «Anonimizar» quita nombre, email e IP, pero mantiene la versión, el hash y la fecha:
+          la prueba de que existió un consentimiento no se borra.
+        </p>
+      </form>
+
+      {error && <div className="alerta">{error}</div>}
+
+      <div className="card pad0">
+        <div style={{ padding: '0 8px 8px', overflowX: 'auto' }}>
+          {cargando && filas.length === 0 ? (
+            <p className="muted" style={{ padding: 16 }}>Cargando registros...</p>
+          ) : filas.length === 0 ? (
+            <p className="muted" style={{ padding: 16 }}>No hay consentimientos con esos filtros.</p>
+          ) : (
+            <table className="tbl">
+              <thead>
+                <tr><th>Fecha</th><th>Tipo</th><th>Persona</th><th>Documentos</th><th>Cookies</th><th>Canal / acción</th><th>IP</th><th /></tr>
+              </thead>
+              <tbody>
+                {filas.map((f) => (
+                  <tr key={f.id}>
+                    <td className="muted" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>{fmtF(f.creado_en)}</td>
+                    <td><span className={`badge ${tipoTono[f.tipo] || 'gray'}`}>{f.tipo}</span></td>
+                    <td style={{ fontSize: 12.5 }}>
+                      {f.anonimizado_en ? <span className="muted">anonimizado</span> : (
+                        <>
+                          <div>{f.nombre || '—'}</div>
+                          <div className="muted">{f.email || '—'}</div>
+                        </>
+                      )}
+                    </td>
+                    <td style={{ fontSize: 11.5 }}>
+                      {f.terminos_version && <div>Términos v{f.terminos_version}</div>}
+                      {f.privacidad_version && <div>Privacidad v{f.privacidad_version}</div>}
+                      {f.cookies_version && <div>Cookies v{f.cookies_version}</div>}
+                      {!f.terminos_version && !f.privacidad_version && !f.cookies_version && '—'}
+                    </td>
+                    <td style={{ fontSize: 11.5 }}>
+                      {f.cookies_necesarias ? 'N' : '—'} · {f.cookies_analiticas ? 'M' : '—'} · {f.cookies_marketing ? 'P' : '—'}
+                    </td>
+                    <td style={{ fontSize: 12 }}>
+                      <div>{f.canal || '—'}</div>
+                      <div className="muted">{f.accion || '—'}</div>
+                    </td>
+                    <td className="mono" style={{ fontSize: 11 }}>{f.anonimizado_en ? '—' : (f.ip || '—')}</td>
+                    <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      {!f.anonimizado_en && (
+                        <button className="btn sm ghost" onClick={() => setAAnonimizar(f)}>Anonimizar</button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+
+      {aAnonimizar && (
+        <ConfirmDialog
+          title="Anonimizar consentimiento"
+          sub={aAnonimizar.email || aAnonimizar.nombre || aAnonimizar.id}
+          confirmLabel="Anonimizar"
+          busy={anonimizando}
+          onCancel={() => setAAnonimizar(null)}
+          onConfirm={anonimizar}
+        >
+          <p style={{ fontSize: 13 }}>
+            Se quitan nombre, email, IP y navegador. Se conservan la fecha, la versión y el hash del documento aceptado
+            como prueba. Esta acción no se puede deshacer.
+          </p>
+        </ConfirmDialog>
+      )}
+    </div>
+  );
+}
+
 export default function Sistema() {
   const [tab, setTab] = useState('estado');
   const [salud, setSalud] = useState(null);
@@ -468,6 +652,7 @@ export default function Sistema() {
     ['estado', 'Estado', 'gauge'],
     ['envios', 'Envíos', 'mail'],
     ['auditoria', 'Auditoría', 'search'],
+    ['privacidad', 'Privacidad', 'shield'],
   ]), []);
 
   return (
@@ -475,7 +660,7 @@ export default function Sistema() {
       <div className="mb24">
         <h1 className="page-title">Salud y auditoría</h1>
         <p className="page-sub">
-          Estado del servidor, cola de salida de WhatsApp y registro de quién cambió qué.
+          Estado del servidor, cola de salida, auditoría y consentimientos de privacidad.
         </p>
       </div>
 
@@ -492,6 +677,7 @@ export default function Sistema() {
       )}
       {tab === 'envios' && <Envios />}
       {tab === 'auditoria' && <Auditoria />}
+      {tab === 'privacidad' && <Privacidad />}
     </div>
   );
 }

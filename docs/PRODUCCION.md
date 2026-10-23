@@ -53,6 +53,9 @@ OUTBOX_WORKER=1
 MONITOREO=1
 # Worker de seguimiento (crea tareas de presupuesto/retiro cada 6 h).
 AUTOMATIZACIONES=1
+# Privacidad: correo de solicitudes y secreto HMAC de los consentimientos.
+PRIVACY_EMAIL=admin@bertika.com
+PRIVACY_HASH_SECRET=<hex-64>
 ```
 
 `GET /api/health` queda público y sin datos sensibles: sirve para un monitor de uptime

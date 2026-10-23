@@ -85,6 +85,14 @@ export default function SiteFooter() {
           </div>
         </div>
 
+        <div className="footer-legal">
+          <Link to="/legal/privacidad">Privacidad</Link>
+          <Link to="/legal/terminos">Términos</Link>
+          <Link to="/legal/cookies">Cookies</Link>
+          <Link to="/legal/privacidad/retirar">Tus datos</Link>
+          <button type="button" data-cookie-abrir>Cambiar preferencias</button>
+        </div>
+
         <div className="footer-copy">
           Bertika® — Acumuladores Industriales — {new Date().getFullYear()}
         </div>
