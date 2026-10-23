@@ -214,7 +214,7 @@ Trabajo dentro de cada etapa:
 - La pestaña **Eventos** muestra el historial completo con **fecha y responsable** de cada paso.
 - La pestaña **Orden** muestra lecturas del diagnostico (con la **evidencia fotografica**), cotizacion, prueba final, garantia, historial de la serie y la **auditoria de versiones de la cotizacion** (quien, cuando y por cuanto).
 - La pestaña **Documentos** emite la **orden de trabajo** (recepcion, falla, diagnostico, presupuesto y firmas) y el **comprobante de entrega y garantia**, ambos listos para imprimir solos.
-- La pestaña **Etiqueta** arma la etiqueta de la bateria con un **QR que apunta al seguimiento publico** (`/tracker/<orden>`); **Imprimir etiqueta** la manda a la impresora sola, sin el resto de la interfaz.
+- La pestaña **Etiqueta** arma la etiqueta de la bateria con un **QR que apunta al seguimiento publico** (`/tracker/<codigo de 16 digitos>`); **Imprimir etiqueta** la manda a la impresora sola, sin el resto de la interfaz.
 - Si la bateria ya tuvo una orden con **garantia vigente**, al abrir la orden aparece un aviso de **posible reproceso en garantia** (no se cobra).
 - En la tarjeta del cliente hay un boton **Avisar al cliente** que abre WhatsApp con el mensaje y el enlace del tracker.
 
@@ -241,11 +241,17 @@ Secciones:
 
 ## 7. Seguimiento publico (sin login)
 
-**Por enlace:** `/tracker/:orden_id` — cualquiera con el enlace ve el avance.
-Ideal para compartir por WhatsApp.
+**Por enlace:** `/tracker/:codigo` — el enlace lleva el **codigo de seguimiento de
+16 digitos** (con o sin guiones). Ideal para compartir por WhatsApp.
 
-**Por busqueda:** `/seguimiento` acepta el **codigo de seguimiento de 16 digitos**
-(se formatea solo, `XXXX-XXXX-XXXX-XXXX`) o el **numero de serie** de la bateria.
+**Por busqueda:** `/seguimiento` acepta **solo el codigo de seguimiento de 16
+digitos** (se formatea solo, `XXXX-XXXX-XXXX-XXXX`). No acepta el numero de serie
+ni el id interno: eso permitia listar todas las ordenes del taller sin sesion.
+
+**Siempre se ve como el cliente, aunque estes logueado.** La pantalla de
+seguimiento no se abre dentro del panel: muestra solo lo publico (estado, pasos,
+bateria, historial de eventos **sin el nombre de quien lo cargo**). Si entraste
+con una cuenta, aparece igual el boton **Ir a la plataforma** para volver.
 
 **Cotizacion publica:** `/cotizacion/:orden_id?t=<firma>` permite al cliente
 aprobar o rechazar sin cuenta. El parametro `t` es una firma HMAC: en la
