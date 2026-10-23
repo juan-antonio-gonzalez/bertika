@@ -2,7 +2,7 @@
 
 Base URL en producción: `https://bertika.com/api` (en dev local: `http://localhost:5173/api`, que proxya a `http://localhost:3001`).
 
-Formato: JSON. Autenticación con `Authorization: Bearer <token>` (obtenido en `POST /auth/login`). Los errores responden `{ "error": "mensaje" }` con su código HTTP.
+Formato: JSON. Autenticación con `Authorization: Bearer <token>` (obtenido en `POST /auth/login`). Los errores responden `{ "error": "mensaje" }` con su código HTTP y, desde la fase de robustez, también `reqId` (el mismo que sale en el header `x-request-id` y en el log del servidor).
 
 ## Autenticación
 
@@ -194,6 +194,41 @@ argumentos fijos.
 
 Sin el script instalado en el VPS (`/usr/local/bin/bertika-backup.sh`), `POST` responde `500`
 y el panel muestra el comando para instalarlo (`bash scripts/backup-db.sh --instalar`).
+
+## Salud, auditoría y cola de salida
+
+### `GET /health` (público)
+Monitor de uptime. No expone datos del taller: `{ ok, version, uptimeSeg, dbMs, hora }`.
+Si la base no responde, `503 { ok: false }`. Es el endpoint que conviene apuntar en un
+monitor externo (BetterStack, UptimeRobot).
+
+### `GET /salud`
+Requiere el permiso `sistema` (por plantilla, solo admin). Devuelve el detalle:
+`{ ok, version, uptimeSeg, memoriaMB, db{ok,ms,error?}, outbox{pendientes,fallidos,inciertos,proximoIntento},
+respaldo{nombre,fecha,horas,bytes} | null, whatsapp{configurado,numeroIdCorto,falta[]},
+alertas{email,destinoEmail,webhook,ultimaRacha5xx} }`.
+
+### `GET /auditoria?tabla=&registro_id=&actor=&desde=&hasta=&limite=`
+Requiere `sistema`. Devuelve `{ filas[] }` con `{ fecha, actor, rol, ip, tabla, registro_id,
+accion, campos, antes, despues, detalle, request_id }`. Solo guarda los campos que cambiaron,
+recorta textos largos y **redacta** contraseñas, hashes y tokens. `limite` se tope en 500.
+
+### Outbox de WhatsApp
+
+Todo mensaje saliente se guarda primero en `wa_outbox` y después se intenta enviar:
+
+| Método | Ruta | Efecto |
+| --- | --- | --- |
+| `GET` | `/whatsapp/envios?estado=&limite=` | `{ resumen{porEstado,pendientes,fallidos,inciertos,proximoIntento}, filas[] }`. Permiten `sistema` o `whatsapp` |
+| `POST` | `/whatsapp/envios/:id/reintentar` | Reintenta un envío `fallido` o `incierto`. `409` si está `pendiente`/`enviando`/`enviado` |
+| `POST` | `/whatsapp/envios/procesar` | Fuerza un tick del worker (hasta 50). Requiere `sistema` |
+
+Estados: `pendiente` → `enviando` → `enviado`; si el error es de red, 429 o 5xx vuelve a
+`pendiente` con espera creciente (1, 5 y 15 minutos; máximo 4 intentos). Un error de datos
+(ventana de 24 h, plantilla, número, token) queda `fallido` y no se reintenta solo. Un timeout
+queda `incierto` porque el mensaje pudo haber llegado: se reintenta a mano para no duplicarlo.
+`POST /whatsapp/conversaciones/:id/responder`, `POST /whatsapp/enviar` y los adjuntos
+devuelven `202 { ok: true, enCola: true }` cuando el mensaje quedó esperando reintento.
 
 ## Reset demo (admin)
 

@@ -1,8 +1,8 @@
 import 'dotenv/config';
 import path from 'node:path';
-import { createReadStream, readdirSync, statSync } from 'node:fs';
+import { createReadStream, readdirSync, statSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac, timingSafeEqual, randomUUID } from 'node:crypto';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -18,8 +18,8 @@ import { canTransition, ORDEN_ESTADOS, ESTADO_LABEL, MIN_CAPACIDAD_PCT, esEstado
 import { obtenerDolar } from './dolar.js';
 import { calcularVisita, normalizarConfig, CONFIG_DEFAULT, textoFueraCobertura } from '../src/data/cotizadorVisita.js';
 import {
-  enviarTexto, enviarPlantilla, configPublicaWhatsApp, normalizarTelefono, normalizarEtiquetas, verificarFirma, ESTADO_ENTREGA,
-  descargarMedia, subirMedia, enviarImagen, enviarDocumento, pideBaja,
+  enviarTexto, configPublicaWhatsApp, normalizarTelefono, normalizarEtiquetas, verificarFirma, ESTADO_ENTREGA,
+  descargarMedia, pideBaja,
 } from './whatsapp.js';
 import { EVENTOS as EVENTOS_AVISO, PLANTILLA_POR_ESTADO, PLANTILLA_GARANTIA, normalizarAvisos, parametrosAviso, resumenAviso, debeAvisarGarantia, parametrosGarantia } from './avisos.js';
 import {
@@ -29,11 +29,23 @@ import {
 import { generarCodigoUnico, digitar, formatearCodigo } from './codigo.js';
 import { normalizarBooleano } from './validaciones.js';
 import { RESPUESTAS_EJEMPLO, colorDePaleta, normalizarAtajo, fragmentoConTexto } from '../src/data/respuestas.js';
+import { filasCsv } from '../src/data/csv.js';
+import { auditar, listarAuditoria } from './auditoria.js';
+import {
+  encolar, procesarEnvio, procesarPendientes, reintentarEnvio, listarEnvios, resumenOutbox, iniciarOutbox,
+} from './outbox.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, 'uploads');
 const PUBLIC_URL = process.env.PUBLIC_URL || 'http://localhost:5173';
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || PUBLIC_URL).split(',').map((s) => s.trim());
+const VERSION = (() => {
+  try { return JSON.parse(readFileSync(path.join(__dirname, 'package.json'), 'utf8')).version || '1.0.0'; } catch { return '1.0.0'; }
+})();
+const BACKUP_DIR = process.env.BACKUP_DIR || '/var/backups/bertika';
+// Errores 500 en memoria (ventana corta) para que el monitoreo avise si hay
+// una racha. No se guardan en la base: si la base falla, esto igual funciona.
+const errores5xx = [];
 
 const app = express();
 // Detras de nginx (1 proxy) req.ip debe ser la IP real del cliente para que
@@ -48,6 +60,47 @@ app.use(express.json({
   limit: '2mb',
   verify: (req, res, buf) => { req.rawBody = buf; },
 }));
+
+// ---------- Correlacion de pedidos ----------
+// Cada request lleva un id que se devuelve en la respuesta y se guarda en la
+// auditoria. Cuando el cliente dice "me dio error", con ese id se encuentra la
+// linea exacta en el log (antes solo habia console.log sin contexto).
+app.use((req, res, next) => {
+  const recibido = String(req.get('x-request-id') || '').slice(0, 80);
+  req.requestId = recibido || randomUUID();
+  res.setHeader('x-request-id', req.requestId);
+  next();
+});
+
+// Log estructurado solo de lo que importa: errores (4xx/5xx) y pedidos lentos.
+// No se loguean los 200 normales para no llenar el disco.
+app.use((req, res, next) => {
+  if (!req.path.startsWith('/api')) return next();
+  const inicio = Date.now();
+  res.on('finish', () => {
+    const ms = Date.now() - inicio;
+    if (res.statusCode < 400 && ms < 2000) return;
+    const linea = {
+      nivel: res.statusCode >= 500 ? 'error' : (ms >= 2000 ? 'warn' : 'info'),
+      fecha: new Date().toISOString(),
+      reqId: req.requestId,
+      metodo: req.method,
+      ruta: req.path,
+      status: res.statusCode,
+      ms,
+      ip: req.ip,
+      usuario: req.user?.email || null,
+    };
+    const texto = JSON.stringify(linea);
+    if (res.statusCode >= 500) {
+      errores5xx.push(Date.now());
+      const corte = Date.now() - 10 * 60 * 1000;
+      while (errores5xx.length && errores5xx[0] < corte) errores5xx.shift();
+      console.error(texto);
+    } else console.warn(texto);
+  });
+  next();
+});
 
 // ---------- Rate limiting ----------
 // Login: contiene el brute-force de credenciales.
@@ -374,6 +427,72 @@ async function asegurarCodigos() {
     fecha TIMESTAMPTZ DEFAULT now(),
     PRIMARY KEY (orden_id, plantilla)
   )`);
+  // Auditoria generica: quien cambio que, cuando, desde que IP y con que
+  // request-id. `antes`/`despues` guardan solo los campos modificados.
+  await query(`CREATE TABLE IF NOT EXISTS auditoria (
+    id TEXT PRIMARY KEY,
+    fecha TIMESTAMPTZ DEFAULT now(),
+    actor TEXT,
+    actor_id TEXT,
+    rol TEXT,
+    ip TEXT,
+    tabla TEXT NOT NULL,
+    registro_id TEXT,
+    accion TEXT NOT NULL,
+    campos TEXT,
+    antes JSONB,
+    despues JSONB,
+    detalle TEXT,
+    request_id TEXT
+  )`);
+  await query('CREATE INDEX IF NOT EXISTS idx_auditoria_fecha ON auditoria (fecha DESC)');
+  await query('CREATE INDEX IF NOT EXISTS idx_auditoria_registro ON auditoria (tabla, registro_id, fecha DESC)');
+  await query('CREATE INDEX IF NOT EXISTS idx_auditoria_actor ON auditoria (actor, fecha DESC)');
+  // Outbox de WhatsApp: el mensaje se guarda antes de mandarse y se reintenta
+  // solo si el error es transitorio. Ver api/outbox.js.
+  await query(`CREATE TABLE IF NOT EXISTS wa_outbox (
+    id TEXT PRIMARY KEY,
+    conversacion_id TEXT,
+    telefono TEXT NOT NULL,
+    tipo TEXT NOT NULL DEFAULT 'texto',
+    texto TEXT,
+    plantilla TEXT,
+    idioma TEXT,
+    parametros JSONB DEFAULT '[]',
+    media_path TEXT,
+    media_mime TEXT,
+    media_nombre TEXT,
+    mensaje_id TEXT,
+    aviso_orden_id TEXT,
+    aviso_plantilla TEXT,
+    estado TEXT NOT NULL DEFAULT 'pendiente',
+    intentos INTEGER NOT NULL DEFAULT 0,
+    proximo_intento TIMESTAMPTZ DEFAULT now(),
+    ultimo_error TEXT,
+    wa_message_id TEXT,
+    creado_en TIMESTAMPTZ DEFAULT now(),
+    actualizado_en TIMESTAMPTZ DEFAULT now()
+  )`);
+  await query('CREATE INDEX IF NOT EXISTS idx_wa_outbox_cola ON wa_outbox (estado, proximo_intento)');
+  await query('CREATE INDEX IF NOT EXISTS idx_wa_outbox_fecha ON wa_outbox (creado_en DESC)');
+  // Un aviso (orden + plantilla) no puede estar dos veces vivo en la cola.
+  try {
+    await query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_wa_outbox_aviso
+      ON wa_outbox (aviso_orden_id, aviso_plantilla)
+      WHERE aviso_orden_id IS NOT NULL AND estado IN ('pendiente', 'enviando', 'incierto')`);
+  } catch (e) { console.error(`[migracion] indice unico de avisos en cola: ${e.message}`); }
+  // Alertas del sistema: se guarda cada envio para no repetir la misma alerta
+  // cada 30 segundos (el worker de monitoreo las espacia en el tiempo).
+  await query(`CREATE TABLE IF NOT EXISTS alertas_log (
+    id TEXT PRIMARY KEY,
+    tipo TEXT NOT NULL,
+    mensaje TEXT,
+    canal TEXT,
+    destino TEXT,
+    ok BOOLEAN,
+    fecha TIMESTAMPTZ DEFAULT now()
+  )`);
+  await query('CREATE INDEX IF NOT EXISTS idx_alertas_tipo ON alertas_log (tipo, fecha DESC)');
   // Configuración editable del cotizador (tarifas, franjas, descuentos, IVA) +
   // historial de cambios para saber quién tocó los precios y cuándo.
   await query(`CREATE TABLE IF NOT EXISTS cotizador_config (
@@ -515,6 +634,160 @@ const actorDe = (req) => (req?.user
   ? { id: req.user.sub, email: req.user.email, rol: req.user.rol, ref: req.user.tecnico_id || req.user.cliente_id || null }
   : null);
 
+// ---------- Salud del sistema y alertas ----------
+// /api/health es publico y minimo (para un monitor de uptime). El detalle
+// (cola, respaldo, memoria) es solo para quien tiene la seccion "sistema".
+const ALERTAS_EMAIL = process.env.ALERTAS_EMAIL || MAIL_TO;
+const ALERTAS_WEBHOOK = process.env.ALERTAS_WEBHOOK || '';
+const ALERTAS_MIN_MS = 30 * 60 * 1000; // no repetir la misma alerta antes de 30 min
+
+function respaldoMasReciente() {
+  try {
+    const archivos = readdirSync(BACKUP_DIR).filter((n) => /^bertika_.*\.sql(\.gz)?$/.test(n));
+    let mejor = null;
+    for (const nombre of archivos) {
+      const st = statSync(path.join(BACKUP_DIR, nombre));
+      if (!mejor || st.mtimeMs > mejor.mtimeMs) mejor = { nombre, mtimeMs: st.mtimeMs, fecha: st.mtime, bytes: st.size };
+    }
+    if (!mejor) return null;
+    return {
+      nombre: mejor.nombre,
+      fecha: mejor.fecha.toISOString(),
+      bytes: mejor.bytes,
+      horas: Math.round(((Date.now() - mejor.mtimeMs) / 3600000) * 10) / 10,
+    };
+  } catch {
+    return null; // en desarrollo no existe /var/backups/bertika
+  }
+}
+
+async function estadoSistema() {
+  const t0 = Date.now();
+  let db = { ok: true, ms: 0 };
+  try {
+    await query('SELECT 1');
+    db = { ok: true, ms: Date.now() - t0 };
+  } catch (e) {
+    db = { ok: false, error: e.message };
+  }
+  let outbox = null;
+  try { outbox = await resumenOutbox(); } catch (e) { outbox = { error: e.message }; }
+  const respaldo = respaldoMasReciente();
+  const memoria = process.memoryUsage();
+  return {
+    ok: db.ok,
+    version: VERSION,
+    node: process.version,
+    uptimeSeg: Math.round(process.uptime()),
+    memoriaMB: Math.round(memoria.rss / 1024 / 1024),
+    hora: nowIso(),
+    db,
+    outbox,
+    respaldo,
+    whatsapp: configPublicaWhatsApp(),
+    alertas: {
+      email: Boolean(mailer),
+      destinoEmail: mailer ? ALERTAS_EMAIL : null,
+      webhook: Boolean(ALERTAS_WEBHOOK),
+      ultimaRacha5xx: errores5xx.length,
+    },
+  };
+}
+
+// Manda una alerta por email y/o webhook. Si no hay ningun canal configurado
+// queda en el log del servidor, que es lo minimo para no perderla.
+async function alertarSistema(tipo, mensaje, { forzar = false, detalle = null } = {}) {
+  const clase = String(tipo || 'general').slice(0, 40);
+  try {
+    if (!forzar) {
+      const ultima = await one(
+        "SELECT fecha FROM alertas_log WHERE tipo = $1 AND ok = true ORDER BY fecha DESC LIMIT 1",
+        [clase]
+      );
+      if (ultima && Date.now() - new Date(ultima.fecha).getTime() < ALERTAS_MIN_MS) return { omitida: true };
+    }
+  } catch { /* si falla la consulta, igual se intenta avisar */ }
+
+  const asunto = `[Bertika] ${clase}: ${String(mensaje).slice(0, 120)}`;
+  const cuerpo = `${mensaje}${detalle ? `\n\n${JSON.stringify(detalle, null, 2).slice(0, 4000)}` : ''}\n\n${nowIso()}`;
+  const resultados = [];
+
+  if (mailer) {
+    try {
+      await mailer.sendMail({ from: MAIL_FROM, to: ALERTAS_EMAIL, subject: asunto, text: cuerpo });
+      resultados.push({ canal: 'email', ok: true, destino: ALERTAS_EMAIL });
+    } catch (e) {
+      resultados.push({ canal: 'email', ok: false, destino: ALERTAS_EMAIL, error: e.message });
+    }
+  }
+  if (ALERTAS_WEBHOOK) {
+    try {
+      const r = await fetch(ALERTAS_WEBHOOK, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tipo: clase, mensaje, detalle, fecha: nowIso() }),
+      });
+      resultados.push({ canal: 'webhook', ok: r.ok });
+    } catch (e) {
+      resultados.push({ canal: 'webhook', ok: false, error: e.message });
+    }
+  }
+  if (!resultados.length) {
+    console.warn(`[alerta] ${asunto}\n${cuerpo}`);
+  }
+  const ok = resultados.length ? resultados.some((r) => r.ok) : true;
+  try {
+    await query(
+      'INSERT INTO alertas_log (id, tipo, mensaje, canal, destino, ok) VALUES ($1,$2,$3,$4,$5,$6)',
+      [
+        `alt_${randomUUID()}`, clase, String(mensaje).slice(0, 500),
+        resultados.map((r) => r.canal).join(',') || 'log',
+        resultados.map((r) => r.destino).filter(Boolean).join(',') || null,
+        ok,
+      ]
+    );
+  } catch (e) {
+    console.error('[alerta] no se pudo guardar el registro:', e.message);
+  }
+  return { ok, resultados };
+}
+
+// Revision periodica (cada 5 min): base, cola de salida, respaldo y racha de 500.
+async function revisarSistema() {
+  try {
+    const est = await estadoSistema();
+    if (!est.db.ok) {
+      await alertarSistema('base_de_datos', 'La API no puede consultar la base de datos.', { detalle: est.db });
+    }
+    const o = est.outbox || {};
+    const esperandoDesde = o.proximoIntento ? Date.now() - new Date(o.proximoIntento).getTime() : 0;
+    if (o.pendientes > 0 && esperandoDesde > 15 * 60 * 1000) {
+      await alertarSistema('outbox_atascado', `Hay ${o.pendientes} envío(s) esperando desde hace más de 15 minutos.`);
+    }
+    if (o.fallidos >= 3) {
+      await alertarSistema('envios_fallidos', `Hay ${o.fallidos} envío(s) de WhatsApp fallidos. Revisalos en Sistema → Envíos.`);
+    }
+    if (est.respaldo && est.respaldo.horas > 36) {
+      await alertarSistema('respaldo_viejo', `El último respaldo tiene ${est.respaldo.horas} horas.`);
+    }
+    if (errores5xx.length >= 5) {
+      await alertarSistema('errores_500', `Hubo ${errores5xx.length} errores 500 en los últimos 10 minutos.`);
+      errores5xx.length = 0;
+    }
+  } catch (e) {
+    console.error('[monitoreo] no se pudo revisar el sistema:', e.message);
+  }
+}
+
+let monitorTimer = null;
+function iniciarMonitoreo({ intervaloMs = 5 * 60 * 1000 } = {}) {
+  if (monitorTimer) return;
+  monitorTimer = setInterval(() => { revisarSistema(); }, intervaloMs);
+  if (monitorTimer.unref) monitorTimer.unref();
+  const primera = setTimeout(() => { revisarSistema(); }, 30 * 1000);
+  if (primera.unref) primera.unref();
+}
+
 async function pushEvento(client, ordenId, tipo, detalle, actor = null) {
   const evId = await nextId('ev', client);
   const ev = { id: evId, tipo, detalle, fecha: nowIso(), usuario: actor };
@@ -588,6 +861,63 @@ async function transition(cliente, orden, target, detalle, actor = null) {
   if (target === 'delivered') await notificar(cliente, orden.id, `Orden ${orden.id}: batería entregada y cobrada. Garantía activada.`, 'WhatsApp');
   if (target === 'approved') await notificar(cliente, orden.id, `Orden ${orden.id}: cotización aprobada. Comienza la reparación.`, 'Email');
 }
+
+// ---------- Salud, auditoria y cola de salida ----------
+// Monitor de uptime: publico y sin datos sensibles. Si la base no responde, 503.
+app.get('/api/health', async (req, res) => {
+  const t0 = Date.now();
+  try {
+    await query('SELECT 1');
+    return res.json({ ok: true, version: VERSION, uptimeSeg: Math.round(process.uptime()), dbMs: Date.now() - t0, hora: nowIso() });
+  } catch {
+    return res.status(503).json({ ok: false, version: VERSION, error: 'base de datos', hora: nowIso() });
+  }
+});
+
+// Detalle para el panel (Sistema): cola, respaldo, memoria y canales de alerta.
+app.get('/api/salud', authRequired, permisoRequerido('sistema'), async (req, res) => {
+  return res.json(await estadoSistema());
+});
+
+// Historial de cambios. Filtros por tabla, registro, actor y fecha.
+app.get('/api/auditoria', authRequired, permisoRequerido('sistema'), async (req, res) => {
+  const aFecha = (v) => {
+    if (!v) return null;
+    const d = new Date(String(v));
+    return Number.isNaN(d.getTime()) ? null : d.toISOString();
+  };
+  const filas = await listarAuditoria({
+    tabla: req.query?.tabla,
+    registroId: req.query?.registro_id,
+    actor: req.query?.actor,
+    desde: aFecha(req.query?.desde),
+    hasta: aFecha(req.query?.hasta),
+    limite: req.query?.limite,
+  });
+  return res.json({ filas });
+});
+
+// Cola de salida de WhatsApp: que se mando, que espera y que fallo.
+app.get('/api/whatsapp/envios', authRequired, permisoRequerido('sistema', 'whatsapp'), async (req, res) => {
+  const [resumen, filas] = await Promise.all([
+    resumenOutbox(),
+    listarEnvios({ estado: req.query?.estado, limite: req.query?.limite }),
+  ]);
+  return res.json({ resumen, filas });
+});
+
+// Reintento manual de un envio fallido o incierto.
+app.post('/api/whatsapp/envios/:id/reintentar', authRequired, permisoRequerido('sistema', 'responder_whatsapp'), async (req, res) => {
+  const r = await reintentarEnvio(req.params.id);
+  await auditar({ req, tabla: 'wa_outbox', registroId: req.params.id, accion: 'reintentar_envio', detalle: r.estado || r.error });
+  if (!r.ok && r.status) return res.status(r.status).json({ error: r.error });
+  return res.json(r);
+});
+
+// Fuerza un tick del worker (util si el proceso estuvo caido o para probar).
+app.post('/api/whatsapp/envios/procesar', authRequired, permisoRequerido('sistema'), async (req, res) => {
+  return res.json(await procesarPendientes({ limite: 50 }));
+});
 
 // ---------- Auth ----------
 app.post('/api/auth/login', loginLimiter, async (req, res) => {
@@ -842,6 +1172,10 @@ app.post('/api/ordenes', authRequired, permisoRequerido('crear_orden'), async (r
     );
     return ordId;
   });
+  await auditar({
+    req, tabla: 'ordenes', registroId: ordId, accion: 'crear',
+    despues: { bateria_serie: serieT, cliente_id: clienteT, falla: fallaT, tecnico_id: tecnico_id || null, estado: 'received' },
+  });
   notificarSinFrenar(null, ordId, `Orden ${ordId}: batería ingresada al taller.`, 'Email');
   avisarOrden(ordId); // no se espera: el aviso no debe demorar la respuesta
   return res.status(201).json({ id: ordId });
@@ -933,6 +1267,11 @@ app.post('/api/ordenes/:id/cotizacion', authRequired, permisoRequerido('cotizar'
       [cotId, o.id, montoN, JSON.stringify(detalleCot), JSON.stringify(actorDe(req))]
     );
     await pushEvento(client, o.id, 'cotizacion', `Cotización generada por ${fmtARS.format(montoN)}.`, actorDe(req));
+  });
+  await auditar({
+    req, tabla: 'ordenes', registroId: orden.id, accion: 'cotizar',
+    antes: { monto: orden.cotizacion?.monto ?? null },
+    despues: { monto: montoN, renglones: detalleCot.servicios_costos.length + detalleCot.insumos.length },
   });
   avisarOrden(orden.id); // aviso automático: presupuesto listo
   return res.json({ ok: true });
@@ -1062,6 +1401,8 @@ app.post('/api/ordenes/:id/prueba-final', authRequired, permisoRequerido('prueba
 app.post('/api/ordenes/:id/entregar', authRequired, permisoRequerido('entregar'), async (req, res) => {
   const { monto_cobrado, garantia_meses, garantia_ciclos, medio_pago } = req.body || {};
   const medioT = limStr(medio_pago, 40);
+  let antes = null;
+  let despues = null;
   await tx(async (client) => {
     const o = (await client.query('SELECT * FROM ordenes WHERE id = $1', [req.params.id])).rows[0];
     if (!o) throw { status: 404, message: 'Orden no encontrada' };
@@ -1070,6 +1411,7 @@ app.post('/api/ordenes/:id/entregar', authRequired, permisoRequerido('entregar')
     const gMeses = Number(garantia_meses) || 6;
     const gCiclos = Number(garantia_ciclos) || 100;
     const vence = new Date(Date.now() + gMeses * 30.44 * 86400000).toISOString();
+    antes = { estado: o.estado, monto_cobrado: o.monto_cobrado, garantia: o.garantia, medio_pago: o.medio_pago };
     const upd = await client.query(
       `UPDATE ordenes SET estado = 'delivered', monto_cobrado = $2, fecha_entrega = $3, garantia = $4::jsonb, medio_pago = $5
        WHERE id = $1 AND estado = 'ready'`,
@@ -1080,6 +1422,11 @@ app.post('/api/ordenes/:id/entregar', authRequired, permisoRequerido('entregar')
     await pushEvento(client, o.id, 'entregada',
       `Batería entregada al cliente. ${fmtARS.format(monto)} cobrados${medioT ? ` (${medioT})` : ''}. Garantía ${gMeses} meses / ${gCiclos} ciclos.`,
       actorDe(req));
+    despues = { estado: 'delivered', monto_cobrado: monto, garantia: { meses: gMeses, ciclos: gCiclos, vence }, medio_pago: medioT || null };
+  });
+  await auditar({
+    req, tabla: 'ordenes', registroId: req.params.id, accion: 'entregar', antes, despues,
+    detalle: despues ? `cobrado ${fmtARS.format(despues.monto_cobrado)}${despues.medio_pago ? ` (${despues.medio_pago})` : ''}` : null,
   });
   notificarSinFrenar(null, req.params.id, `Orden ${req.params.id}: batería entregada y cobrada. Garantía activada.`, 'WhatsApp');
   return res.json({ ok: true });
@@ -1110,7 +1457,11 @@ app.post('/api/ordenes/:id/baja', authRequired, permisoRequerido('baja_orden'), 
       [bajaId, batId, o.bateria_serie, nowIso(), motivoT]
     );
     await pushEvento(client, o.id, 'baja', `Batería ${o.bateria_serie} dada de baja: ${motivoT}. Trazabilidad activa para reciclaje.`, actorDe(req));
-    return { id: bajaId, serie: o.bateria_serie };
+    return { id: bajaId, serie: o.bateria_serie, estadoAnterior: o.estado };
+  });
+  await auditar({
+    req, tabla: 'ordenes', registroId: req.params.id, accion: 'dar_de_baja',
+    antes: { estado: baja?.estadoAnterior }, despues: { estado: 'cancelled', baja: baja?.id, motivo: motivoT },
   });
   return res.json({ ok: true, baja });
 });
@@ -1126,11 +1477,18 @@ app.post('/api/ordenes/:id/transition', authRequired, permisoRequerido('crear_or
   if (['delivered', 'cancelled'].includes(target) && !esAdmin(req)) {
     return res.status(403).json({ error: 'Entregar o cancelar una orden es una acción de administrador' });
   }
+  let estadoAnterior = null;
   await tx(async (client) => {
     const o = (await client.query('SELECT * FROM ordenes WHERE id = $1', [req.params.id])).rows[0];
     if (!o) throw { status: 404, message: 'Orden no encontrada' };
     if (!puedeEscribirOrden(req, o)) throw { status: 403, message: 'Sin permisos para esta orden' };
+    estadoAnterior = o.estado;
     await transition(client, o, target, limStr(detalle, 500), actorDe(req));
+  });
+  await auditar({
+    req, tabla: 'ordenes', registroId: req.params.id, accion: 'cambiar_estado',
+    antes: { estado: estadoAnterior }, despues: { estado: target },
+    detalle: limStr(detalle, 300) || null,
   });
   return res.json({ ok: true });
 });
@@ -1198,6 +1556,7 @@ app.patch('/api/insumos/:id', authRequired, permisoRequerido('editar_insumos'), 
   if (!campos.length) return res.status(400).json({ error: 'No hay nada para actualizar' });
   args.push(actual.id);
   const upd = await one(`UPDATE insumos SET ${campos.join(', ')} WHERE id = $${args.length} RETURNING *`, args);
+  await auditar({ req, tabla: 'insumos', registroId: actual.id, accion: 'editar', antes: actual, despues: upd });
   return res.json(upd);
 });
 
@@ -1213,6 +1572,10 @@ app.patch('/api/insumos/:id/stock', authRequired, permisoRequerido('mover_stock'
       motivo: limStr(motivo, 200) || 'Ingreso de stock', actor: actorDe(req),
     });
     return upd;
+  });
+  await auditar({
+    req, tabla: 'insumos', registroId: r.id, accion: 'ingreso_stock',
+    antes: { stock: r.stock - cant }, despues: { stock: r.stock }, detalle: limStr(motivo, 200) || null,
   });
   return res.json({ ok: true, stock: r.stock });
 });
@@ -1234,6 +1597,10 @@ app.post('/api/insumos/:id/ajuste', authRequired, permisoRequerido('mover_stock'
       motivo: motivoT, actor: actorDe(req),
     });
     return nuevo - previo.stock;
+  });
+  await auditar({
+    req, tabla: 'insumos', registroId: previo.id, accion: 'ajuste_stock',
+    antes: { stock: previo.stock }, despues: { stock: nuevo }, detalle: motivoT,
   });
   return res.json({ ok: true, stock: nuevo, diferencia });
 });
@@ -1289,6 +1656,10 @@ app.post('/api/clientes', authRequired, permisoRequerido('crear_clientes'), asyn
     if (e.code === '23505') return res.status(409).json({ error: 'Ya hay un cliente cargado con ese email.' });
     throw e;
   }
+  await auditar({
+    req, tabla: 'clientes', registroId: id, accion: 'crear',
+    despues: { nombre: nombreT, email: emailT, telefono: limStr(telefono, 40), tipo: normalizarTipoCliente(tipo) },
+  });
   return res.status(201).json({ id });
 });
 
@@ -1328,6 +1699,7 @@ app.patch('/api/clientes/:id', authRequired, permisoRequerido('editar_clientes')
   args.push(actual.id);
   try {
     const upd = await one(`UPDATE clientes SET ${campos.join(', ')} WHERE id = $${args.length} RETURNING *`, args);
+    await auditar({ req, tabla: 'clientes', registroId: actual.id, accion: 'editar', antes: actual, despues: upd });
     return res.json(upd);
   } catch (e) {
     if (e.code === '23505') return res.status(409).json({ error: 'Ese email ya lo usa otro cliente.' });
@@ -1353,6 +1725,7 @@ app.delete('/api/clientes/:id', authRequired, permisoRequerido('baja_clientes'),
   const upd = await one('UPDATE clientes SET deleted_at = now(), deleted_by = $2 WHERE id = $1 RETURNING *', [
     c.id, actorDe(req)?.email || 'panel',
   ]);
+  await auditar({ req, tabla: 'clientes', registroId: c.id, accion: 'dar_de_baja', antes: c, despues: upd });
   return res.json(upd);
 });
 
@@ -1367,6 +1740,7 @@ app.post('/api/clientes/:id/restaurar', authRequired, permisoRequerido('baja_cli
     return res.status(409).json({ error: `No se puede restaurar: ese email ahora es de ${repetido.nombre}. Cambiale el email a uno de los dos primero.` });
   }
   const upd = await one('UPDATE clientes SET deleted_at = NULL, deleted_by = NULL WHERE id = $1 RETURNING *', [c.id]);
+  await auditar({ req, tabla: 'clientes', registroId: c.id, accion: 'restaurar', antes: c, despues: upd });
   return res.json(upd);
 });
 
@@ -1392,6 +1766,7 @@ app.post('/api/clientes/find-or-create', authRequired, permisoRequerido('crear_c
     [id, nombreT, 'particular', limStr(telefono, 40), nombreT, emailT, limStr(empresa, 120)]
   );
   const creado = await one('SELECT id FROM clientes WHERE LOWER(email) = LOWER($1)', [emailT]);
+  await auditar({ req, tabla: 'clientes', registroId: creado?.id || id, accion: 'crear_desde_bandeja', despues: { nombre: nombreT, email: emailT } });
   return res.status(201).json({ id: creado?.id || id });
 });
 
@@ -1657,12 +2032,15 @@ app.post('/api/usuarios', authRequired, permisoRequerido('crear_usuarios'), asyn
     'INSERT INTO usuarios (id, email, password_hash, rol, tecnico_id, cliente_id, activo, permisos) VALUES ($1,$2,$3,$4,$5,$6,true,$7)',
     [id, emailT, await bcrypt.hash(String(password), BCRYPT_ROUNDS), rol, tecnico_id ? limStr(tecnico_id, 32) : null, cliente_id ? limStr(cliente_id, 32) : null, permisosT]
   );
+  await auditar({ req, tabla: 'usuarios', registroId: id, accion: 'crear', despues: { email: emailT, rol, tecnico_id, cliente_id, permisos: permisosT } });
   return res.status(201).json({ id });
 });
 
 app.patch('/api/usuarios/:id', authRequired, permisoRequerido('editar_usuarios'), async (req, res) => {
   const { email, password, rol, tecnico_id, cliente_id, activo, permisos } = req.body || {};
   const isSelf = req.params.id === req.user.sub;
+  const antes = await one('SELECT * FROM usuarios WHERE id = $1', [req.params.id]);
+  if (!antes) return res.status(404).json({ error: 'Usuario no encontrado' });
   const sets = [];
   const params = [];
   if (email !== undefined) {
@@ -1709,7 +2087,11 @@ app.patch('/api/usuarios/:id', authRequired, permisoRequerido('editar_usuarios')
   }
   if (!sets.length) return res.status(400).json({ error: 'Sin campos para actualizar' });
   params.push(req.params.id);
-  await query(`UPDATE usuarios SET ${sets.join(', ')} WHERE id = $${params.length}`, params);
+  const despues = await one(`UPDATE usuarios SET ${sets.join(', ')} WHERE id = $${params.length} RETURNING *`, params);
+  await auditar({
+    req, tabla: 'usuarios', registroId: antes.id, accion: 'editar', antes, despues,
+    detalle: password ? 'incluye cambio de contraseña' : null,
+  });
   return res.json({ ok: true });
 });
 
@@ -1721,6 +2103,7 @@ app.delete('/api/usuarios/:id', authRequired, permisoRequerido('borrar_usuarios'
   // Baja logica: se conserva la ficha (y el rastro de quien tenia acceso) y se
   // puede reactivar. Ademas el middleware rechaza el token de un usuario inactivo.
   await query('UPDATE usuarios SET activo = false WHERE id = $1', [u.id]);
+  await auditar({ req, tabla: 'usuarios', registroId: u.id, accion: 'dar_de_baja', antes: u, despues: { ...u, activo: false } });
   return res.json({ ok: true, baja: true });
 });
 
@@ -1773,6 +2156,7 @@ app.put('/api/cotizador', authRequired, permisoRequerido('config_cotizador'), as
   }
   // Config + historial en una transaccion: la config vigente y su version
   // tienen que guardarse juntas (si no, quedaba un cambio sin trazabilidad).
+  const previa = await configCotizador({ forzar: true });
   await tx(async (client) => {
     await client.query(
       `INSERT INTO cotizador_config (id, config, actualizado_en, actualizado_por)
@@ -1787,6 +2171,7 @@ app.put('/api/cotizador', authRequired, permisoRequerido('config_cotizador'), as
     );
   });
   await configCotizador({ forzar: true });
+  await auditar({ req, tabla: 'cotizador_config', registroId: 'actual', accion: 'editar', antes: previa.config, despues: config });
   return res.json({ ok: true, config, actualizadoPor: req.user.email });
 });
 
@@ -2063,30 +2448,83 @@ async function guardarMensaje({ conversacion, direccion, tipo, texto, plantilla 
   });
 }
 
-// Reserva el aviso ANTES de mandarlo: si otro proceso ya lo reservo o ya lo
-// mando, no se vuelve a enviar. (Antes se enviaba y recien despues se anotaba,
-// asi que dos procesos podian mandar la misma plantilla dos veces.)
+// Guarda el mensaje, lo encola y hace un intento inmediato. Si Meta falla por
+// algo transitorio, la fila queda en la cola y el worker lo reintenta; si el
+// error es definitivo, se responde 400 como antes. La respuesta HTTP la arma
+// el que llama (asi el mismo camino sirve para texto, plantilla o adjunto).
+async function enviarPorOutbox(res, {
+  conv, tipo, texto, plantilla = null, parametros = [], media = null,
+}) {
+  const mensajeId = await guardarMensaje({
+    conversacion: conv,
+    direccion: 'out',
+    tipo: tipo === 'imagen' ? 'image' : tipo === 'documento' ? 'document' : (tipo === 'plantilla' ? 'template' : 'text'),
+    texto,
+    plantilla,
+    estado: 'en_cola',
+    mediaUrl: media?.url || null,
+    mediaTipo: media?.tipo || null,
+    mediaNombre: media?.nombre || null,
+  });
+  let envioId;
+  try {
+    envioId = await encolar({
+      conversacionId: conv.id,
+      telefono: conv.telefono,
+      tipo,
+      texto,
+      plantilla,
+      parametros,
+      mediaPath: media?.path || null,
+      mediaMime: media?.mime || null,
+      mediaNombre: media?.nombre || null,
+      mensajeId,
+    });
+  } catch (e) {
+    // No se pudo ni encolar: el mensaje queda en la bandeja marcado con error,
+    // no "en cola" para siempre.
+    if (mensajeId) {
+      await query("UPDATE wa_mensajes SET estado = 'error', error = $2 WHERE id = $1", [mensajeId, `No se pudo encolar: ${e.message}`]);
+    }
+    return res.status(500).json({ error: `No se pudo encolar el mensaje: ${e.message}` });
+  }
+  const r = await procesarEnvio(envioId);
+  const base = { conversacion_id: conv.id, media_url: media?.url || null, media_tipo: media?.tipo || null };
+  if (r.estado === 'enviado') return res.json({ ok: true, id: r.waMessageId || null, estado: 'enviado', ...base });
+  if (r.estado === 'pendiente') {
+    return res.status(202).json({
+      ok: true, enCola: true, estado: 'pendiente', ...base,
+      aviso: 'WhatsApp no respondió: el mensaje quedó en cola y se reintenta solo.',
+    });
+  }
+  if (r.estado === 'incierto') {
+    return res.status(202).json({
+      ok: true, enCola: true, incierto: true, estado: 'incierto', ...base,
+      aviso: 'No sabemos si el mensaje llegó. Revisalo en Sistema → Envíos antes de reenviarlo.',
+    });
+  }
+  return res.status(400).json({ ok: false, error: r.error || 'No se pudo enviar el mensaje', estado: r.estado });
+}
+
+
 async function reservarAviso(ordenId, plantilla) {
   const r = await one(
     `INSERT INTO wa_avisos_log (orden_id, plantilla, estado) VALUES ($1, $2, 'enviando')
      ON CONFLICT (orden_id, plantilla) DO UPDATE SET estado = 'enviando', error = NULL, fecha = now()
        WHERE wa_avisos_log.estado <> 'enviado'
          AND (wa_avisos_log.estado <> 'enviando' OR wa_avisos_log.fecha < now() - interval '10 minutes')
+         -- Si el aviso todavia esta en la cola (o quedo sin confirmar), no se
+         -- encola otro: evita el mensaje duplicado cuando el reintento tarda.
+         AND NOT EXISTS (
+           SELECT 1 FROM wa_outbox o
+            WHERE o.aviso_orden_id = $1 AND o.aviso_plantilla = $2
+              AND o.estado IN ('pendiente', 'enviando', 'incierto')
+              AND o.creado_en > now() - interval '1 day'
+         )
      RETURNING orden_id`,
     [ordenId, plantilla]
   );
   return Boolean(r);
-}
-
-// Cierra la reserva: si salio queda 'enviado' (y no se repite nunca mas); si
-// fallo se libera para poder reintentar. El intento fallido igual queda en la
-// bandeja como mensaje con error, asi el taller lo ve.
-async function cerrarAviso(ordenId, plantilla, envio) {
-  if (envio.ok) {
-    await query("UPDATE wa_avisos_log SET estado = 'enviado', error = NULL, fecha = now() WHERE orden_id = $1 AND plantilla = $2", [ordenId, plantilla]);
-  } else {
-    await query('DELETE FROM wa_avisos_log WHERE orden_id = $1 AND plantilla = $2', [ordenId, plantilla]);
-  }
 }
 
 // Subida de adjuntos del chat: fotos o PDF, hasta 8 MB.
@@ -2111,8 +2549,8 @@ async function configAvisos({ forzar = false } = {}) {
   return valor;
 }
 
-// Manda la plantilla que corresponde al estado actual de la orden, si el aviso
-// esta prendido, el cliente tiene telefono y no se le haya mandado ya.
+// Manda (encola) la plantilla que corresponde al estado actual de la orden, si
+// el aviso esta prendido, el cliente tiene telefono y no se le haya mandado ya.
 // Nunca lanza: un aviso fallido no puede voltear la operacion del taller.
 async function avisarOrden(ordenId) {
   try {
@@ -2131,16 +2569,24 @@ async function avisarOrden(ordenId) {
     if (!conv) return;
     if (!(await reservarAviso(orden.id, plantilla))) return; // ya se mando (o lo esta mandando otro)
     const parametros = parametrosAviso(orden.estado, { cliente, orden, sitio: PUBLIC_URL });
-    const envio = await enviarPlantilla({ to: cliente.telefono, nombre: plantilla, idioma: 'es_AR', parametros });
-    await guardarMensaje({
-      conversacion: conv, direccion: 'out', tipo: 'template', plantilla,
-      texto: resumenAviso(orden.estado, { orden }),
-      waMessageId: envio.id || null, estado: envio.ok ? 'enviado' : 'error', error: envio.ok ? null : envio.error,
+    const texto = resumenAviso(orden.estado, { orden });
+    const mensajeId = await guardarMensaje({
+      conversacion: conv, direccion: 'out', tipo: 'template', plantilla, texto, estado: 'en_cola',
     });
-    await cerrarAviso(orden.id, plantilla, envio);
-    if (!envio.ok) console.warn(`[whatsapp] aviso ${plantilla} de ${orden.id} no salio: ${envio.error}`);
+    try {
+      // Sale por la cola: si Meta esta caido, el aviso no se pierde.
+      await encolar({
+        conversacionId: conv.id, telefono: cliente.telefono, tipo: 'plantilla',
+        plantilla, parametros, texto, mensajeId,
+        avisoOrdenId: orden.id, avisoPlantilla: plantilla,
+      });
+    } catch (e) {
+      // Si no se pudo encolar, se libera la reserva para el proximo intento.
+      await query('DELETE FROM wa_avisos_log WHERE orden_id = $1 AND plantilla = $2', [orden.id, plantilla]);
+      throw e;
+    }
   } catch (e) {
-    console.error('[whatsapp] error mandando el aviso:', e.message);
+    console.error('[whatsapp] error encolando el aviso:', e.message);
   }
 }
 
@@ -2165,7 +2611,7 @@ app.put('/api/whatsapp/avisos', authRequired, permisoRequerido('avisos_whatsapp'
 // Revision de garantias: avisa a los clientes cuya garantia vence en los
 // proximos 30 dias. Se corre sola una vez por dia y tambien a mano desde el panel.
 async function avisarGarantias() {
-  const resumen = { revisadas: 0, enviadas: 0, errores: 0, sinTelefono: 0, apagado: false, detalle: [] };
+  const resumen = { revisadas: 0, encoladas: 0, errores: 0, sinTelefono: 0, apagado: false, detalle: [] };
   try {
     const activos = await configAvisos();
     if (!activos.garantia) return { ...resumen, apagado: true };
@@ -2184,17 +2630,22 @@ async function avisarGarantias() {
       if (await estaEnBaja(o.cliente_telefono)) continue; // pidio no recibir mas mensajes
       if (!(await reservarAviso(o.id, PLANTILLA_GARANTIA))) continue; // ya se aviso
       const parametros = parametrosGarantia({ cliente: { nombre: o.cliente_nombre }, orden: o });
-      const envio = await enviarPlantilla({ to: o.cliente_telefono, nombre: PLANTILLA_GARANTIA, idioma: 'es_AR', parametros });
-      await guardarMensaje({
+      const texto = resumenAviso('garantia', { orden: o });
+      const mensajeId = await guardarMensaje({
         conversacion: conv, direccion: 'out', tipo: 'template', plantilla: PLANTILLA_GARANTIA,
-        texto: resumenAviso('garantia', { orden: o }),
-        waMessageId: envio.id || null, estado: envio.ok ? 'enviado' : 'error', error: envio.ok ? null : envio.error,
+        texto, estado: 'en_cola',
       });
-      await cerrarAviso(o.id, PLANTILLA_GARANTIA, envio);
-      if (envio.ok) {
-        resumen.enviadas += 1;
+      try {
+        await encolar({
+          conversacionId: conv.id, telefono: o.cliente_telefono, tipo: 'plantilla',
+          plantilla: PLANTILLA_GARANTIA, parametros, texto, mensajeId,
+          avisoOrdenId: o.id, avisoPlantilla: PLANTILLA_GARANTIA,
+        });
+        resumen.encoladas += 1;
         resumen.detalle.push(`${o.bateria_serie} (${o.id})`);
-      } else {
+      } catch (e) {
+        console.error('[whatsapp] no se pudo encolar el aviso de garantía:', e.message);
+        await query('DELETE FROM wa_avisos_log WHERE orden_id = $1 AND plantilla = $2', [o.id, PLANTILLA_GARANTIA]);
         resumen.errores += 1;
       }
     }
@@ -2562,6 +3013,12 @@ app.patch('/api/whatsapp/conversaciones/:id', authRequired, permisoRequerido('cr
       [histId, conv.id, cambioEtapa.anterior, cambioEtapa.nueva, montoFinal, cambioEtapa.motivo, actorDe(req)?.email || 'panel']
     );
   }
+  await auditar({
+    req, tabla: 'wa_conversaciones', registroId: conv.id,
+    accion: cambioEtapa ? 'mover_etapa' : 'editar',
+    antes: conv, despues: upd,
+    detalle: cambioEtapa ? `${cambioEtapa.anterior} → ${cambioEtapa.nueva}${cambioEtapa.motivo ? ` (${cambioEtapa.motivo})` : ''}` : null,
+  });
   return res.json(upd);
 });
 
@@ -2755,13 +3212,8 @@ app.post('/api/whatsapp/conversaciones/:id/responder', authRequired, permisoRequ
   if (await estaEnBaja(conv.telefono)) {
     return res.status(400).json({ error: 'Este cliente pidió no recibir más mensajes (baja de WhatsApp). Si querés volver a escribirle, habilitá el envío desde el hilo.' });
   }
-  const envio = await enviarTexto({ to: conv.telefono, texto });
-  await guardarMensaje({
-    conversacion: conv, direccion: 'out', tipo: 'text', texto,
-    waMessageId: envio.id || null, estado: envio.ok ? 'enviado' : 'error', error: envio.ok ? null : envio.error,
-  });
-  if (!envio.ok) return res.status(400).json({ error: envio.error });
-  return res.json({ ok: true, id: envio.id });
+  // Sale por la cola: si Meta falla por red, no se pierde la respuesta.
+  return enviarPorOutbox(res, { conv, tipo: 'texto', texto });
 });
 
 // Habilitar o dar de baja el envío de mensajes para un cliente.
@@ -2772,6 +3224,12 @@ app.post('/api/whatsapp/conversaciones/:id/optin', authRequired, permisoRequerid
   const fila = await registrarConsentimiento({
     telefono: conv.telefono, estado, motivo: req.body?.motivo || (estado === 'baja' ? 'Dado de baja desde el panel' : 'Habilitado desde el panel'),
     fuente: 'panel', usuario: actorDe(req)?.email,
+  });
+  await auditar({
+    req, tabla: 'wa_conversaciones', registroId: conv.id,
+    accion: estado === 'baja' ? 'opt_out' : 'opt_in',
+    antes: { estado: conv.estado }, despues: { consentimiento: estado },
+    detalle: req.body?.motivo || null,
   });
   return res.json(fila);
 });
@@ -2802,26 +3260,29 @@ app.get('/api/whatsapp/export', authRequired, requireRol('admin'), async (req, r
       LIMIT 20000`,
     args
   );
-  const escapar = (v) => `"${String(v ?? '').replace(/"/g, '""').replace(/[\r\n]+/g, ' ')}"`;
-  const encabezado = ['conversacion', 'fecha', 'direccion', 'telefono', 'cliente', 'tipo', 'texto', 'estado', 'plantilla', 'archivo'].join(';');
-  const csv = [
+  const encabezado = ['conversacion', 'fecha', 'direccion', 'telefono', 'cliente', 'tipo', 'texto', 'estado', 'plantilla', 'archivo'];
+  const csv = filasCsv([
     encabezado,
     ...filas.map((f) => [
       f.conversacion_id,
       f.fecha instanceof Date ? f.fecha.toISOString() : f.fecha,
       f.direccion === 'in' ? 'recibido' : 'enviado',
       f.telefono, f.cliente, f.tipo, f.texto, f.estado, f.plantilla, f.media_url,
-    ].map(escapar).join(';')),
-  ].join('\n');
+    ]),
+  ], { separador: ';' });
   await query(
     'INSERT INTO wa_export_log (id, usuario, desde, hasta, filas) VALUES ($1,$2,$3,$4,$5)',
     [await nextId('wex'), actorDe(req)?.email || 'panel', desde, hasta, filas.length]
   );
   // Auditoria minima en el log del servidor: quien exporto y con que filtros.
   console.log(`[whatsapp] export CSV por ${actorDe(req)?.email || 'panel'}: desde=${desde ? desde.toISOString() : '-'} hasta=${hasta ? hasta.toISOString() : '-'} conversacion=${conversacion || '-'} filas=${filas.length}`);
+  await auditar({
+    req, tabla: 'wa_mensajes', accion: 'exportar',
+    detalle: `${filas.length} mensaje(s) · desde ${desde ? desde.toISOString() : '-'} hasta ${hasta ? hasta.toISOString() : '-'} · conversación ${conversacion || 'todas'}`,
+  });
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="bertika-whatsapp-${new Date().toISOString().slice(0, 10)}.csv"`);
-  return res.send(`\uFEFF${csv}`);
+  return res.send(csv);
 });
 
 // Mandar una foto o un PDF dentro de la conversacion.
@@ -2835,21 +3296,22 @@ app.post('/api/whatsapp/conversaciones/:id/adjunto', authRequired, permisoRequer
   const texto = limStr(req.body?.texto, 1000);
   const esPdf = req.file.buffer.subarray(0, 4).toString('latin1') === '%PDF';
   const nombre = limStr(req.file.originalname, 120) || (esPdf ? 'documento.pdf' : 'foto.jpg');
-  const subida = await subirMedia({ buffer: req.file.buffer, mime: esPdf ? 'application/pdf' : req.file.mimetype, nombre });
-  if (!subida.ok) return res.status(400).json({ error: subida.error });
-  const envio = esPdf
-    ? await enviarDocumento({ to: conv.telefono, mediaId: subida.id, texto, nombre })
-    : await enviarImagen({ to: conv.telefono, mediaId: subida.id, texto });
-  // Se guarda la copia local para poder mostrarla en la bandeja.
+  // Se guarda la copia local para mostrarla en la bandeja y para poder
+  // reintentar: el worker vuelve a subirla a Meta si el primer intento falla.
   const local = guardarArchivoChat({ buffer: req.file.buffer, mime: req.file.mimetype, nombre });
-  await guardarMensaje({
-    conversacion: conv, direccion: 'out', tipo: esPdf ? 'document' : 'image',
+  if (!local) return res.status(400).json({ error: 'Archivo inválido: solo se permiten fotos (jpg, png, webp, gif) o PDF.' });
+  return enviarPorOutbox(res, {
+    conv,
+    tipo: esPdf ? 'documento' : 'imagen',
     texto: texto || (esPdf ? `[documento: ${nombre}]` : '[foto]'),
-    waMessageId: envio.id || null, estado: envio.ok ? 'enviado' : 'error', error: envio.ok ? null : envio.error,
-    mediaUrl: local?.url || null, mediaTipo: local?.tipo || null, mediaNombre: local?.nombre || null,
+    media: {
+      url: local.url,
+      tipo: local.tipo,
+      nombre: local.nombre,
+      mime: esPdf ? 'application/pdf' : req.file.mimetype,
+      path: path.join(UPLOAD_DIR, local.archivo),
+    },
   });
-  if (!envio.ok) return res.status(400).json({ error: envio.error });
-  return res.json({ ok: true, id: envio.id, media_url: local?.url || null, media_tipo: local?.tipo || null });
 });
 
 // Enviar a un numero suelto (prueba del canal o aviso puntual).
@@ -2862,13 +3324,7 @@ app.post('/api/whatsapp/enviar', authRequired, permisoRequerido('enviar_whatsapp
   if (await estaEnBaja(conv.telefono)) {
     return res.status(400).json({ error: 'Este cliente pidió no recibir más mensajes (baja de WhatsApp).' });
   }
-  const envio = await enviarTexto({ to: conv.telefono, texto });
-  await guardarMensaje({
-    conversacion: conv, direccion: 'out', tipo: 'text', texto,
-    waMessageId: envio.id || null, estado: envio.ok ? 'enviado' : 'error', error: envio.ok ? null : envio.error,
-  });
-  if (!envio.ok) return res.status(400).json({ error: envio.error });
-  return res.json({ ok: true, id: envio.id, conversacion_id: conv.id });
+  return enviarPorOutbox(res, { conv, tipo: 'texto', texto });
 });
 
 // Verificacion del webhook: Meta llama una vez al configurarlo y le devolvemos
@@ -2887,6 +3343,9 @@ app.post('/api/whatsapp/webhook', async (req, res) => {
   const firma = verificarFirma(req.rawBody, req.get('x-hub-signature-256'));
   if (!firma.ok) {
     console.warn('[whatsapp] aviso rechazado:', firma.error);
+    // Un aviso rechazado puede ser un ataque o una clave mal configurada.
+    // Se avisa (con throttle de 30 min) sin frenar la respuesta a Meta.
+    alertarSistema('webhook_rechazado', `Se rechazó un aviso de WhatsApp: ${firma.error}`).catch(() => {});
     return res.status(403).json({ error: firma.error });
   }
   res.sendStatus(200); // Meta reintenta si no contestamos rapido
@@ -2983,7 +3442,7 @@ function guardarArchivoChat({ buffer, mime, nombre = '' }) {
   const archivo = `chat-${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
   writeFileSync(path.join(UPLOAD_DIR, archivo), buffer);
   const tipo = ext === '.pdf' ? 'documento' : (String(mime || '').split('/')[1] || 'imagen');
-  return { url: `${PUBLIC_URL}/uploads/${archivo}`, tipo, nombre: limStr(nombre, 120) || `archivo${ext}` };
+  return { url: `${PUBLIC_URL}/uploads/${archivo}`, archivo, tipo, nombre: limStr(nombre, 120) || `archivo${ext}` };
 }
 
 const upload = multer({
@@ -3018,8 +3477,13 @@ app.post('/api/diagnostico/:orden_id/fotos', authRequired, upload.array('fotos',
 // ---------- server ----------
 const PORT = process.env.PORT || 3001;
 app.use((err, req, res, _next) => {
-  console.error('Error:', err.message);
-  return res.status(err.status || 400).json({ error: err.message });
+  const status = err.status || 400;
+  // Log con el request-id: el mismo que ve el usuario en la respuesta.
+  console.error(JSON.stringify({
+    nivel: 'error', fecha: new Date().toISOString(), reqId: req.requestId,
+    ruta: req.path, status, mensaje: err.message, usuario: req.user?.email || null,
+  }));
+  return res.status(status).json({ error: err.message, reqId: req.requestId });
 });
 
 asegurarCodigos()
@@ -3027,6 +3491,10 @@ asegurarCodigos()
     app.listen(PORT, '127.0.0.1', () => {
       console.log(`Bertika API escuchando en http://127.0.0.1:${PORT}`);
     });
+    // Worker de la cola de WhatsApp y monitoreo del sistema. Se pueden apagar
+    // por entorno (tests de integracion) para que la corrida sea determinista.
+    if (process.env.OUTBOX_WORKER !== '0') iniciarOutbox();
+    if (process.env.MONITOREO !== '0') iniciarMonitoreo();
   })
   .catch((err) => {
     console.error('Fallo la migracion de codigos:', err.message);

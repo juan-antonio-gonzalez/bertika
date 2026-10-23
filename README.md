@@ -11,8 +11,32 @@ npm install
 npm run dev      # desarrollo en http://localhost:5173
 npm run build    # produccion en dist/
 npm run preview  # servir el build
-npx oxlint       # lint
+npm run lint     # oxlint sobre src, api y scripts
 ```
+
+## Tests y CI
+
+```bash
+npm test                  # lógica pura: cotizador, CRM, permisos, CSV, auditoría/outbox
+TEST_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/bertika_test \
+  npm run test:integracion  # API + PostgreSQL real (la base se borra y recrea)
+```
+
+Los tests de integración levantan la API, usan un **Meta simulado** (no gastan mensajes)
+y cubren login, permisos, auditoría, outbox con reintentos, export CSV y webhook. En GitHub
+Actions corre todo (`.github/workflows/ci.yml`) con un servicio PostgreSQL 16.
+
+## Robustez operativa (Fase 1)
+
+- **Outbox de WhatsApp**: todo mensaje se guarda antes de enviarse; los errores de red,
+  429 y 5xx se reintentan con espera creciente. Los errores de datos no se insisten y los
+  timeouts quedan "sin confirmar" para no duplicar. Panel: **Sistema → Salud y auditoría → Envíos**.
+- **Auditoría genérica**: quién cambió qué, con antes/después, IP y `request-id`; nunca guarda
+  contraseñas, hashes ni tokens. Panel: **Sistema → Salud y auditoría → Auditoría**.
+- **Salud y alertas**: `GET /api/health` público para uptime; monitoreo cada 5 min de base,
+  cola, respaldo y errores 500, con aviso por email (`ALERTAS_EMAIL`) o webhook.
+- **Export CSV seguro**: neutraliza fórmulas de Excel (`=`, `+`, `-`, `@`) en Reportes y en
+  el export de WhatsApp.
 
 ## Stack
 
@@ -49,6 +73,8 @@ Las paginas publicas (contacto, seguimiento, tracker, cotizacion) y los paneles 
 | `/cliente` | Tracker, cotizaciones, historial, flotilla, garantias, agenda |
 | `/tracker/:orden_id` | Seguimiento publico sin login |
 | `/reportes`, `/usuarios` | Reportes y alta/edicion de usuarios (solo admin) |
+| `/respaldos` | Respaldo manual de la base (solo admin) |
+| `/sistema` | Salud del servidor, cola de envíos de WhatsApp y auditoría (permiso `sistema`) |
 | `/settings` | Perfil y cambio de contrasena del usuario activo |
 
 ## Estados de la orden
@@ -71,4 +97,5 @@ Datos semilla precargados (5 tecnicos, 5 clientes, 9 baterias, 10+ insumos, 8 or
 6. Admin entrega, registra cobro y garantia (meses/ciclos) > la bateria pasa a `en_garantia`.
 7. Baterias no reparables se dan de baja con trazabilidad para reciclaje responsable.
 
-> Nota: en fases posteriores se integraran WhatsApp/email transaccionales, CFDI, pagos y lecturas automaticas de equipo de diagnostico.
+> Nota: WhatsApp (Meta Cloud API) y email transaccional ya están integrados. La agenda de
+> visitas, CFDI/facturación, pagos y lecturas automáticas del equipo siguen pendientes.

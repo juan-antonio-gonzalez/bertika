@@ -43,10 +43,16 @@ export async function seedDatabase() {
     // reutilizando ids con datos viejos encima.
     for (const t of [
       'wa_notas', 'wa_mensajes', 'wa_conversaciones', 'wa_avisos_log', 'wa_avisos_config',
+      'wa_tareas', 'wa_etapa_historial', 'wa_etiquetas', 'wa_respuestas', 'wa_export_log',
+      'wa_outbox', 'alertas_log', 'auditoria',
       'cotizaciones_historial', 'insumos_movimientos', 'cotizaciones_visita',
       'cotizador_eventos', 'cotizador_config_historial', 'cotizador_config',
       'usuarios', 'bajas', 'notificaciones', 'ordenes', 'insumos', 'baterias', 'clientes', 'tecnicos', 'contadores',
     ]) {
+      // En una base nueva las tablas del CRM todavia no existen (las crea la
+      // migracion del servidor): se saltean sin abortar la transaccion.
+      const existe = await client.query('SELECT to_regclass($1) AS tabla', [`public.${t}`]);
+      if (!existe.rows[0]?.tabla) continue;
       await client.query(`DELETE FROM ${t}`);
     }
 

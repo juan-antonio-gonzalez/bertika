@@ -11,7 +11,9 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
 const VERSION = process.env.WHATSAPP_API_VERSION || 'v22.0';
-const BASE = 'https://graph.facebook.com';
+// Se puede apuntar a un Meta simulado en los tests de integración. En
+// producción queda el host real de Graph API.
+const BASE = process.env.WHATSAPP_API_BASE || 'https://graph.facebook.com';
 
 export function configWhatsApp() {
   const token = process.env.WHATSAPP_TOKEN || '';
@@ -99,7 +101,7 @@ export function mensajeDeError(err) {
 
 async function llamarMeta(ruta, cuerpo, { fetchImpl = fetch, timeoutMs = 15000 } = {}) {
   const { token, version } = configWhatsApp();
-  if (!token) return { ok: false, error: 'WhatsApp no está configurado (falta la clave).' };
+  if (!token) return { ok: false, error: 'WhatsApp no está configurado (falta la clave).', code: 'SIN_CONFIG', transitorio: false };
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
@@ -110,10 +112,19 @@ async function llamarMeta(ruta, cuerpo, { fetchImpl = fetch, timeoutMs = 15000 }
       signal: ctrl.signal,
     });
     const json = await res.json().catch(() => null);
-    if (!res.ok) return { ok: false, error: mensajeDeError(json?.error || json), code: json?.error?.code || null };
+    if (!res.ok) {
+      const code = json?.error?.code || null;
+      // 429 y 5xx son del servidor de Meta: se pueden reintentar. Los errores
+      // de datos (plantilla, número, ventana de 24 h) no mejoran reintentando.
+      return { ok: false, error: mensajeDeError(json?.error || json), code, http: res.status, transitorio: res.status === 429 || res.status >= 500 };
+    }
     return { ok: true, id: json?.messages?.[0]?.id || null, json };
   } catch (e) {
-    return { ok: false, error: e?.name === 'AbortError' ? 'Meta no respondió a tiempo.' : `No se pudo conectar con WhatsApp: ${e.message}` };
+    // Timeout: la peticion pudo haber llegado a Meta. Se marca "incierto" para
+    // que un humano decida, en vez de reintentar y arriesgar un mensaje doble.
+    if (e?.name === 'AbortError') return { ok: false, error: 'Meta no respondió a tiempo.', transitorio: false, incierto: true };
+    // Error de red antes de enviar: no salio, se puede reintentar.
+    return { ok: false, error: `No se pudo conectar con WhatsApp: ${e.message}`, transitorio: true };
   } finally {
     clearTimeout(timer);
   }
@@ -204,10 +215,18 @@ export async function subirMedia({ buffer, mime, nombre = 'archivo', fetchImpl =
       body: form,
     });
     const json = await res.json().catch(() => null);
-    if (!res.ok || !json?.id) return { ok: false, error: mensajeDeError(json?.error || json) };
+    if (!res.ok || !json?.id) {
+      return {
+        ok: false,
+        error: mensajeDeError(json?.error || json),
+        code: json?.error?.code || null,
+        http: res.status,
+        transitorio: res.status === 429 || res.status >= 500,
+      };
+    }
     return { ok: true, id: json.id };
   } catch (e) {
-    return { ok: false, error: `No se pudo subir el archivo: ${e.message}` };
+    return { ok: false, error: `No se pudo subir el archivo: ${e.message}`, transitorio: true };
   }
 }
 

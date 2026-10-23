@@ -29,7 +29,7 @@ test('el catálogo es coherente: claves únicas y con etiqueta, grupo y operaci�
 test('las secciones son los permisos de tipo ver', () => {
   assert.deepEqual(SECCIONES, PERMISOS.filter((p) => p.op === 'ver').map((p) => p.clave));
   for (const s of ['tablero', 'dashboard', 'historial', 'inventario', 'tecnicos', 'flotillas', 'garantias',
-    'baja', 'cotizador', 'whatsapp', 'clientes', 'papelera', 'tareas', 'reportes', 'usuarios', 'respaldos', 'mi_cuenta']) {
+    'baja', 'cotizador', 'whatsapp', 'clientes', 'papelera', 'tareas', 'reportes', 'usuarios', 'respaldos', 'sistema', 'mi_cuenta']) {
     assert.ok(SECCIONES.includes(s), `falta la sección ${s}`);
   }
 });
@@ -147,6 +147,7 @@ test('cada ruta del panel tiene su sección y el inicio siempre es alcanzable', 
   assert.equal(seccionDeRuta('/hub/inventario/'), 'inventario');
   assert.equal(seccionDeRuta('/reportes'), 'reportes');
   assert.equal(seccionDeRuta('/respaldos'), 'respaldos');
+  assert.equal(seccionDeRuta('/sistema'), 'sistema');
   assert.equal(seccionDeRuta('/ruta-inexistente'), null);
   const tec = { rol: 'tecnico', permisos: null };
   assert.equal(inicioDe(tec), '/hub', 'el técnico por plantilla arranca en el tablero');

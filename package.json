@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node scripts/test-cotizador.mjs && node scripts/test-whatsapp.mjs && node scripts/test-avisos.mjs && node scripts/test-crm.mjs && node scripts/test-clientes.mjs && node scripts/test-inventario.mjs && node scripts/test-integridad.mjs && node scripts/test-permisos.mjs && node scripts/test-respuestas.mjs"
+    "test": "node scripts/test-cotizador.mjs && node scripts/test-whatsapp.mjs && node scripts/test-avisos.mjs && node scripts/test-crm.mjs && node scripts/test-clientes.mjs && node scripts/test-inventario.mjs && node scripts/test-integridad.mjs && node scripts/test-permisos.mjs && node scripts/test-respuestas.mjs && node scripts/test-csv.mjs && node scripts/test-auditoria.mjs",
+    "lint": "oxlint src api scripts",
+    "test:integracion": "bash scripts/test-integracion.sh"
   },
   "dependencies": {
     "qrcode": "^1.5.4",

@@ -32,6 +32,7 @@ const CotizacionPublica = lazy(() => import('./pages/CotizacionPublica'));
 const Reportes = lazy(() => import('./pages/Reportes'));
 const Usuarios = lazy(() => import('./pages/Usuarios'));
 const Respaldos = lazy(() => import('./pages/Respaldos'));
+const Sistema = lazy(() => import('./pages/Sistema'));
 import WhatsAppFloat from './components/WhatsAppFloat';
 
 function CargandoRuta() {
@@ -151,6 +152,7 @@ export default function App() {
         <Route path="/reportes" element={<AppLayout><RequireSeccion><Reportes /></RequireSeccion></AppLayout>} />
         <Route path="/usuarios" element={<AppLayout><RequireSeccion><Usuarios /></RequireSeccion></AppLayout>} />
         <Route path="/respaldos" element={<AppLayout><RequireSeccion><Respaldos /></RequireSeccion></AppLayout>} />
+        <Route path="/sistema" element={<AppLayout><RequireSeccion><Sistema /></RequireSeccion></AppLayout>} />
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

@@ -110,6 +110,7 @@ function menuDe(rol, c, esFlotilla) {
       { to: '/usuarios', label: 'Usuarios', icon: 'users' , seccion: 'usuarios' },
       { to: '/hub/papelera', label: 'Papelera', icon: 'recycl' , seccion: 'papelera' },
       { to: '/respaldos', label: 'Respaldos', icon: 'shield' , seccion: 'respaldos' },
+      { to: '/sistema', label: 'Salud y auditoría', icon: 'gauge' , seccion: 'sistema' },
       { to: '/settings', label: 'Mi cuenta', icon: 'gear' , seccion: 'mi_cuenta' },
     ] },
   ];

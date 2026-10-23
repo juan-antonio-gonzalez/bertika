@@ -320,8 +320,29 @@ Sin firma valida el endpoint responde 403.
 - Las **notificaciones** se registran en la base (`notificaciones`). El **formulario de
   contacto** envia correo real (SMTP) y el **canal de WhatsApp** envia mensajes reales
   por la API de Meta cuando las claves estan cargadas (`scripts/whatsapp-env.sh`).
-  Los avisos automaticos por estado de la orden (plantillas) son el paso siguiente:
-  hoy los mensajes se mandan a mano desde la bandeja del Hub.
+  Los avisos automaticos por estado de la orden (plantillas) tambien existen y salen por
+  la **cola de salida**: si Meta no responde, se reintentan solos y quedan visibles en
+  **Sistema → Salud y auditoría → Envíos**.
 - La **agenda** de visitas y la emision de **CFDI/facturacion** estan pendientes;
   tampoco hay pagos ni lecturas automaticas del equipo de diagnostico.
 - El **cotizador de visita** usa tarifas provisorias en USD (`src/data/cotizadorVisita.js`).
+
+---
+
+## 11. Salud y auditoría (`/sistema`)
+
+Solo la ve quien tenga el permiso **Sistema → Salud y auditoría** (`sistema`; por
+plantilla, el administrador). Tiene tres pestanas:
+
+- **Estado**: si la base responde, cuantos envios esperan/fallaron, cuando fue el ultimo
+  respaldo, memoria y uptime del servidor, y si las alertas tienen email o webhook.
+  Se actualiza solo cada 30 segundos.
+- **Envios**: la cola de WhatsApp. Muestra que se mando, que espera reintento y que fallo,
+  con el error de Meta. El boton **Reintentar** vuelve a intentar un envio fallido o
+  "sin confirmar"; **Procesar cola** fuerza un tick del worker.
+- **Auditoria**: quien cambio que y cuando, con el antes y el despues. Se puede filtrar
+  por tabla, usuario y fecha. Nunca guarda contrasenas, hashes ni tokens.
+
+El monitor publico es `GET /api/health` (para un servicio de uptime). El servidor revisa
+cada 5 minutos la base, la cola, el respaldo y los errores 500, y avisa por email
+(`ALERTAS_EMAIL`, usa el SMTP de las consultas) o por webhook (`ALERTAS_WEBHOOK`).

@@ -202,7 +202,7 @@ export default function WhatsAppBandeja() {
       const r = await api('/whatsapp/avisos/garantias', { method: 'POST' });
       const texto = r.apagado
         ? 'El aviso de garantía está apagado'
-        : `Garantías por vencer: ${r.revisadas}. Avisadas: ${r.enviadas}${r.errores ? `, con error: ${r.errores}` : ''}${r.sinTelefono ? `, sin teléfono: ${r.sinTelefono}` : ''}`;
+        : `Garantías por vencer: ${r.revisadas}. Encoladas: ${r.encoladas ?? r.enviadas ?? 0}${r.errores ? `, con error: ${r.errores}` : ''}${r.sinTelefono ? `, sin teléfono: ${r.sinTelefono}` : ''}`;
       toastShow(texto, r.apagado || r.errores ? 'warn' : 'ok');
       cargarConvs(filtro);
     } catch (e) {
@@ -267,8 +267,8 @@ export default function WhatsAppBandeja() {
     if (!prueba.telefono.trim() || !prueba.texto.trim()) return toastShow('Completá el teléfono y el mensaje', 'warn');
     setEnviando(true);
     try {
-      await api('/whatsapp/enviar', { method: 'POST', body: prueba });
-      toastShow('Mensaje enviado por WhatsApp', 'ok');
+      const r = await api('/whatsapp/enviar', { method: 'POST', body: prueba });
+      toastShow(r.enCola ? (r.aviso || 'El mensaje quedó en cola: se reintenta solo') : 'Mensaje enviado por WhatsApp', r.enCola ? 'warn' : 'ok');
       cargarConvs(filtro);
     } catch (e) {
       toastShow(e.message, 'error');
@@ -282,7 +282,8 @@ export default function WhatsAppBandeja() {
     if (!t || !sel) return;
     setEnviando(true);
     try {
-      await api(`/whatsapp/conversaciones/${sel}/responder`, { method: 'POST', body: { texto: t } });
+      const r = await api(`/whatsapp/conversaciones/${sel}/responder`, { method: 'POST', body: { texto: t } });
+      if (r.enCola) toastShow(r.aviso || 'El mensaje quedó en cola: se reintenta solo', 'warn');
       setTexto('');
       await abrir(sel);
       cargarConvs(filtro);
@@ -435,11 +436,11 @@ export default function WhatsAppBandeja() {
       const form = new FormData();
       form.append('archivo', archivo);
       if (texto.trim()) form.append('texto', texto.trim());
-      await api(`/whatsapp/conversaciones/${sel}/adjunto`, { method: 'POST', form });
+      const r = await api(`/whatsapp/conversaciones/${sel}/adjunto`, { method: 'POST', form });
       setTexto('');
       await abrir(sel);
       cargarConvs(filtro);
-      toastShow('Archivo enviado', 'ok');
+      toastShow(r.enCola ? (r.aviso || 'El archivo quedó en cola: se reintenta solo') : 'Archivo enviado', r.enCola ? 'warn' : 'ok');
     } catch (e) {
       toastShow(e.message, 'error');
     } finally {

@@ -40,7 +40,22 @@ JWT_SECRET=<hex-64>
 ALLOWED_ORIGINS=https://bertika.com,https://www.bertika.com
 UPLOAD_DIR=/var/www/bertika/uploads
 PUBLIC_URL=https://bertika.com
+
+# Robustez (Fase 1) - opcionales pero recomendados
+# A donde mandar las alertas del monitoreo (base, cola atascada, respaldo viejo, 5xx).
+ALERTAS_EMAIL=dueno@bertika.com
+# Alternativa/complemento: un webhook que recibe { tipo, mensaje, detalle, fecha }.
+# ALERTAS_WEBHOOK=https://hooks.slack.com/services/...
+# Carpeta de respaldos que revisa /api/salud (por defecto /var/backups/bertika).
+BACKUP_DIR=/var/backups/bertika
+# Se pueden apagar para depurar; en produccion tienen que quedar en 1.
+OUTBOX_WORKER=1
+MONITOREO=1
 ```
+
+`GET /api/health` queda público y sin datos sensibles: sirve para un monitor de uptime
+(devuelve 503 si la base no responde). El detalle está en **Sistema → Salud y auditoría**
+(`GET /api/salud`, permiso `sistema`).
 
 Plantilla versionada: `api/.env.example`. Nunca commitees `.env`.
 

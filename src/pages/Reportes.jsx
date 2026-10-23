@@ -2,14 +2,9 @@ import { useMemo } from 'react';
 import { Icon, fmtARS } from '../components/ui';
 import { useStore } from '../store/store';
 import { esStockCritico } from '../data/inventario';
+import { filasCsv } from '../data/csv.js';
 
-const csv = (rows) => {
-  const esc = (v) => {
-    const s = String(v ?? '');
-    return `"${s.replace(/"/g, '""')}"`;
-  };
-  return '\uFEFF' + rows.map((r) => r.map(esc).join(',')).join('\r\n');
-};
+const csv = (rows) => filasCsv(rows);
 
 const descargar = (nombre, contenido) => {
   const blob = new Blob([contenido], { type: 'text/csv;charset=utf-8;' });

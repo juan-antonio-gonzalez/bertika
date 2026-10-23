@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  pruebas:
+    name: Lint, tests y build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: bertika_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/bertika_test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Dependencias del panel
+        run: npm ci --no-audit --no-fund
+
+      - name: Dependencias de la API
+        run: npm ci --no-audit --no-fund
+        working-directory: api
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Tests unitarios
+        run: npm test
+
+      # Levanta la API contra el Postgres del servicio y prueba los flujos
+      # críticos: permisos, auditoría, outbox con reintentos (Meta simulado),
+      # export CSV y webhook. La base se borra y recrea en cada corrida.
+      - name: Tests de integración
+        run: npm run test:integracion
+
+      - name: Build del panel
+        run: npm run build
