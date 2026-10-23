@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useStore, usePermiso } from '../store/store';
 import { api } from '../store/api';
-import { Modal, EstadoPill, Timeline, Icon, fmtDate, fmtARS, appIconName, fmtFecha, diasEnEstado, etiquetaAntiguedad, tonoAntiguedad, waNumero, numeroEnRango, nombreActor } from './ui';
+import { Modal, ConfirmDialog, FormGrid, EstadoPill, Timeline, Icon, fmtDate, fmtARS, appIconName, fmtFecha, diasEnEstado, etiquetaAntiguedad, tonoAntiguedad, waNumero, numeroEnRango, nombreActor } from './ui';
 import { MIN_CAPACIDAD_PCT } from '../data/reglas';
 import { esStockCritico } from '../data/inventario';
 import { OrdenTrabajo, ComprobanteEntrega } from './DocumentosTaller';
@@ -429,7 +429,43 @@ export default function OrdenDetalle({ orden, role, onClose, onEntregado, onBaja
   const actionsAvailable = orden.estado === 'received' || orden.estado === 'diagnosing' || orden.estado === 'approved' || orden.estado === 'in_repair' || orden.estado === 'testing' || orden.estado === 'ready' || orden.estado === 'quoted';
 
   return (
-    <Modal title={`Orden ${orden.id}`} sub={`${orden.bateria_serie} · ${bateria ? bateria.aplicacion : ''}`} onClose={onClose}>
+    <Modal
+      size="xl"
+      title={`Orden ${orden.id}`}
+      sub={`${orden.bateria_serie} · ${bateria ? bateria.aplicacion : ''}`}
+      onClose={onClose}
+      tabs={(
+        <>
+          <button className={`tab ${sec === 'info' ? 'active' : ''}`} onClick={() => setSec('info')}>Orden</button>
+          <button className={`tab ${sec === 'trabajo' ? 'active' : ''}`} onClick={() => setSec('trabajo')}>Trabajo</button>
+          <button className={`tab ${sec === 'eventos' ? 'active' : ''}`} onClick={() => setSec('eventos')}>Eventos</button>
+          {role !== 'cliente' && (
+            <button className={`tab ${sec === 'documentos' ? 'active' : ''}`} onClick={() => setSec('documentos')}>Documentos</button>
+          )}
+          {role !== 'cliente' && (
+            <button className={`tab ${sec === 'etiqueta' ? 'active' : ''}`} onClick={() => setSec('etiqueta')}>Etiqueta</button>
+          )}
+          {actionsAvailable && !esTec && orden.estado !== 'quoted' && (
+            <button className={`tab ${sec === 'acciones' ? 'active' : ''}`} onClick={() => setSec('acciones')}>Acciones admin</button>
+          )}
+        </>
+      )}
+      footer={(
+        <>
+          <button type="button" className="btn izq" onClick={onClose}>Cerrar</button>
+          {role !== 'cliente' && (
+            <button type="button" className="btn" onClick={abrirCompartir}>
+              <Icon name="mail" size={14} /> Compartir
+            </button>
+          )}
+          {orden.estado === 'ready' && puedeEntregar && (
+            <button type="button" className="btn primary" onClick={() => setEntregar(true)}>
+              <Icon name="truck" size={14} /> Entregar y cobrar
+            </button>
+          )}
+        </>
+      )}
+    >
       {!tecnico && !esTec && orden.estado !== 'delivered' && (
         <div className="banner-orange" style={{ background: 'var(--orange-bg)', color: 'var(--orange)', border: '1px solid rgba(255,122,26,.5)', borderRadius: 10, padding: '10px 14px', marginBottom: 12, fontWeight: 700 }}>
           <Icon name="warn" size={15} /> Sin técnico asignado. Asigná uno para que pueda operar.
@@ -451,26 +487,11 @@ export default function OrdenDetalle({ orden, role, onClose, onEntregado, onBaja
         </div>
       )}
 
-      <div className="tabs" style={{ marginBottom: 14 }}>
-        <button className={`tab ${sec === 'info' ? 'active' : ''}`} onClick={() => setSec('info')}>Orden</button>
-        <button className={`tab ${sec === 'trabajo' ? 'active' : ''}`} onClick={() => setSec('trabajo')}>Trabajo</button>
-        <button className={`tab ${sec === 'eventos' ? 'active' : ''}`} onClick={() => setSec('eventos')}>Eventos</button>
-        {role !== 'cliente' && (
-          <button className={`tab ${sec === 'documentos' ? 'active' : ''}`} onClick={() => setSec('documentos')}>Documentos</button>
-        )}
-        {role !== 'cliente' && (
-          <button className={`tab ${sec === 'etiqueta' ? 'active' : ''}`} onClick={() => setSec('etiqueta')}>Etiqueta</button>
-        )}
-        {actionsAvailable && !esTec && orden.estado !== 'quoted' && (
-          <button className={`tab ${sec === 'acciones' ? 'active' : ''}`} onClick={() => setSec('acciones')}>Acciones admin</button>
-        )}
-      </div>
-
       {sec === 'info' && (
         <div className="col">
-          <div className="row between">
+          <div className="row between wrap" style={{ gap: 8 }}>
             <EstadoPill estado={orden.estado} />
-            <span className="row" style={{ gap: 8 }}>
+            <span className="row wrap" style={{ gap: 8 }}>
               {diasPiso != null && !['delivered', 'cancelled'].includes(orden.estado) && (
                 <span className={`badge ${tonoAntiguedad(diasPiso)}`} title="Antigüedad en el estado actual">
                   <Icon name="clock" size={11} /> {etiquetaAntiguedad(diasPiso)} en este estado
@@ -740,25 +761,67 @@ export default function OrdenDetalle({ orden, role, onClose, onEntregado, onBaja
       {sec === 'etiqueta' && <EtiquetaBateria orden={orden} bateria={bateria} cliente={cliente} />}
 
       {confirm?.type === 'baja' && (
-        <Modal title="Dar de baja la batería" sub="Trazabilidad obligatoria para disposición responsable" onClose={() => setConfirm(null)}>
+        <ConfirmDialog
+          title="Dar de baja la batería"
+          sub="Trazabilidad obligatoria para disposición responsable"
+          confirmLabel="Confirmar baja"
+          tone="danger"
+          onCancel={() => setConfirm(null)}
+          onConfirm={() => {
+            darDeBaja(orden.id, confirm.motivo || 'Capacidad por debajo del 40% / no reparable');
+            setConfirm(null);
+            onClose();
+            if (onBaja) onBaja();
+          }}
+        >
           <div className="col">
             <Warning>La batería {orden.bateria_serie} quedará marcada como dada_de_baja (no reparable) y pasará al panel de reciclaje.</Warning>
-            <div className="field"><label>Motivo</label><textarea className="input" value={confirm.motivo ?? ''} onChange={(e) => setConfirm({ ...confirm, motivo: e.target.value })} placeholder="Motivo de la baja (queda en la trazabilidad de reciclaje)" /></div>
-            <button className="btn danger block" onClick={() => { darDeBaja(orden.id, confirm.motivo || 'Capacidad por debajo del 40% / no reparable'); setConfirm(null); onClose(); if (onBaja) onBaja(); }}>
-              Confirmar baja
-            </button>
+            <div className="field">
+              <label>Motivo</label>
+              <textarea
+                className="input"
+                value={confirm.motivo ?? ''}
+                onChange={(e) => setConfirm({ ...confirm, motivo: e.target.value })}
+                placeholder="Motivo de la baja (queda en la trazabilidad de reciclaje)"
+              />
+              <small className="ayuda">Queda registrado quién la dio de baja, cuándo y por qué.</small>
+            </div>
           </div>
-        </Modal>
+        </ConfirmDialog>
       )}
 
       {entregar && (
-        <Modal title="Entregar y cobrar" sub={`Orden ${orden.id} · ${orden.bateria_serie}`} onClose={() => setEntregar(false)}>
+        <Modal
+          size="md"
+          title="Entregar y cobrar"
+          sub={`Orden ${orden.id} · ${orden.bateria_serie}`}
+          onClose={() => setEntregar(false)}
+          closeOnBackdrop={false}
+          footer={(
+            <>
+              <button type="button" className="btn" onClick={() => setEntregar(false)}>Cancelar</button>
+              <button type="button" className="btn primary" onClick={deliver}>
+                <Icon name="truck" size={14} /> Confirmar entrega y cobro
+              </button>
+            </>
+          )}
+        >
           <div className="col">
-            <div className="field"><label>Monto cobrado (ARS)</label><input className="input" type="number" defaultValue={orden.cotizacion?.monto || ''} onChange={(e) => setConfirm({ ...confirm, monto: e.target.value })} /></div>
-            <div className="grid2">
-              <div className="field"><label>Garantía (meses)</label><input className="input" type="number" defaultValue={6} onChange={(e) => setConfirm({ ...confirm, meses: e.target.value })} /></div>
-              <div className="field"><label>Ciclos de carga</label><input className="input" type="number" defaultValue={100} onChange={(e) => setConfirm({ ...confirm, ciclos: e.target.value })} /></div>
-            </div>
+            <FormGrid cols={2}>
+              <div className="field ancho-total">
+                <label>Monto cobrado (ARS) *</label>
+                <input className="input" type="number" defaultValue={orden.cotizacion?.monto || ''} onChange={(e) => setConfirm({ ...confirm, monto: e.target.value })} />
+                <small className="ayuda">Es el importe final que paga el cliente. Cierra la orden y activa la garantía.</small>
+              </div>
+              <div className="field">
+                <label>Garantía (meses)</label>
+                <input className="input" type="number" defaultValue={6} onChange={(e) => setConfirm({ ...confirm, meses: e.target.value })} />
+              </div>
+              <div className="field">
+                <label>Ciclos de carga</label>
+                <input className="input" type="number" defaultValue={100} onChange={(e) => setConfirm({ ...confirm, ciclos: e.target.value })} />
+              </div>
+            </FormGrid>
             <div className="field">
               <label>Medio de cobro</label>
               <select className="input" value={confirm?.medio || 'Transferencia'} onChange={(e) => setConfirm({ ...confirm, medio: e.target.value })}>
@@ -769,23 +832,19 @@ export default function OrdenDetalle({ orden, role, onClose, onEntregado, onBaja
                 <option>Cuenta corriente</option>
               </select>
             </div>
-            <button className="btn primary block lg" onClick={deliver}><Icon name="truck" size={16} /> Confirmar entrega y cobro</button>
           </div>
         </Modal>
       )}
 
       {compartir && (
-        <Modal title="Compartir con el cliente" sub="Enlaces públicos de esta orden (sin login)" onClose={() => setCompartir(null)}>
-          <div className="col">
-            <div className="field">
-              <label>Seguimiento en tiempo real</label>
-              <input className="input mono" readOnly value={compartir.tracker} onFocus={(e) => e.target.select()} />
-            </div>
-            <div className="field">
-              <label>Cotización para aprobar (enlace firmado)</label>
-              <input className="input mono" readOnly value={compartir.cotizacion} onFocus={(e) => e.target.select()} />
-            </div>
-            <div className="grid2">
+        <Modal
+          size="md"
+          title="Compartir con el cliente"
+          sub="Enlaces públicos de esta orden (sin login)"
+          onClose={() => setCompartir(null)}
+          footer={(
+            <>
+              <button type="button" className="btn izq" onClick={() => setCompartir(null)}>Cerrar</button>
               <a
                 className="btn primary"
                 href={`https://wa.me/${CONTACTO.waVentas}?text=${encodeURIComponent(textoCompartir)}`}
@@ -795,6 +854,7 @@ export default function OrdenDetalle({ orden, role, onClose, onEntregado, onBaja
                 <Icon name="mail" size={14} /> Enviar por WhatsApp
               </a>
               <button
+                type="button"
                 className="btn"
                 onClick={() => {
                   navigator.clipboard?.writeText(textoCompartir);
@@ -803,6 +863,19 @@ export default function OrdenDetalle({ orden, role, onClose, onEntregado, onBaja
               >
                 <Icon name="clipboard" size={14} /> Copiar enlaces
               </button>
+            </>
+          )}
+        >
+          <div className="col">
+            <div className="field">
+              <label>Seguimiento en tiempo real</label>
+              <input className="input mono" readOnly value={compartir.tracker} onFocus={(e) => e.target.select()} />
+              <small className="ayuda">El cliente ve el avance con el código de 16 dígitos, sin crear cuenta.</small>
+            </div>
+            <div className="field">
+              <label>Cotización para aprobar (enlace firmado)</label>
+              <input className="input mono" readOnly value={compartir.cotizacion} onFocus={(e) => e.target.select()} />
+              <small className="ayuda">Permite aprobar o rechazar la cotización desde el link.</small>
             </div>
           </div>
         </Modal>

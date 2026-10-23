@@ -573,11 +573,21 @@ export default function Cotizador() {
       )}
 
       {verDoc && (
-        <Modal title="Estimación de visita" sub={`${km} km · ${r.totalUnidades} unidad(es)${codigo ? ` · ${codigo}` : ''}`} onClose={() => setVerDoc(false)}>
+        <Modal
+          size="full"
+          title="Estimación de visita"
+          sub={`${km} km · ${r.totalUnidades} unidad(es)${codigo ? ` · ${codigo}` : ''}`}
+          onClose={() => setVerDoc(false)}
+          footer={(
+            <>
+              <button type="button" className="btn izq" onClick={() => setVerDoc(false)}>Cerrar</button>
+              <button type="button" className="btn primary" onClick={() => imprimirDocumento('print-doc')}>
+                <Icon name="clipboard" size={15} /> Imprimir / guardar como PDF
+              </button>
+            </>
+          )}
+        >
           <DocumentoCotizacion cot={r} codigo={codigo} km={km} dolar={dolar || {}} cliente={cliente} config={config} />
-          <button className="btn primary block mt16" onClick={() => imprimirDocumento('print-doc')}>
-            <Icon name="clipboard" size={15} /> Imprimir / guardar como PDF
-          </button>
         </Modal>
       )}
     </div>

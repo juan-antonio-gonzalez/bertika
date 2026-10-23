@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Icon, Modal } from '../components/ui';
+import { Icon, Modal, ConfirmDialog, FormGrid } from '../components/ui';
 import { api } from '../store/api';
 import { useStore, usePermiso } from '../store/store';
 import { Fragment } from 'react';
@@ -68,137 +68,160 @@ function FormUsuariosModal({ mode, user, tecnicos, clientes, busy, onGuardar, on
 
   return (
     <Modal
+      size="xl"
       title={esEdicion ? `Editar ${user.email}` : 'Crear usuario'}
       sub={esEdicion ? 'Cambiá email, contraseña, rol y permisos.' : 'Nueva cuenta de acceso a la plataforma.'}
-      ancho="ancho"
       onClose={onClose}
+      closeOnBackdrop={false}
+      footer={(
+        <>
+          <button type="button" className="btn izq" onClick={onClose} disabled={busy}>Cancelar</button>
+          <button type="submit" form="form-usuario" className="btn primary" disabled={busy}>
+            <Icon name="check" size={14} /> {busy ? 'Guardando...' : esEdicion ? 'Guardar cambios' : 'Crear usuario'}
+          </button>
+        </>
+      )}
     >
-      <form onSubmit={submit} className="col">
-        <div className="field">
-          <label>Email *</label>
-          <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} disabled={esEdicion} />
-        </div>
-        <div className="field">
-          <label>{esEdicion ? 'Nueva contraseña (vacío = no cambiar)' : 'Contraseña *'}</label>
-          <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Mínimo 8 caracteres" autoComplete="new-password" />
-        </div>
-        <div className="field">
-          <label>Rol</label>
-          <select className="input" value={rolFinal} onChange={(e) => cambiarRol(e.target.value)} disabled={edicionPropia}>
-            <option value="admin">Administrador</option>
-            <option value="tecnico">Técnico</option>
-            <option value="cliente">Cliente</option>
-          </select>
-          {edicionPropia && <small className="muted">No podés cambiarte el rol a vos mismo.</small>}
-        </div>
-        {rolFinal === 'tecnico' && (
-          <div className="field">
-            <label>Vincular a técnico</label>
-            <select className="input" value={tecnicoId} onChange={(e) => setTecnicoId(e.target.value)}>
-              <option value="">Sin vínculo</option>
-              {tecnicos.map((t) => (
-                <option key={t.id} value={t.id}>{t.nombre}</option>
-              ))}
-            </select>
+      <form id="form-usuario" onSubmit={submit} className={rolFinal === 'tecnico' ? 'modal-2col' : undefined}>
+        <div className="col">
+          <div className="fsec-head">
+            <h4>Cuenta</h4>
+            <p>Con estos datos la persona entra a la plataforma.</p>
           </div>
-        )}
-        {rolFinal === 'cliente' && (
-          <div className="field">
-            <label>Vincular a cliente</label>
-            <select className="input" value={clienteId} onChange={(e) => setClienteId(e.target.value)}>
-              <option value="">Sin vínculo</option>
-              {clientes.map((c) => (
-                <option key={c.id} value={c.id}>{c.nombre}</option>
-              ))}
-            </select>
+          <FormGrid cols={2}>
+            <div className="field">
+              <label>Email *</label>
+              <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} disabled={esEdicion} data-autofocus />
+              {esEdicion && <small className="ayuda">El email no se cambia desde acá.</small>}
+            </div>
+            <div className="field">
+              <label>{esEdicion ? 'Nueva contraseña' : 'Contraseña *'}</label>
+              <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Mínimo 8 caracteres" autoComplete="new-password" />
+              <small className="ayuda">{esEdicion ? 'Dejalo vacío para conservar la contraseña actual.' : 'Mínimo 8 caracteres.'}</small>
+            </div>
+            <div className="field">
+              <label>Rol</label>
+              <select className="input" value={rolFinal} onChange={(e) => cambiarRol(e.target.value)} disabled={edicionPropia}>
+                <option value="admin">Administrador</option>
+                <option value="tecnico">Técnico</option>
+                <option value="cliente">Cliente</option>
+              </select>
+              {edicionPropia && <small className="ayuda">No podés cambiarte el rol a vos mismo.</small>}
+            </div>
+            {rolFinal === 'tecnico' && (
+              <div className="field">
+                <label>Vincular a técnico</label>
+                <select className="input" value={tecnicoId} onChange={(e) => setTecnicoId(e.target.value)}>
+                  <option value="">Sin vínculo</option>
+                  {tecnicos.map((t) => (
+                    <option key={t.id} value={t.id}>{t.nombre}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {rolFinal === 'cliente' && (
+              <div className="field">
+                <label>Vincular a cliente</label>
+                <select className="input" value={clienteId} onChange={(e) => setClienteId(e.target.value)}>
+                  <option value="">Sin vínculo</option>
+                  {clientes.map((c) => (
+                    <option key={c.id} value={c.id}>{c.nombre}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </FormGrid>
+        </div>
+
+        <div className="col" style={{ marginTop: rolFinal === 'tecnico' ? 0 : 18 }}>
+          <div className="fsec-head">
+            <h4>Permisos</h4>
+            <p>Qué ve y qué puede hacer. Rigen al instante: no hace falta que vuelva a entrar.</p>
           </div>
-        )}
-        {rolFinal === 'admin' ? (
-          <p className="muted" style={{ fontSize: 12.5 }}>
-            El administrador tiene todos los permisos y no se le pueden quitar: así nunca se pierde la
-            administración de la plataforma.
-          </p>
-        ) : rolFinal === 'cliente' ? (
-          <p className="muted" style={{ fontSize: 12.5 }}>
-            Un cliente ve solo su portal (sus baterías, cotizaciones, historial y garantías) y no puede
-            recibir permisos internos del taller.
-          </p>
-        ) : (
-          <div className="permisos">
-            <div className="row between wrap" style={{ gap: 8, marginBottom: 8 }}>
-              <div>
-                <b style={{ fontSize: 13 }}>Qué ve y qué puede hacer</b>
-                <div className="muted" style={{ fontSize: 11.5 }}>
-                  Los permisos rigen al instante: no hace falta que el usuario vuelva a entrar.
+          {rolFinal === 'admin' ? (
+            <div className="banner-info">
+              <Icon name="shield" size={15} />
+              <span>El administrador tiene todos los permisos y no se le pueden quitar: así nunca se pierde la administración de la plataforma.</span>
+            </div>
+          ) : rolFinal === 'cliente' ? (
+            <div className="banner-info">
+              <Icon name="user" size={15} />
+              <span>Un cliente ve solo su portal (sus baterías, cotizaciones, historial y garantías) y no puede recibir permisos internos del taller.</span>
+            </div>
+          ) : (
+            <div className="permisos">
+              <div className="row between wrap" style={{ gap: 8, marginBottom: 8 }}>
+                <div>
+                  <b style={{ fontSize: 13 }}>Qué ve y qué puede hacer</b>
+                  <div className="muted" style={{ fontSize: 11.5 }}>
+                    Los permisos rigen al instante: no hace falta que el usuario vuelva a entrar.
+                  </div>
+                </div>
+                <div className="row wrap" style={{ gap: 6, alignItems: 'center' }}>
+                  <span className="muted" style={{ fontSize: 11.5 }}>Aplicar plantilla:</span>
+                  <button type="button" className="chip" onClick={() => setPermisos(permisosPorDefecto('tecnico'))}>Técnico</button>
+                  <button type="button" className="chip" onClick={() => setPermisos(permisosPorDefecto('admin'))}>Todo</button>
+                  <button type="button" className="chip" onClick={() => setPermisos({ ...MAPA_VACIO })}>Nada</button>
                 </div>
               </div>
-              <div className="row wrap" style={{ gap: 6, alignItems: 'center' }}>
-                <span className="muted" style={{ fontSize: 11.5 }}>Aplicar plantilla:</span>
-                <button type="button" className="chip" onClick={() => setPermisos(permisosPorDefecto('tecnico'))}>Técnico</button>
-                <button type="button" className="chip" onClick={() => setPermisos(permisosPorDefecto('admin'))}>Todo</button>
-                <button type="button" className="chip" onClick={() => setPermisos({ ...MAPA_VACIO })}>Nada</button>
-              </div>
-            </div>
-            <div className="permisos-tabla-wrap">
-              <table className="permisos-tabla">
-                <thead>
-                  <tr>
-                    <th>Permiso</th>
-                    {COLUMNAS.map((c) => (
-                      <th key={c.op}>
-                        <button type="button" className="permisos-col-todos" onClick={() => marcarColumna(c.op)}>
-                          {c.label}
-                        </button>
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {GRUPOS_PERMISOS.map((g) => (
-                    <Fragment key={g.grupo}>
-                      <tr className="permisos-fila-grupo">
-                        <td colSpan={COLUMNAS.length + 1}>
-                          <span className="permisos-grupo-nombre">{g.grupo}</span>
-                          <button type="button" className="chip" onClick={() => marcarGrupo(g.items, true)}>todos</button>
-                          <button type="button" className="chip" onClick={() => marcarGrupo(g.items, false)}>ninguno</button>
-                        </td>
-                      </tr>
-                      {g.items.map((it) => (
-                        <tr key={it.clave} className={it.critica ? 'permisos-critica' : ''}>
-                          <td>
-                            <b>{it.etiqueta}</b>
-                            <small>{it.detalle}</small>
-                          </td>
-                          {COLUMNAS.map((c) => (
-                            <td key={c.op} className="permisos-celda">
-                              {it.op === c.op ? (
-                                <input
-                                  type="checkbox"
-                                  checked={Boolean(permisos[it.clave])}
-                                  onChange={() => alternar(it.clave)}
-                                  aria-label={it.etiqueta}
-                                />
-                              ) : null}
-                            </td>
-                          ))}
-                        </tr>
+              <div className="permisos-tabla-wrap">
+                <table className="permisos-tabla">
+                  <thead>
+                    <tr>
+                      <th>Permiso</th>
+                      {COLUMNAS.map((c) => (
+                        <th key={c.op}>
+                          <button type="button" className="permisos-col-todos" onClick={() => marcarColumna(c.op)}>
+                            {c.label}
+                          </button>
+                        </th>
                       ))}
-                    </Fragment>
-                  ))}
-                </tbody>
-              </table>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {GRUPOS_PERMISOS.map((g) => (
+                      <Fragment key={g.grupo}>
+                        <tr className="permisos-fila-grupo">
+                          <td colSpan={COLUMNAS.length + 1}>
+                            <span className="permisos-grupo-nombre">{g.grupo}</span>
+                            <button type="button" className="chip" onClick={() => marcarGrupo(g.items, true)}>todos</button>
+                            <button type="button" className="chip" onClick={() => marcarGrupo(g.items, false)}>ninguno</button>
+                          </td>
+                        </tr>
+                        {g.items.map((it) => (
+                          <tr key={it.clave} className={it.critica ? 'permisos-critica' : ''}>
+                            <td>
+                              <b>{it.etiqueta}</b>
+                              <small>{it.detalle}</small>
+                            </td>
+                            {COLUMNAS.map((c) => (
+                              <td key={c.op} className="permisos-celda">
+                                {it.op === c.op ? (
+                                  <input
+                                    type="checkbox"
+                                    checked={Boolean(permisos[it.clave])}
+                                    onChange={() => alternar(it.clave)}
+                                    aria-label={it.etiqueta}
+                                  />
+                                ) : null}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </Fragment>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {criticos.length > 0 && (
+                <p className="muted" style={{ fontSize: 11.5, marginTop: 8 }}>
+                  <span className="badge amber" style={{ marginRight: 6 }}>Atención</span>
+                  Con estos permisos este usuario puede {criticos.map((c) => c.etiqueta.toLowerCase()).join(', ')}.
+                </p>
+              )}
             </div>
-            {criticos.length > 0 && (
-              <p className="muted" style={{ fontSize: 11.5, marginTop: 8 }}>
-                <span className="badge amber" style={{ marginRight: 6 }}>Atención</span>
-                Con estos permisos este usuario puede {criticos.map((c) => c.etiqueta.toLowerCase()).join(', ')}.
-              </p>
-            )}
-          </div>
-        )}
-        <button className="btn primary block" disabled={busy}>
-          <Icon name="check" size={14} /> {busy ? 'Guardando...' : esEdicion ? 'Guardar cambios' : 'Crear usuario'}
-        </button>
+          )}
+        </div>
       </form>
     </Modal>
   );
@@ -338,7 +361,13 @@ export default function Usuarios() {
       </div>
 
       {aBaja && (
-        <Modal title="Dar de baja el acceso" sub={aBaja.email} onClose={() => setABaja(null)}>
+        <ConfirmDialog
+          title="Dar de baja el acceso"
+          sub={aBaja.email}
+          confirmLabel="Dar de baja"
+          onCancel={() => setABaja(null)}
+          onConfirm={() => darDeBaja(aBaja)}
+        >
           <div className="col">
             <div className="banner-info">
               <Icon name="info" size={15} />
@@ -350,12 +379,8 @@ export default function Usuarios() {
             <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
               Al darlo de baja, su sesión deja de servir al instante.
             </p>
-            <div className="grid2">
-              <button className="btn danger" onClick={() => darDeBaja(aBaja)}><Icon name="x" size={14} /> Dar de baja</button>
-              <button className="btn" onClick={() => setABaja(null)}>Cancelar</button>
-            </div>
           </div>
-        </Modal>
+        </ConfirmDialog>
       )}
 
       {modal && (

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Icon, Modal, fmtFecha } from './ui';
+import { Icon, Modal, ConfirmDialog, FormGrid, fmtFecha } from './ui';
 import { api, getToken, BASE_URL } from '../store/api';
 import { useStore, usePermiso } from '../store/store';
 import {
@@ -1078,44 +1078,54 @@ export default function WhatsAppBandeja() {
       )}
 
       {notaABorrar && (
-        <Modal title="Borrar nota interna" sub={notaABorrar.autor} onClose={() => setNotaABorrar(null)}>
+        <ConfirmDialog
+          title="Borrar nota interna"
+          sub={notaABorrar.autor}
+          confirmLabel="Borrar nota"
+          onCancel={() => setNotaABorrar(null)}
+          onConfirm={() => borrarNota(notaABorrar)}
+        >
           <div className="col">
             <p className="muted" style={{ margin: 0 }}>«{notaABorrar.texto}»</p>
             <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
               Se borra la nota del taller. Los mensajes de la conversación no se tocan. No se puede deshacer.
             </p>
-            <div className="grid2">
-              <button className="btn danger" onClick={() => borrarNota(notaABorrar)}><Icon name="x" size={14} /> Borrar nota</button>
-              <button className="btn" onClick={() => setNotaABorrar(null)}>Cancelar</button>
-            </div>
           </div>
-        </Modal>
+        </ConfirmDialog>
       )}
       {/* Perder una oportunidad exige motivo (queda en el historial). */}
       {motivoPerdida && (
-        <Modal title="¿Por qué se perdió?" sub={motivoPerdida.titulo} onClose={() => setMotivoPerdida(null)}>
+        <Modal
+          size="md"
+          title="¿Por qué se perdió?"
+          sub={motivoPerdida.titulo}
+          onClose={() => setMotivoPerdida(null)}
+          closeOnBackdrop={false}
+          footer={(
+            <>
+              <button type="button" className="btn" onClick={() => setMotivoPerdida(null)}>Cancelar</button>
+              <button type="button" className="btn primary" disabled={!motivo.trim()} onClick={confirmarPerdida}>
+                <Icon name="check" size={14} /> Marcar como perdida
+              </button>
+            </>
+          )}
+        >
           <div className="col">
             <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
               El motivo queda guardado en el historial y alimenta el ranking de motivos de pérdida.
             </p>
             <div className="row wrap" style={{ gap: 6 }}>
               {MOTIVOS_PERDIDA.map((m) => (
-                <button key={m} className={`chip${motivo === m ? ' on' : ''}`} onClick={() => setMotivo(m)}>{m}</button>
+                <button key={m} type="button" className={`chip${motivo === m ? ' on' : ''}`} onClick={() => setMotivo(m)}>{m}</button>
               ))}
             </div>
             <div className="field">
               <label>Motivo</label>
               <input
                 className="input" value={motivo} onChange={(e) => setMotivo(e.target.value)}
-                placeholder="ej. el precio no le cerró" autoFocus
+                placeholder="ej. el precio no le cerró" data-autofocus
                 onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); confirmarPerdida(); } }}
               />
-            </div>
-            <div className="grid2">
-              <button className="btn primary" disabled={!motivo.trim()} onClick={confirmarPerdida}>
-                <Icon name="check" size={14} /> Marcar como perdida
-              </button>
-              <button className="btn" onClick={() => setMotivoPerdida(null)}>Cancelar</button>
             </div>
           </div>
         </Modal>
@@ -1123,7 +1133,13 @@ export default function WhatsAppBandeja() {
 
       {/* Vincular la conversación con una ficha existente. */}
       {vincular && (
-        <Modal title="Vincular con un cliente" sub={hilo?.conversacion?.telefono} onClose={() => setVincular(false)}>
+        <Modal
+          size="md"
+          title="Vincular con un cliente"
+          sub={hilo?.conversacion?.telefono}
+          onClose={() => setVincular(false)}
+          footer={<button type="button" className="btn" onClick={() => setVincular(false)}>Cerrar</button>}
+        >
           <div className="col">
             <input
               className="input" placeholder="Buscar por nombre, teléfono, email o empresa"
@@ -1149,51 +1165,74 @@ export default function WhatsAppBandeja() {
 
       {/* Crear la ficha del cliente desde la conversación. */}
       {crearCli && (
-        <Modal title="Crear cliente" sub={crearCli.telefono} onClose={() => setCrearCli(null)}>
+        <Modal
+          size="lg"
+          title="Crear cliente"
+          sub={crearCli.telefono}
+          onClose={() => setCrearCli(null)}
+          closeOnBackdrop={false}
+          footer={(
+            <>
+              <button type="button" className="btn" onClick={() => setCrearCli(null)} disabled={enviando}>Cancelar</button>
+              <button type="button" className="btn primary" disabled={enviando} onClick={guardarClienteNuevo}>
+                <Icon name="check" size={14} /> {enviando ? 'Guardando...' : 'Crear y vincular'}
+              </button>
+            </>
+          )}
+        >
           <div className="col">
-            <div className="field">
-              <label>Nombre *</label>
-              <input className="input" value={crearCli.nombre} onChange={(e) => setCrearCli({ ...crearCli, nombre: e.target.value })} autoFocus />
-            </div>
-            <div className="row wrap" style={{ gap: 8 }}>
-              <div className="field" style={{ flex: 1, minWidth: 200 }}>
+            <FormGrid cols={2}>
+              <div className="field ancho-total">
+                <label>Nombre *</label>
+                <input className="input" value={crearCli.nombre} onChange={(e) => setCrearCli({ ...crearCli, nombre: e.target.value })} data-autofocus />
+              </div>
+              <div className="field">
                 <label>Email *</label>
                 <input className="input" value={crearCli.email} onChange={(e) => setCrearCli({ ...crearCli, email: e.target.value })} placeholder="cliente@ejemplo.com" />
               </div>
-              <div className="field" style={{ flex: 1, minWidth: 150 }}>
+              <div className="field">
                 <label>Teléfono</label>
                 <input className="input" value={crearCli.telefono} onChange={(e) => setCrearCli({ ...crearCli, telefono: e.target.value })} />
               </div>
-            </div>
-            <div className="row wrap" style={{ gap: 8 }}>
-              <div className="field" style={{ width: 200 }}>
+              <div className="field">
                 <label>Tipo</label>
                 <select className="input" value={crearCli.tipo} onChange={(e) => setCrearCli({ ...crearCli, tipo: e.target.value })}>
                   {TIPOS_CLIENTE.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
                 </select>
               </div>
-              <div className="field" style={{ flex: 1, minWidth: 180 }}>
+              <div className="field">
                 <label>Cómo nos conoció</label>
                 <input className="input" list="canales-origen-bandeja" value={crearCli.canal_origen} onChange={(e) => setCrearCli({ ...crearCli, canal_origen: e.target.value })} />
                 <datalist id="canales-origen-bandeja">
                   {CANALES_ORIGEN.map((c) => <option key={c} value={c} />)}
                 </datalist>
               </div>
-            </div>
-            <div className="field">
-              <label>Empresa / flotilla</label>
-              <input className="input" value={crearCli.empresa || ''} onChange={(e) => setCrearCli({ ...crearCli, empresa: e.target.value })} />
-            </div>
-            <button className="btn primary block" disabled={enviando} onClick={guardarClienteNuevo}>
-              <Icon name="check" size={14} /> {enviando ? 'Guardando...' : 'Crear y vincular'}
-            </button>
+              <div className="field ancho-total">
+                <label>Empresa / flotilla</label>
+                <input className="input" value={crearCli.empresa || ''} onChange={(e) => setCrearCli({ ...crearCli, empresa: e.target.value })} />
+              </div>
+            </FormGrid>
           </div>
         </Modal>
       )}
 
       {/* Tarea / recordatorio desde la conversación. */}
       {tareaNueva && (
-        <Modal title="Nueva tarea" sub={hilo?.conversacion?.nombre_perfil || hilo?.conversacion?.telefono} onClose={() => setTareaNueva(null)}>
+        <Modal
+          size="md"
+          title="Nueva tarea"
+          sub={hilo?.conversacion?.nombre_perfil || hilo?.conversacion?.telefono}
+          onClose={() => setTareaNueva(null)}
+          closeOnBackdrop={false}
+          footer={(
+            <>
+              <button type="button" className="btn" onClick={() => setTareaNueva(null)} disabled={enviando}>Cancelar</button>
+              <button type="button" className="btn primary" disabled={enviando || !tareaNueva.titulo.trim()} onClick={guardarTarea}>
+                <Icon name="check" size={14} /> Crear tarea
+              </button>
+            </>
+          )}
+        >
           <div className="col">
             <div className="field">
               <label>Título *</label>
@@ -1203,28 +1242,31 @@ export default function WhatsAppBandeja() {
                 placeholder="ej. llamarlo el jueves por el presupuesto"
               />
             </div>
-            <div className="row wrap" style={{ gap: 8 }}>
-              <div className="field" style={{ flex: 1, minWidth: 170 }}>
+            <FormGrid cols={2}>
+              <div className="field">
                 <label>Vence</label>
                 <input className="input" type="date" value={tareaNueva.vence} onChange={(e) => setTareaNueva({ ...tareaNueva, vence: e.target.value })} />
               </div>
-              <div className="field" style={{ flex: 1, minWidth: 190 }}>
+              <div className="field">
                 <label>Responsable</label>
                 <select className="input" value={tareaNueva.asignado_a} onChange={(e) => setTareaNueva({ ...tareaNueva, asignado_a: e.target.value })}>
                   {agentes.map((a) => <option key={a.email} value={a.email}>{a.email}</option>)}
                 </select>
               </div>
-            </div>
-            <button className="btn primary block" disabled={enviando || !tareaNueva.titulo.trim()} onClick={guardarTarea}>
-              <Icon name="check" size={14} /> Crear tarea
-            </button>
+            </FormGrid>
           </div>
         </Modal>
       )}
 
       {/* Administrar el catálogo de etiquetas y las respuestas rápidas */}
       {verEtiquetas && (
-        <Modal title="Etiquetas y respuestas rápidas" sub="Lo que el taller usa en la bandeja" onClose={() => setVerEtiquetas(false)}>
+        <Modal
+          size="xl"
+          title="Etiquetas y respuestas rápidas"
+          sub="Lo que el taller usa en la bandeja"
+          onClose={() => setVerEtiquetas(false)}
+          footer={<button type="button" className="btn" onClick={() => setVerEtiquetas(false)}>Cerrar</button>}
+        >
           <div className="col" style={{ gap: 16 }}>
             <div className="col" style={{ gap: 6 }}>
               <b style={{ fontSize: 13 }}>Etiquetas</b>

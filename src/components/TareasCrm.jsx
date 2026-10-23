@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Icon, Modal, fmtFecha } from './ui';
+import { Icon, Modal, FormGrid, fmtFecha } from './ui';
 import { api } from '../store/api';
 import { useStore } from '../store/store';
 import { tareaVencida, ordenarTareas } from '../data/crm.js';
@@ -175,7 +175,21 @@ export default function TareasCrm() {
       </div>
 
       {nueva && (
-        <Modal title="Nueva tarea" sub="Para no perderle el rastro a una venta" onClose={() => setNueva(null)}>
+        <Modal
+          size="md"
+          title="Nueva tarea"
+          sub="Para no perderle el rastro a una venta"
+          onClose={() => setNueva(null)}
+          closeOnBackdrop={false}
+          footer={(
+            <>
+              <button type="button" className="btn" onClick={() => setNueva(null)} disabled={busy}>Cancelar</button>
+              <button type="button" className="btn primary" disabled={busy || !nueva.titulo.trim()} onClick={guardar}>
+                <Icon name="check" size={14} /> {busy ? 'Guardando...' : 'Crear tarea'}
+              </button>
+            </>
+          )}
+        >
           <div className="col">
             <div className="field">
               <label>Título *</label>
@@ -185,19 +199,19 @@ export default function TareasCrm() {
                 placeholder="ej. llamar a Marcos por el presupuesto"
               />
             </div>
-            <div className="row wrap" style={{ gap: 8 }}>
-              <div className="field" style={{ flex: 1, minWidth: 170 }}>
+            <FormGrid cols={2}>
+              <div className="field">
                 <label>Vence</label>
                 <input className="input" type="date" value={nueva.vence} onChange={(e) => setNueva({ ...nueva, vence: e.target.value })} />
               </div>
-              <div className="field" style={{ flex: 1, minWidth: 190 }}>
+              <div className="field">
                 <label>Responsable</label>
                 <select className="input" value={nueva.asignado_a} onChange={(e) => setNueva({ ...nueva, asignado_a: e.target.value })}>
                   <option value="">Sin responsable</option>
                   {listaAgentes.map((a) => <option key={a.email} value={a.email}>{a.email}</option>)}
                 </select>
               </div>
-            </div>
+            </FormGrid>
             <div className="field">
               <label>Cliente (opcional)</label>
               <select className="input" value={nueva.cliente_id} onChange={(e) => setNueva({ ...nueva, cliente_id: e.target.value })}>
@@ -205,9 +219,6 @@ export default function TareasCrm() {
                 {clientes.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
               </select>
             </div>
-            <button className="btn primary block" disabled={busy || !nueva.titulo.trim()} onClick={guardar}>
-              <Icon name="check" size={14} /> {busy ? 'Guardando...' : 'Crear tarea'}
-            </button>
           </div>
         </Modal>
       )}

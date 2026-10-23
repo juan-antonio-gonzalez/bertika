@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
 import { useStore } from '../store/store';
-import { Icon, EstadoPill, OrdenCard, Modal, fmtDate, fmtARS, fmtFecha, nombreActor } from '../components/ui';
+import { Icon, EstadoPill, OrdenCard, Modal, FormGrid, fmtDate, fmtARS, fmtFecha, nombreActor } from '../components/ui';
 import OrdenDetalle from '../components/OrdenDetalle';
 import CotizadorConfig from '../components/CotizadorConfig';
 import WhatsAppBandeja from '../components/WhatsAppBandeja';
@@ -218,7 +218,13 @@ function Inventario() {
       </div>
 
       {mov && (
-        <Modal title={`Movimientos de stock`} sub={`${mov.insumo.nombre} · stock actual ${mov.insumo.stock}`} onClose={() => setMov(null)}>
+        <Modal
+          size="md"
+          title="Movimientos de stock"
+          sub={`${mov.insumo.nombre} · stock actual ${mov.insumo.stock}`}
+          onClose={() => setMov(null)}
+          footer={<button type="button" className="btn" onClick={() => setMov(null)}>Cerrar</button>}
+        >
           <div className="col">
             {mov.movimientos.length === 0 && <p className="muted" style={{ margin: 0 }}>Sin movimientos registrados todavía.</p>}
             {mov.movimientos.map((m) => (
@@ -239,20 +245,32 @@ function Inventario() {
       )}
 
       {ajuste && (
-        <Modal title="Ajuste por recuento físico" sub={ajuste.insumo.nombre} onClose={() => setAjuste(null)}>
+        <Modal
+          size="sm"
+          title="Ajuste por recuento físico"
+          sub={ajuste.insumo.nombre}
+          onClose={() => setAjuste(null)}
+          closeOnBackdrop={false}
+          footer={(
+            <>
+              <button type="button" className="btn" onClick={() => setAjuste(null)} disabled={busy}>Cancelar</button>
+              <button type="button" className="btn primary" disabled={busy || !ajuste.motivo.trim()} onClick={guardarAjuste}>
+                <Icon name="check" size={14} /> {busy ? 'Ajustando...' : 'Registrar ajuste'}
+              </button>
+            </>
+          )}
+        >
           <div className="col">
             <div className="banner-info"><Icon name="info" size={15} /> El stock del sistema es {ajuste.insumo.stock}. El ajuste queda auditado con tu usuario y el motivo.</div>
             <div className="field">
               <label>Stock contado (unidades)</label>
-              <input className="input" type="number" min={0} value={ajuste.stock} onChange={(e) => setAjuste({ ...ajuste, stock: e.target.value })} />
+              <input className="input" type="number" min={0} value={ajuste.stock} onChange={(e) => setAjuste({ ...ajuste, stock: e.target.value })} data-autofocus />
             </div>
             <div className="field">
               <label>Motivo del ajuste *</label>
               <input className="input" value={ajuste.motivo} onChange={(e) => setAjuste({ ...ajuste, motivo: e.target.value })} placeholder="ej. recuento mensual, merma, rotura" />
+              <small className="ayuda">Sin motivo no se puede registrar: queda en la auditoría del insumo.</small>
             </div>
-            <button className="btn primary block" disabled={busy || !ajuste.motivo.trim()} onClick={guardarAjuste}>
-              <Icon name="check" size={14} /> {busy ? 'Ajustando...' : 'Registrar ajuste'}
-            </button>
           </div>
         </Modal>
       )}
@@ -274,32 +292,43 @@ function FormInsumo({ insumo, onGuardar, onClose, busy }) {
   });
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
   return (
-    <Modal title="Editar insumo" sub={`${insumo?.nombre} · stock actual ${insumo?.stock}`} onClose={onClose}>
+    <Modal
+      size="md"
+      title="Editar insumo"
+      sub={`${insumo?.nombre} · stock actual ${insumo?.stock}`}
+      onClose={onClose}
+      closeOnBackdrop={false}
+      footer={(
+        <>
+          <button type="button" className="btn" onClick={onClose} disabled={busy}>Cancelar</button>
+          <button type="button" className="btn primary" disabled={busy || !String(f.nombre).trim()} onClick={() => onGuardar(f)}>
+            <Icon name="check" size={14} /> {busy ? 'Guardando...' : 'Guardar cambios'}
+          </button>
+        </>
+      )}
+    >
       <div className="col">
         <div className="field">
           <label>Nombre *</label>
-          <input className="input" value={f.nombre} onChange={(e) => set('nombre', e.target.value)} />
+          <input className="input" value={f.nombre} onChange={(e) => set('nombre', e.target.value)} data-autofocus />
         </div>
-        <div className="row wrap" style={{ gap: 8 }}>
-          <div className="field" style={{ flex: 1, minWidth: 160 }}>
+        <FormGrid cols={3}>
+          <div className="field">
             <label>Categoría</label>
             <input className="input" value={f.categoria} onChange={(e) => set('categoria', e.target.value)} placeholder="Celdas, Cargadores…" />
           </div>
-          <div className="field" style={{ width: 150 }}>
+          <div className="field">
             <label>Precio unitario</label>
             <input className="input" type="number" min={0} value={f.precio} onChange={(e) => set('precio', e.target.value)} />
           </div>
-          <div className="field" style={{ width: 150 }}>
+          <div className="field">
             <label>Avisar bajo</label>
             <input className="input" type="number" min={0} value={f.stock_minimo} onChange={(e) => set('stock_minimo', e.target.value)} />
           </div>
-        </div>
+        </FormGrid>
         <div className="banner-info">
           <Icon name="info" size={15} /> «Avisar bajo» es el stock mínimo: el panel lo marca en rojo cuando el stock baja de ese número.
         </div>
-        <button className="btn primary block" disabled={busy || !String(f.nombre).trim()} onClick={() => onGuardar(f)}>
-          <Icon name="check" size={14} /> {busy ? 'Guardando...' : 'Guardar cambios'}
-        </button>
       </div>
     </Modal>
   );
@@ -371,20 +400,46 @@ function FormTecnico({ tecnico, onGuardar, onClose, busy }) {
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
   const valido = Boolean(f.nombre.trim()) && Boolean(f.especialidad.trim());
   return (
-    <Modal title="Editar técnico" sub={tecnico?.nombre} onClose={onClose}>
+    <Modal
+      size="md"
+      title="Editar técnico"
+      sub={tecnico?.nombre}
+      onClose={onClose}
+      closeOnBackdrop={false}
+      footer={(
+        <>
+          <button type="button" className="btn" onClick={onClose} disabled={busy}>Cancelar</button>
+          <button
+            type="button"
+            className="btn primary"
+            disabled={busy || !valido}
+            onClick={() => onGuardar({
+              nombre: f.nombre,
+              especialidad: f.especialidad,
+              certificaciones: f.certificaciones.split(',').map((c) => c.trim()).filter(Boolean),
+              activo: f.activo,
+            })}
+          >
+            <Icon name="check" size={14} /> {busy ? 'Guardando...' : 'Guardar cambios'}
+          </button>
+        </>
+      )}
+    >
       <div className="col">
-        <div className="field">
-          <label>Nombre *</label>
-          <input className="input" value={f.nombre} onChange={(e) => set('nombre', e.target.value)} />
-        </div>
-        <div className="field">
-          <label>Especialidad *</label>
-          <input className="input" value={f.especialidad} onChange={(e) => set('especialidad', e.target.value)} placeholder="Plomo-Acido, Litio / Ion-Litio, Ferroviario…" />
-        </div>
-        <div className="field">
-          <label>Certificaciones (separadas por coma)</label>
-          <input className="input" value={f.certificaciones} onChange={(e) => set('certificaciones', e.target.value)} placeholder="Seguridad e higiene, Soldadura de placas…" />
-        </div>
+        <FormGrid cols={2}>
+          <div className="field ancho-total">
+            <label>Nombre *</label>
+            <input className="input" value={f.nombre} onChange={(e) => set('nombre', e.target.value)} data-autofocus />
+          </div>
+          <div className="field">
+            <label>Especialidad *</label>
+            <input className="input" value={f.especialidad} onChange={(e) => set('especialidad', e.target.value)} placeholder="Plomo-Acido, Litio…" />
+          </div>
+          <div className="field">
+            <label>Certificaciones</label>
+            <input className="input" value={f.certificaciones} onChange={(e) => set('certificaciones', e.target.value)} placeholder="Separadas por coma" />
+          </div>
+        </FormGrid>
         <label className="row" style={{ gap: 8, fontSize: 13 }}>
           <input type="checkbox" checked={f.activo} onChange={(e) => set('activo', e.target.checked)} />
           Activo (puede recibir órdenes)
@@ -392,17 +447,6 @@ function FormTecnico({ tecnico, onGuardar, onClose, busy }) {
         <div className="banner-info">
           <Icon name="info" size={15} /> No se puede desactivar a un técnico con órdenes en curso: hay que reasignarlas primero.
         </div>
-        <button
-          className="btn primary block" disabled={busy || !valido}
-          onClick={() => onGuardar({
-            nombre: f.nombre,
-            especialidad: f.especialidad,
-            certificaciones: f.certificaciones.split(',').map((c) => c.trim()).filter(Boolean),
-            activo: f.activo,
-          })}
-        >
-          <Icon name="check" size={14} /> {busy ? 'Guardando...' : 'Guardar cambios'}
-        </button>
       </div>
     </Modal>
   );

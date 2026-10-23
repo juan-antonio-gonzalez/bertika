@@ -2,7 +2,7 @@ import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useStore } from '../../store/store';
 import { puedeVer } from '../../data/permisos';
-import { Icon, Modal } from '../ui';
+import { Icon } from '../ui';
 import { AltasForm, NewOrdenForm } from '../AccionesGlobales';
 import { contarTareasPendientes } from '../../data/crm.js';
 import { CONTACTO } from '../../data/siteData';
@@ -303,16 +303,8 @@ export default function AppShell({ children }) {
         <div className="shell-body">{children}</div>
       </div>
 
-      {nueva && (
-        <Modal title="Crear orden manual" sub="Registra el ingreso de la bateria al taller" onClose={() => setNueva(false)}>
-          <NewOrdenForm onClose={() => setNueva(false)} />
-        </Modal>
-      )}
-      {altas && (
-        <Modal title="Altas administrativas" sub="Da de alta clientes, tecnicos e insumos del taller" onClose={() => setAltas(false)}>
-          <AltasForm onClose={() => setAltas(false)} />
-        </Modal>
-      )}
+      {nueva && <NewOrdenForm onClose={() => setNueva(false)} />}
+      {altas && <AltasForm onClose={() => setAltas(false)} />}
 
       {/* Busqueda global (Ctrl+K) y detalle de orden abierto desde avisos. */}
       <BusquedaGlobal abierto={buscar} onClose={() => setBuscar(false)} onAbrirOrden={abrirOrden} />

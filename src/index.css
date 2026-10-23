@@ -443,13 +443,122 @@ button.chip:hover { border-color: var(--brand-amber); background: var(--brand-so
 .banner-green { display: flex; gap: 10px; align-items: center; background: var(--green-bg); border: 1px solid rgba(54, 201, 122, 0.5); color: var(--green); border-radius: 10px; padding: 10px 14px; font-size: 12.5px; font-weight: 600; margin-bottom: 12px; }
 .banner-red { display: flex; gap: 10px; align-items: center; background: var(--red-bg); border: 1px solid rgba(255, 77, 94, 0.5); color: var(--red); border-radius: 10px; padding: 10px 14px; font-size: 12.5px; font-weight: 600; margin-bottom: 12px; }
 
-.modal-back { position: fixed; inset: 0; background: rgba(10, 23, 64, 0.55); backdrop-filter: blur(4px); z-index: 100; display: grid; place-items: center; padding: 16px; }
-.modal { width: min(560px, 100%); max-height: 88vh; overflow-y: auto; background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--radius); padding: 22px; box-shadow: var(--shadow-lg); }
-.modal.modal-ancho { width: min(880px, 100%); }
-.modal > .row.between:first-child { border-bottom: 1px solid var(--line); padding-bottom: 12px; }
-.modal h3 { margin: 0 0 2px; font-size: 18px; color: var(--navy); }
-.modal .sub { color: var(--muted); font-size: 12.5px; }
-.modal-close { position: absolute; }
+/* ---------- modal ----------
+   Anatomia fija: header + body (unico con scroll) + footer. Los tamaños se
+   eligen con la prop `size` del componente Modal (sm/md/lg/xl/full). */
+.modal-back {
+  position: fixed; inset: 0; z-index: 100;
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px 16px;
+  background: rgba(10, 23, 64, 0.55);
+  backdrop-filter: blur(4px);
+  animation: modal-back-in 0.16s ease-out;
+}
+.modal {
+  --w: 620px;
+  width: min(var(--w), 100%);
+  max-height: min(88vh, 900px);
+  display: flex; flex-direction: column;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  outline: none;
+  animation: modal-in 0.18s cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+.modal.modal-sm { --w: 440px; }
+.modal.modal-lg { --w: 860px; }
+.modal.modal-xl { --w: 1120px; }
+.modal.modal-full { --w: 1240px; max-height: min(92vh, 980px); }
+.modal-head {
+  flex: 0 0 auto;
+  padding: 18px 22px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-2);
+}
+.modal-head-row { display: flex; align-items: flex-start; gap: 12px; }
+.modal h3 { margin: 0; font-size: 18px; line-height: 1.25; color: var(--navy); letter-spacing: -0.2px; }
+.modal-sub { color: var(--muted); font-size: 12.5px; margin-top: 3px; }
+.modal-x {
+  flex: 0 0 auto; width: 34px; height: 34px;
+  display: grid; place-items: center;
+  background: var(--bg-2); color: var(--muted);
+  border: 1px solid var(--line); border-radius: 10px;
+  cursor: pointer;
+}
+.modal-x:hover { color: var(--navy); border-color: var(--brand-amber); background: var(--brand-soft); }
+.modal-tabs {
+  display: flex; gap: 4px; overflow-x: auto;
+  margin: 14px -22px -14px; padding: 0 22px;
+  border-bottom: 1px solid var(--line);
+  scrollbar-width: none;
+}
+.modal-tabs::-webkit-scrollbar { display: none; }
+.modal-tabs .tab { padding: 10px 12px; font-size: 12.5px; }
+.modal-body {
+  flex: 1 1 auto; min-height: 0;
+  overflow-y: auto; overscroll-behavior: contain;
+  padding: 20px 22px;
+}
+.modal-foot {
+  flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap;
+  gap: 10px;
+  padding: 14px 22px;
+  border-top: 1px solid var(--line);
+  background: var(--bg-2);
+}
+.modal-foot .btn { white-space: nowrap; }
+.modal-foot .izq { margin-right: auto; }
+.modal-body > .col:first-child > .banner-info:first-child,
+.modal-body > .banner-info:first-child { margin-top: 0; }
+
+/* Formularios dentro del modal: labels legibles, ayudas y grillas. */
+.modal .field label { text-transform: none; letter-spacing: 0; font-size: 12.5px; font-weight: 700; color: var(--navy); }
+.modal .field small { color: var(--muted); font-size: 11.5px; line-height: 1.5; }
+.modal .field .ayuda { color: var(--muted); font-size: 11.5px; line-height: 1.45; }
+.modal .field .error { color: var(--red); font-size: 11.5px; font-weight: 600; }
+.fsec + .fsec { margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--line); }
+.fsec-head { margin-bottom: 10px; }
+.fsec-head h4 { margin: 0; font-size: 12px; font-weight: 800; letter-spacing: 0.4px; text-transform: uppercase; color: var(--muted); }
+.fsec-head p { margin: 3px 0 0; font-size: 12px; color: var(--muted); line-height: 1.45; }
+.fgrid { display: grid; gap: 12px 14px; }
+.fgrid-1 { grid-template-columns: 1fr; }
+.fgrid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.fgrid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.fgrid .ancho-total { grid-column: 1 / -1; }
+
+/* Ficha de usuario: datos a la izquierda, permisos a la derecha. */
+.modal-2col { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 22px; align-items: start; }
+.modal-2col > .col { min-width: 0; }
+@media (max-width: 900px) { .modal-2col { grid-template-columns: 1fr; } }
+
+@keyframes modal-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.99); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes modal-back-in { from { opacity: 0; } to { opacity: 1; } }
+
+/* Celular: el modal ocupa la pantalla (hoja), con footer fijo y safe-area. */
+@media (max-width: 700px) {
+  .modal-back { padding: 0; align-items: stretch; }
+  .modal {
+    --w: 100%;
+    width: 100%; height: 100dvh; max-height: 100dvh;
+    border: 0; border-radius: 0;
+  }
+  .modal-head { padding: calc(14px + env(safe-area-inset-top)) 16px 12px; }
+  .modal-tabs { margin: 12px -16px -12px; padding: 0 16px; }
+  .modal-body { padding: 16px; }
+  .modal-foot {
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+    flex-wrap: wrap;
+  }
+  .modal-foot .btn { flex: 1 1 auto; justify-content: center; min-height: 42px; }
+  .modal-foot .izq { margin-right: 0; }
+  .fgrid-2, .fgrid-3 { grid-template-columns: 1fr; }
+}
 
 .list-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 
@@ -682,7 +791,10 @@ button.chip:hover { border-color: var(--brand-amber); background: var(--brand-so
   body.print-label .print-label * { visibility: visible !important; }
   body.print-label .print-label { display: block; margin: 0; padding: 0; }
   body.print-label .modal-back { position: static; display: block; background: none; padding: 0; }
-  body.print-label .modal { width: auto; max-height: none; overflow: visible; background: none; border: 0; box-shadow: none; padding: 0; }
+  body.print-label .modal { width: auto; max-height: none; height: auto; display: block; overflow: visible; background: none; border: 0; box-shadow: none; border-radius: 0; }
+  body.print-label .modal-head,
+  body.print-label .modal-foot { display: none; }
+  body.print-label .modal-body { overflow: visible; max-height: none; padding: 0; }
   body.print-label .print-label > div { width: 620px !important; max-width: 100%; }
 }
 
@@ -880,7 +992,10 @@ details[open] > .cz-summary::after { content: ' –'; }
   body.print-doc .print-doc * { visibility: visible !important; }
   body.print-doc .print-doc { position: absolute; left: 0; top: 0; width: 100%; background: #fff; padding: 0; }
   body.print-doc .modal-back { position: static; display: block; background: none; padding: 0; }
-  body.print-doc .modal { width: auto; max-height: none; overflow: visible; background: none; border: 0; box-shadow: none; padding: 0; }
+  body.print-doc .modal { width: auto; max-height: none; height: auto; display: block; overflow: visible; background: none; border: 0; box-shadow: none; border-radius: 0; }
+  body.print-doc .modal-head,
+  body.print-doc .modal-foot { display: none; }
+  body.print-doc .modal-body { overflow: visible; max-height: none; padding: 0; }
   .doc { color: #000; break-inside: avoid; }
   .doc-seccion, .doc-firmas, .doc-tabla tr { break-inside: avoid; }
 }

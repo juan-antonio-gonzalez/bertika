@@ -9,7 +9,7 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useStore } from '../store/store';
-import { Icon, Modal, EstadoPill, fmtARS, fmtFecha, waNumero } from './ui';
+import { Icon, Modal, ConfirmDialog, FormSection, FormGrid, EstadoPill, fmtARS, fmtFecha, waNumero } from './ui';
 import { CANALES_ORIGEN, camposComercialesCargados } from '../data/crm.js';
 import { TIPOS_CLIENTE } from '../data/crm';
 import {
@@ -64,79 +64,88 @@ function FormCliente({ cliente, onGuardar, onClose, busy }) {
   const valido = Boolean(f.nombre.trim()) && /^\S+@\S+\.\S+$/.test(f.email.trim());
 
   return (
-    <Modal title="Editar cliente" sub={cliente?.nombre} onClose={onClose}>
+    <Modal
+      size="lg"
+      title="Editar cliente"
+      sub={cliente?.nombre}
+      onClose={onClose}
+      closeOnBackdrop={false}
+      footer={(
+        <>
+          <button type="button" className="btn" onClick={onClose} disabled={busy}>Cancelar</button>
+          <button type="button" className="btn primary" disabled={busy || !valido} onClick={() => onGuardar(f)}>
+            <Icon name="check" size={14} /> {busy ? 'Guardando...' : 'Guardar cambios'}
+          </button>
+        </>
+      )}
+    >
       <div className="col">
-        <div className="field">
-          <label>Nombre *</label>
-          <input className="input" value={f.nombre} onChange={(e) => set('nombre', e.target.value)} />
-        </div>
-        <div className="row wrap" style={{ gap: 8 }}>
-          <div className="field" style={{ flex: 1, minWidth: 180 }}>
-            <label>Contacto</label>
-            <input className="input" value={f.contacto} onChange={(e) => set('contacto', e.target.value)} placeholder="Quién atiende" />
-          </div>
-          <div className="field" style={{ flex: 1, minWidth: 180 }}>
-            <label>Teléfono</label>
-            <input className="input" value={f.telefono} onChange={(e) => set('telefono', e.target.value)} placeholder="11 5555-0101" />
-          </div>
-        </div>
-        <div className="row wrap" style={{ gap: 8 }}>
-          <div className="field" style={{ flex: 1, minWidth: 220 }}>
-            <label>Email *</label>
-            <input className="input" value={f.email} onChange={(e) => set('email', e.target.value)} placeholder="cliente@ejemplo.com" />
-          </div>
-          <div className="field" style={{ width: 200 }}>
-            <label>Tipo</label>
-            <select className="input" value={f.tipo} onChange={(e) => set('tipo', e.target.value)}>
-              {TIPOS_CLIENTE.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
-            </select>
-          </div>
-        </div>
-        <div className="field">
-          <label>Empresa</label>
-          <input className="input" value={f.empresa} onChange={(e) => set('empresa', e.target.value)} placeholder="Razón social (si es flotilla)" />
-        </div>
-        <p className="muted" style={{ fontSize: 12, margin: '4px 0 0' }}>Datos comerciales</p>
-        <div className="row wrap" style={{ gap: 8 }}>
-          <div className="field" style={{ flex: 1, minWidth: 220 }}>
-            <label>Dirección</label>
-            <input className="input" value={f.direccion} onChange={(e) => set('direccion', e.target.value)} placeholder="Calle y número" />
-          </div>
-          <div className="field" style={{ flex: 1, minWidth: 160 }}>
-            <label>Localidad</label>
-            <input className="input" value={f.localidad} onChange={(e) => set('localidad', e.target.value)} placeholder="Ciudad / partido" />
-          </div>
-        </div>
-        <div className="row wrap" style={{ gap: 8 }}>
-          <div className="field" style={{ width: 180 }}>
-            <label>CUIT</label>
-            <input className="input" value={f.cuit} onChange={(e) => set('cuit', e.target.value)} placeholder="30-12345678-9" />
-          </div>
-          <div className="field" style={{ flex: 1, minWidth: 160 }}>
-            <label>Condición de pago</label>
-            <input className="input" value={f.condicion_pago} onChange={(e) => set('condicion_pago', e.target.value)} placeholder="Contado / 30 días" />
-          </div>
-        </div>
-        <div className="row wrap" style={{ gap: 8 }}>
-          <div className="field" style={{ flex: 1, minWidth: 180 }}>
-            <label>Cómo nos conoció</label>
-            <input className="input" list="canales-origen-cliente" value={f.canal_origen} onChange={(e) => set('canal_origen', e.target.value)} placeholder="WhatsApp, recomendación…" />
-            <datalist id="canales-origen-cliente">
-              {CANALES_ORIGEN.map((c) => <option key={c} value={c} />)}
-            </datalist>
-          </div>
-          <div className="field" style={{ flex: 1, minWidth: 160 }}>
-            <label>Vendedor</label>
-            <input className="input" value={f.vendedor} onChange={(e) => set('vendedor', e.target.value)} placeholder="Quién lo atiende" />
-          </div>
-        </div>
-        <div className="field">
-          <label>Notas internas</label>
-          <textarea className="input" value={f.notas} onChange={(e) => set('notas', e.target.value)} placeholder="Preferencias, horarios de contacto, cómo nos conoció…" />
-        </div>
-        <button className="btn primary block" disabled={busy || !valido} onClick={() => onGuardar(f)}>
-          <Icon name="check" size={14} /> {busy ? 'Guardando...' : 'Guardar cambios'}
-        </button>
+        <FormSection title="Contacto">
+          <FormGrid cols={2}>
+            <div className="field ancho-total">
+              <label>Nombre *</label>
+              <input className="input" value={f.nombre} onChange={(e) => set('nombre', e.target.value)} data-autofocus />
+            </div>
+            <div className="field">
+              <label>Contacto</label>
+              <input className="input" value={f.contacto} onChange={(e) => set('contacto', e.target.value)} placeholder="Quién atiende" />
+            </div>
+            <div className="field">
+              <label>Teléfono</label>
+              <input className="input" value={f.telefono} onChange={(e) => set('telefono', e.target.value)} placeholder="11 5555-0101" />
+            </div>
+            <div className="field">
+              <label>Email *</label>
+              <input className="input" value={f.email} onChange={(e) => set('email', e.target.value)} placeholder="cliente@ejemplo.com" />
+            </div>
+            <div className="field">
+              <label>Tipo</label>
+              <select className="input" value={f.tipo} onChange={(e) => set('tipo', e.target.value)}>
+                {TIPOS_CLIENTE.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+              </select>
+            </div>
+            <div className="field ancho-total">
+              <label>Empresa</label>
+              <input className="input" value={f.empresa} onChange={(e) => set('empresa', e.target.value)} placeholder="Razón social (si es flotilla)" />
+            </div>
+          </FormGrid>
+        </FormSection>
+
+        <FormSection title="Datos comerciales" sub="Opcionales, para la facturación y el seguimiento comercial.">
+          <FormGrid cols={2}>
+            <div className="field">
+              <label>Dirección</label>
+              <input className="input" value={f.direccion} onChange={(e) => set('direccion', e.target.value)} placeholder="Calle y número" />
+            </div>
+            <div className="field">
+              <label>Localidad</label>
+              <input className="input" value={f.localidad} onChange={(e) => set('localidad', e.target.value)} placeholder="Ciudad / partido" />
+            </div>
+            <div className="field">
+              <label>CUIT</label>
+              <input className="input" value={f.cuit} onChange={(e) => set('cuit', e.target.value)} placeholder="30-12345678-9" />
+            </div>
+            <div className="field">
+              <label>Condición de pago</label>
+              <input className="input" value={f.condicion_pago} onChange={(e) => set('condicion_pago', e.target.value)} placeholder="Contado / 30 días" />
+            </div>
+            <div className="field">
+              <label>Cómo nos conoció</label>
+              <input className="input" list="canales-origen-cliente" value={f.canal_origen} onChange={(e) => set('canal_origen', e.target.value)} placeholder="WhatsApp, recomendación…" />
+              <datalist id="canales-origen-cliente">
+                {CANALES_ORIGEN.map((c) => <option key={c} value={c} />)}
+              </datalist>
+            </div>
+            <div className="field">
+              <label>Vendedor</label>
+              <input className="input" value={f.vendedor} onChange={(e) => set('vendedor', e.target.value)} placeholder="Quién lo atiende" />
+            </div>
+            <div className="field ancho-total">
+              <label>Notas internas</label>
+              <textarea className="input" value={f.notas} onChange={(e) => set('notas', e.target.value)} placeholder="Preferencias, horarios de contacto, cómo nos conoció…" />
+            </div>
+          </FormGrid>
+        </FormSection>
       </div>
     </Modal>
   );
@@ -151,18 +160,28 @@ function Ficha({ cliente, datos, onAbrirOrden, onEditar, onBaja, onClose }) {
   const abrir = (o) => { onClose(); onAbrirOrden?.(o); };
 
   return (
-    <Modal ancho="ancho" title={cliente.nombre} sub={`${tipoCliente(cliente.tipo)}${cliente.empresa ? ` · ${cliente.empresa}` : ''}`} onClose={onClose}>
+    <Modal
+      size="xl"
+      title={cliente.nombre}
+      sub={`${tipoCliente(cliente.tipo)}${cliente.empresa ? ` · ${cliente.empresa}` : ''}`}
+      onClose={onClose}
+      footer={(
+        <>
+          <button type="button" className="btn izq" onClick={onClose}>Cerrar</button>
+          {wa && (
+            <a className="btn" href={`https://wa.me/${wa}`} target="_blank" rel="noreferrer">
+              <Icon name="mail" size={13} /> WhatsApp
+            </a>
+          )}
+          <button type="button" className="btn" onClick={onEditar}><Icon name="gear" size={13} /> Editar ficha</button>
+          <button type="button" className="btn danger" onClick={onBaja}><Icon name="x" size={13} /> Dar de baja</button>
+        </>
+      )}
+    >
       <div className="row wrap" style={{ gap: 8, marginBottom: 12 }}>
         <span className="pill"><Icon name="user" size={12} /> {cliente.contacto || 'Sin contacto'}</span>
         <span className="pill"><Icon name="info" size={12} /> {cliente.telefono || 'Sin teléfono'}</span>
         <span className="pill"><Icon name="mail" size={12} /> {cliente.email || 'Sin email'}</span>
-        {wa && (
-          <a className="btn sm" href={`https://wa.me/${wa}`} target="_blank" rel="noreferrer">
-            <Icon name="mail" size={12} /> WhatsApp
-          </a>
-        )}
-        <button className="btn sm" onClick={onEditar}><Icon name="gear" size={12} /> Editar ficha</button>
-        <button className="btn sm danger" onClick={onBaja}><Icon name="x" size={12} /> Dar de baja</button>
       </div>
 
       {cliente.notas && (
@@ -425,7 +444,14 @@ export default function ClientesCrm({ onAbrirOrden }) {
       )}
 
       {aBaja && (
-        <Modal title="Dar de baja al cliente" sub={aBaja.nombre} onClose={() => setABaja(null)}>
+        <ConfirmDialog
+          title="Dar de baja al cliente"
+          sub={aBaja.nombre}
+          confirmLabel={busy ? 'Dando de baja...' : 'Confirmar baja'}
+          busy={busy}
+          onCancel={() => setABaja(null)}
+          onConfirm={confirmarBaja}
+        >
           <div className="col">
             <div className="banner-info">
               <Icon name="info" size={15} />
@@ -437,11 +463,8 @@ export default function ClientesCrm({ onAbrirOrden }) {
             <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>
               No se puede dar de baja a un cliente con órdenes en curso: primero hay que entregarlas o cancelarlas.
             </p>
-            <button className="btn danger block" disabled={busy} onClick={confirmarBaja}>
-              <Icon name="x" size={14} /> {busy ? 'Dando de baja...' : 'Confirmar baja'}
-            </button>
           </div>
-        </Modal>
+        </ConfirmDialog>
       )}
     </div>
   );

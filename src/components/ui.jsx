@@ -1,4 +1,5 @@
-import { useEffect } from 'react';
+import { useEffect, useId, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useStore } from '../store/store';
 import { ESTADO_LABEL, STATUS_STEP_INDEX, TRACKER_STEPS } from '../data/reglas';
 
@@ -121,28 +122,222 @@ export function Toast() {
   );
 }
 
-/* ---------------- Modal ---------------- */
-export function Modal({ title, sub, onClose, children, ancho }) {
-  // Cerrar con Esc y anunciar el dialogo a lectores de pantalla.
+/* ---------------- Modal ----------------
+ *
+ * Un solo componente para todos los dialogos de la plataforma:
+ *   - header fijo (titulo, subtitulo, pestañas opcionales y la X)
+ *   - body con scroll propio (el unico que scrollea)
+ *   - footer fijo con las acciones
+ *
+ * Ademas maneja lo que antes se hacia a mano y cada modal resolvia distinto:
+ *   - bloquea el scroll del fondo mientras hay un modal abierto;
+ *   - atrapa el foco (Tab/Shift+Tab) y lo devuelve al cerrar;
+ *   - Esc cierra SOLO el modal de arriba (pila de modales);
+ *   - se puede impedir el cierre por click en el fondo (formularios).
+ *
+ * `size`: sm (confirmaciones) · md (formularios cortos) · lg (altas/fichas) ·
+ *         xl (orden, usuarios) · full (documentos, etiqueta, estimaciones).
+ */
+const TAMANO_MODAL = { sm: 'modal-sm', md: '', lg: 'modal-lg', xl: 'modal-xl', full: 'modal-full' };
+
+// Pila de modales abiertos: solo el de arriba responde a Esc y atrapa el foco.
+const pilaModales = [];
+let overflowPrevio = '';
+let paddingPrevio = '';
+
+function modalDeArriba() {
+  return pilaModales[pilaModales.length - 1] || null;
+}
+
+function focoEnModal(el) {
+  if (!el) return [];
+  return [...el.querySelectorAll(
+    'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+  )].filter((n) => n.offsetParent !== null);
+}
+
+function alTeclear(e) {
+  const top = modalDeArriba();
+  if (!top) return;
+  if (e.key === 'Escape') {
+    // Se frena aca para que no se cierren tambien el drawer/buscador de atras.
+    e.preventDefault();
+    e.stopPropagation();
+    top.cerrar();
+    return;
+  }
+  if (e.key !== 'Tab') return;
+  const el = top.el?.current;
+  if (!el) return;
+  const focos = focoEnModal(el);
+  if (!focos.length) {
+    e.preventDefault();
+    el.focus();
+    return;
+  }
+  const primero = focos[0];
+  const ultimo = focos[focos.length - 1];
+  const activo = document.activeElement;
+  if (!el.contains(activo)) {
+    e.preventDefault();
+    primero.focus();
+  } else if (e.shiftKey && activo === primero) {
+    e.preventDefault();
+    ultimo.focus();
+  } else if (!e.shiftKey && activo === ultimo) {
+    e.preventDefault();
+    primero.focus();
+  }
+}
+
+function apilarModal(entrada) {
+  pilaModales.push(entrada);
+  if (pilaModales.length !== 1) return;
+  overflowPrevio = document.body.style.overflow;
+  paddingPrevio = document.body.style.paddingRight;
+  // El scrollbar desaparece al bloquear el fondo: se compensa para que no salte.
+  const anchoScroll = window.innerWidth - document.documentElement.clientWidth;
+  document.body.style.overflow = 'hidden';
+  if (anchoScroll > 0) document.body.style.paddingRight = `${anchoScroll}px`;
+  document.addEventListener('keydown', alTeclear, true);
+}
+
+function desapilarModal(entrada) {
+  const i = pilaModales.indexOf(entrada);
+  if (i >= 0) pilaModales.splice(i, 1);
+  if (pilaModales.length) return;
+  document.body.style.overflow = overflowPrevio;
+  document.body.style.paddingRight = paddingPrevio;
+  document.removeEventListener('keydown', alTeclear, true);
+}
+
+export function Modal({
+  title, sub, onClose, children, size = 'md', footer, tabs,
+  closeOnBackdrop = true, className = '',
+}) {
+  const idBase = useId();
+  const idTitulo = `${idBase}-titulo`;
+  const idSub = `${idBase}-sub`;
+  const caja = useRef(null);
+  const enFondo = useRef(false);
+  const cerrarRef = useRef(onClose);
+  cerrarRef.current = onClose;
+
   useEffect(() => {
-    const onKey = (e) => { if (e.key === 'Escape') onClose?.(); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
-  return (
-    <div className="modal-back" onClick={onClose}>
-      <div className={`modal${ancho === 'ancho' ? ' modal-ancho' : ''}`} role="dialog" aria-modal="true" aria-label={title} onClick={(e) => e.stopPropagation()}>
-        <div className="row between mb16">
-          <div>
-            <h3>{title}</h3>
-            {sub && <div className="sub">{sub}</div>}
+    const entrada = { el: caja, cerrar: () => cerrarRef.current?.() };
+    apilarModal(entrada);
+    const previo = document.activeElement;
+
+    // Foco inicial: el campo marcado con data-autofocus, si no el primer campo
+    // del formulario y, si no hay campos, el propio dialogo. En celular se
+    // enfoca el dialogo para no abrir el teclado solo.
+    const enCelular = window.matchMedia?.('(max-width: 700px)').matches;
+    const campo = caja.current?.querySelector(
+      'input:not([type="hidden"]):not([disabled]), select:not([disabled]), textarea:not([disabled])'
+    );
+    const destino = enCelular
+      ? caja.current
+      : (caja.current?.querySelector('[data-autofocus]') || campo || caja.current);
+    destino?.focus?.({ preventScroll: true });
+
+    return () => {
+      desapilarModal(entrada);
+      // Devolver el foco a quien abrio el modal (si sigue en pantalla).
+      if (previo && previo.isConnected) previo.focus?.({ preventScroll: true });
+    };
+  }, []);
+
+  const alBajarFondo = (e) => {
+    enFondo.current = e.target === e.currentTarget;
+  };
+
+  const alClickFondo = (e) => {
+    if (!enFondo.current || e.target !== e.currentTarget) return;
+    enFondo.current = false;
+    if (closeOnBackdrop) cerrarRef.current?.();
+  };
+
+  return createPortal(
+    <div className="modal-back" onMouseDown={alBajarFondo} onClick={alClickFondo}>
+      <div
+        ref={caja}
+        className={`modal ${TAMANO_MODAL[size] || ''} ${className}`.trim()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={idTitulo}
+        aria-describedby={sub ? idSub : undefined}
+        tabIndex={-1}
+      >
+        <header className="modal-head">
+          <div className="modal-head-row">
+            <div className="grow">
+              <h3 id={idTitulo}>{title}</h3>
+              {sub && <div className="modal-sub" id={idSub}>{sub}</div>}
+            </div>
+            <button type="button" className="modal-x" aria-label="Cerrar" onClick={onClose}>
+              <Icon name="x" size={16} />
+            </button>
           </div>
-          <button className="btn icon sm" aria-label="Cerrar" onClick={onClose}><Icon name="x" size={14} /></button>
-        </div>
-        {children}
+          {tabs && <div className="modal-tabs">{tabs}</div>}
+        </header>
+
+        <div className="modal-body">{children}</div>
+
+        {footer && <footer className="modal-foot">{footer}</footer>}
       </div>
-    </div>
+    </div>,
+    document.body
   );
+}
+
+/* Confirmacion estandar para acciones que no se pueden deshacer. */
+export function ConfirmDialog({
+  title, sub, children, confirmLabel = 'Confirmar', cancelLabel = 'Cancelar',
+  tone = 'danger', busy = false, onConfirm, onCancel,
+}) {
+  return (
+    <Modal
+      size="sm"
+      title={title}
+      sub={sub}
+      closeOnBackdrop={!busy}
+      onClose={busy ? () => {} : onCancel}
+      footer={(
+        <>
+          <button type="button" className="btn" onClick={onCancel} disabled={busy}>{cancelLabel}</button>
+          <button
+            type="button"
+            className={`btn ${tone === 'danger' ? 'danger' : 'primary'}`}
+            onClick={onConfirm}
+            disabled={busy}
+          >
+            {busy ? 'Guardando...' : confirmLabel}
+          </button>
+        </>
+      )}
+    >
+      {children}
+    </Modal>
+  );
+}
+
+/* Secciones y grilla para los formularios dentro de un modal. */
+export function FormSection({ title, sub, children }) {
+  return (
+    <section className="fsec">
+      {(title || sub) && (
+        <div className="fsec-head">
+          {title && <h4>{title}</h4>}
+          {sub && <p>{sub}</p>}
+        </div>
+      )}
+      {children}
+    </section>
+  );
+}
+
+export function FormGrid({ cols = 2, children }) {
+  return <div className={`fgrid fgrid-${cols}`}>{children}</div>;
 }
 
 /* ---------------- OrderCard (kanban / list) ---------------- */
