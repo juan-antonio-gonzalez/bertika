@@ -3,7 +3,7 @@
 // Uso:  npm run legal:archivar
 //
 // Lee los textos de src/data/legal.js, escribe una copia HTML autonoma en
-// public/legal/versiones/<version>/ y actualiza el manifiesto con el SHA-256 de
+// public/legal/archivo/<version>/ y actualiza el manifiesto con el SHA-256 de
 // cada documento. Ese hash es el que guarda el consentimiento: si el texto
 // cambia, la version tiene que cambiar y se archiva de nuevo.
 
@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { LEGAL_DOCS, LEGAL_META, textoLegalCanonico } from '../src/data/legal.js';
 
 const RAIZ = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const BASE = path.join(RAIZ, 'public', 'legal', 'versiones');
+const BASE = path.join(RAIZ, 'public', 'legal', 'archivo');
 const VERSION = LEGAL_META.version;
 
 const sha256 = (texto) => createHash('sha256').update(texto, 'utf8').digest('hex');
@@ -69,7 +69,7 @@ for (const [clave, doc] of Object.entries(LEGAL_DOCS)) {
   documentos.push({
     clave,
     titulo: doc.titulo,
-    url: `/legal/versiones/${VERSION}/${clave}.html`,
+    url: `/legal/archivo/${VERSION}/${clave}.html`,
     sha256: hash,
   });
   console.log(`  archivo  ${path.relative(RAIZ, archivo)}`);
@@ -90,4 +90,4 @@ const entrada = { version: VERSION, fecha: LEGAL_META.actualizado, documentos };
 const sinLaActual = versiones.filter((v) => v?.version !== VERSION);
 const ordenadas = [entrada, ...sinLaActual].sort((a, b) => String(b.version).localeCompare(String(a.version)));
 writeFileSync(manifiesto, `${JSON.stringify(ordenadas, null, 2)}\n`, 'utf8');
-console.log(`\nManifiesto actualizado: public/legal/versiones/index.json (${ordenadas.length} versión/es)`);
+console.log(`\nManifiesto actualizado: public/legal/archivo/index.json (${ordenadas.length} versión/es)`);

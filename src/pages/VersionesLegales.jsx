@@ -3,13 +3,13 @@ import { Link } from 'react-router-dom';
 import { LEGAL_DOCS, LEGAL_META } from '../data/legal';
 
 // Historial de versiones legales. El manifiesto lo genera `npm run legal:archivar`
-// y queda como archivo estático en public/legal/versiones/index.json.
+// y queda como archivo estático en public/legal/archivo/index.json.
 export default function VersionesLegales() {
   const [versiones, setVersiones] = useState(null);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    fetch('/legal/versiones/index.json', { cache: 'no-store' })
+    fetch('/legal/archivo/index.json', { cache: 'no-store' })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error('No se pudo leer el historial'))))
       .then((v) => setVersiones(Array.isArray(v) ? v : []))
       .catch(() => {

@@ -271,7 +271,7 @@ orden o enviar el correo. `idempotencyKey` evita duplicados por reintentos.
 ### Documentos y versiones
 Textos vigentes: `/legal/privacidad`, `/legal/cookies`, `/legal/terminos`.
 Archivo congelado y manifiesto con hashes: `/legal/versiones` y
-`/legal/versiones/index.json`. Para cambiar un texto: editar `src/data/legal.js`,
+`/legal/archivo/index.json`. Para cambiar un texto: editar `src/data/legal.js`,
 subir la versión y correr `npm run legal:archivar`.
 
 ## Reset demo (admin)

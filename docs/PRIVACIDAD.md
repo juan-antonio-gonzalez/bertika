@@ -2,7 +2,7 @@
 
 **Estado:** implementado el 23/10/2026, adaptado del paquete que ya usa Makerapps.
 **Fuente única de los textos:** [`src/data/legal.js`](../src/data/legal.js).
-**Archivo congelado:** [`public/legal/versiones/`](../public/legal/versiones/).
+**Archivo congelado:** [`public/legal/archivo/`](../public/legal/archivo/).
 **Tabla:** `consentimientos` (PostgreSQL).
 
 ---
@@ -88,7 +88,7 @@ npm run legal:archivar   # congela la versión y actualiza el manifiesto
 npm run legal:verificar  # valida hashes y contenido mínimo
 ```
 
-4. Commiteá los cambios de `src/data/legal.js` y de `public/legal/versiones/`.
+4. Commiteá los cambios de `src/data/legal.js` y de `public/legal/archivo/`.
 5. Si cambia el texto, el consentimiento anterior sigue apuntando a la versión
    vieja: eso es correcto y es la prueba de lo que la persona aceptó.
 

@@ -11,7 +11,7 @@ const test = (nombre, fn) => {
 };
 
 const sha = (texto) => createHash('sha256').update(texto, 'utf8').digest('hex');
-const manifiesto = JSON.parse(readFileSync(path.resolve('public/legal/versiones/index.json'), 'utf8'));
+const manifiesto = JSON.parse(readFileSync(path.resolve('public/legal/archivo/index.json'), 'utf8'));
 
 console.log('\nDocumentos legales');
 
@@ -69,7 +69,7 @@ test('el archivo de versiones coincide con el texto publicado', () => {
     const entry = ultima.documentos.find((d) => d.clave === clave);
     assert.ok(entry, `falta ${clave} en el manifiesto`);
     assert.equal(entry.sha256, sha(textoLegalCanonico(doc.html)), `hash de ${clave}`);
-    assert.equal(entry.url, `/legal/versiones/${LEGAL_META.version}/${clave}.html`);
+    assert.equal(entry.url, `/legal/archivo/${LEGAL_META.version}/${clave}.html`);
   }
 });
 

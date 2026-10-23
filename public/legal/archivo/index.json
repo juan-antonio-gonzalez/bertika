@@ -6,19 +6,19 @@
       {
         "clave": "privacidad",
         "titulo": "Política de privacidad",
-        "url": "/legal/versiones/2026-10-23/privacidad.html",
+        "url": "/legal/archivo/2026-10-23/privacidad.html",
         "sha256": "0200f822fd80f48699b6e36c565672fa30187884a6721fd3a1e1ff2e18794988"
       },
       {
         "clave": "cookies",
         "titulo": "Política de cookies",
-        "url": "/legal/versiones/2026-10-23/cookies.html",
+        "url": "/legal/archivo/2026-10-23/cookies.html",
         "sha256": "11130abc6722c4fa8073da35b64ecf3ed8084d04dfba804a9ef7d92ab8779768"
       },
       {
         "clave": "terminos",
         "titulo": "Términos y condiciones",
-        "url": "/legal/versiones/2026-10-23/terminos.html",
+        "url": "/legal/archivo/2026-10-23/terminos.html",
         "sha256": "30b16d8b9efbc7edb8300decd5426c9bcacef39c54ad0cfa3924cafe90c577b1"
       }
     ]
