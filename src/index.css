@@ -626,6 +626,22 @@ button.chip:hover { border-color: var(--brand-amber); background: var(--brand-so
 
 /* ---------- page hero (páginas públicas) ---------- */
 .page-hero { position: relative; overflow: hidden; background: #0a1740; color: #fff; text-align: center; padding: 96px 0 66px; border-bottom: 3px solid var(--amber); }
+/* Heroes con video y texto encima (Servicios / Política Ecológica). */
+.page-hero--video,
+.page-hero--eco-video { min-height: 430px; padding: 0; display: flex; align-items: center; }
+.page-hero--video > .wrap,
+.page-hero--eco-video > .wrap { position: relative; z-index: 1; padding: 72px 20px; }
+.page-hero--video h1,
+.page-hero--eco-video h1 { text-shadow: 0 3px 26px rgba(0, 0, 0, 0.6); }
+.sec-video--servicios-hero::after { background: linear-gradient(180deg, rgba(10, 23, 64, 0.22) 0%, rgba(10, 23, 64, 0.45) 55%, rgba(10, 23, 64, 0.8) 100%); }
+.sec-video--eco-hero::after { background: linear-gradient(180deg, rgba(4, 12, 10, 0.28) 0%, rgba(4, 12, 10, 0.5) 55%, rgba(4, 12, 10, 0.82) 100%); }
+@media (max-width: 860px) {
+  .page-hero--video,
+  .page-hero--eco-video { min-height: 340px; }
+  .page-hero--video > .wrap,
+  .page-hero--eco-video > .wrap { padding: 48px 16px; }
+}
+
 /* Empresa: la vitrina 3D va como banda superior del hero. */
 .page-hero--vitrina { padding: 0 0 66px; }
 .page-hero-vitrina { position: relative; height: 380px; overflow: hidden; border-bottom: 1px solid rgba(255, 255, 255, 0.12); }

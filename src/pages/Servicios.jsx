@@ -33,10 +33,8 @@ const servicios = [
 export default function Servicios() {
   return (
     <>
-      <section className="page-hero page-hero--vitrina">
-        <div className="page-hero-vitrina">
-          <SectionVideo src="/video/servicios-nave.mp4" poster="/img/servicios-nave.jpg" className="sec-video--vitrina" />
-        </div>
+      <section className="page-hero page-hero--video">
+        <SectionVideo src="/video/servicios-nave.mp4" poster="/img/servicios-nave.jpg" className="sec-video--servicios-hero" />
         <div className="wrap">
           <h1>Servicios</h1>
           <div className="breadcrumb">

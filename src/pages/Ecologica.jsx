@@ -1,12 +1,11 @@
 import { Link } from 'react-router-dom';
+import SectionVideo from '../components/SectionVideo';
 
 export default function Ecologica() {
   return (
     <>
-      <section className="page-hero">
-        <div className="page-hero-bg">
-          <img src="/img/img-mundo.jpg" alt="" />
-        </div>
+      <section className="page-hero page-hero--eco-video">
+        <SectionVideo src="/video/seccion-ecologia.mp4" poster="/img/seccion-ecologia.jpg" className="sec-video--eco-hero" />
         <div className="wrap">
           <h1>Política Ecológica</h1>
           <div className="breadcrumb">
