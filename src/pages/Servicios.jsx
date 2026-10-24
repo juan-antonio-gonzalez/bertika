@@ -33,9 +33,9 @@ const servicios = [
 export default function Servicios() {
   return (
     <>
-      <section className="page-hero">
-        <div className="page-hero-bg">
-          <img src="/img/slide00-drop.jpg" alt="" />
+      <section className="page-hero page-hero--vitrina">
+        <div className="page-hero-vitrina">
+          <SectionVideo src="/video/servicios-bench.mp4" poster="/img/servicios-bench.jpg" className="sec-video--vitrina" />
         </div>
         <div className="wrap">
           <h1>Servicios</h1>
@@ -45,8 +45,7 @@ export default function Servicios() {
         </div>
       </section>
 
-      <section className="sec sec-video-sec">
-        <SectionVideo src="/video/servicios-bench.mp4" poster="/img/servicios-bench.jpg" className="sec-video--servicios" />
+      <section className="sec">
         <div className="wrap">
           <h2 className="sec-title">Un servicio integral</h2>
           <p className="sec-sub">
@@ -68,22 +67,20 @@ export default function Servicios() {
             <Link to="/contacto" className="btn primary lg">Solicitar presupuesto</Link>
             <Link to="/cotizador" className="btn lg"><Icon name="calculator" size={15} /> Cotizador de visita</Link>
           </div>
-        </div>
-      </section>
 
-      <section className="sec">
-        <div className="wrap">
-          <h3 className="sec-title" style={{ fontSize: 22 }}>También comercializamos</h3>
-          <div className="service-grid">
-            {PRODUCTOS.map((p) => (
-              <Link key={p.id} to={`/productos#${p.id}`} className="service-card" style={{ color: 'inherit' }}>
-                <div className="sc-thumb"><img src={p.img} alt={p.titulo} /></div>
-                <div className="sc-body">
-                  <h3 className="sc-title" style={{ fontSize: 14 }}>{p.titulo}</h3>
-                  <hr className="hr-red" />
-                </div>
-              </Link>
-            ))}
+          <div className="mt32">
+            <h3 className="sec-title" style={{ fontSize: 22 }}>También comercializamos</h3>
+            <div className="service-grid">
+              {PRODUCTOS.map((p) => (
+                <Link key={p.id} to={`/productos#${p.id}`} className="service-card" style={{ color: 'inherit' }}>
+                  <div className="sc-thumb"><img src={p.img} alt={p.titulo} /></div>
+                  <div className="sc-body">
+                    <h3 className="sc-title" style={{ fontSize: 14 }}>{p.titulo}</h3>
+                    <hr className="hr-red" />
+                  </div>
+                </Link>
+              ))}
+            </div>
           </div>
         </div>
       </section>
