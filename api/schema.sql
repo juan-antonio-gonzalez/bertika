@@ -76,6 +76,7 @@ CREATE TABLE IF NOT EXISTS ordenes (
   insumos_utilizados JSONB DEFAULT '[]',
   prueba_final JSONB DEFAULT '{"estado":"pending"}',
   diagnostico JSONB,
+  consentimiento_id TEXT,
   eventos JSONB DEFAULT '[]'
 );
 

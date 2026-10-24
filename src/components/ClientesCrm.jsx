@@ -6,9 +6,11 @@
 //
 // Todo el calculo sale de src/data/clientesKpis.js (probado aparte) y los datos
 // del store: clientes, ordenes y baterias. Nunca se pide nada al backend.
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useStore } from '../store/store';
+import { useStore, usePermiso } from '../store/store';
+import { api } from '../store/api';
+import ConstanciaModal from './ConstanciaModal';
 import { Icon, Modal, ConfirmDialog, FormSection, FormGrid, EstadoPill, fmtARS, fmtFecha, waNumero } from './ui';
 import { CANALES_ORIGEN, camposComercialesCargados } from '../data/crm.js';
 import { TIPOS_CLIENTE } from '../data/crm';
@@ -151,6 +153,70 @@ function FormCliente({ cliente, onGuardar, onClose, busy }) {
   );
 }
 
+// Aceptaciones de términos/privacidad asociadas al email del cliente.
+// Solo se muestra a quien tiene permiso "sistema": el endpoint también lo exige.
+function Aceptaciones({ email }) {
+  const puedeVer = usePermiso('sistema');
+  const [filas, setFilas] = useState([]);
+  const [cargando, setCargando] = useState(false);
+  const [error, setError] = useState('');
+  const [detalleId, setDetalleId] = useState(null);
+
+  useEffect(() => {
+    if (!puedeVer || !email) return undefined;
+    let vivo = true;
+    setCargando(true);
+    api(`/privacidad/consentimientos?email=${encodeURIComponent(email)}&limite=20`)
+      .then((r) => { if (vivo) { setFilas(r.filas || []); setError(''); } })
+      .catch((e) => { if (vivo) setError(e.message); })
+      .finally(() => { if (vivo) setCargando(false); });
+    return () => { vivo = false; };
+  }, [email, puedeVer]);
+
+  if (!puedeVer || !email) return null;
+
+  return (
+    <div className="mt16">
+      <div className="card-title"><Icon name="shield" size={14} /> Aceptaciones ({filas.length})</div>
+      {cargando && <p className="muted" style={{ margin: '6px 0 0' }}>Buscando aceptaciones…</p>}
+      {error && <div className="alerta">{error}</div>}
+      {!cargando && !error && filas.length === 0 && (
+        <p className="muted" style={{ margin: '6px 0 0' }}>No hay aceptaciones registradas con este email.</p>
+      )}
+      {filas.length > 0 && (
+        <div style={{ overflowX: 'auto' }}>
+          <table className="tbl">
+            <thead><tr><th>Fecha</th><th>Tipo</th><th>Documentos</th><th>Integridad</th><th /></tr></thead>
+            <tbody>
+              {filas.map((f) => (
+                <tr key={f.id}>
+                  <td className="muted" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>{fmtFecha(f.creado_en)}</td>
+                  <td><span className="badge blue">{f.tipo}</span></td>
+                  <td style={{ fontSize: 11.5 }}>
+                    {f.terminos_version && <div>Términos v{f.terminos_version}</div>}
+                    {f.privacidad_version && <div>Privacidad v{f.privacidad_version}</div>}
+                    {f.cookies_version && <div>Cookies v{f.cookies_version}</div>}
+                    {!f.terminos_version && !f.privacidad_version && !f.cookies_version && '—'}
+                  </td>
+                  <td>
+                    {f.integro
+                      ? <span className="badge green">íntegro</span>
+                      : <span className="badge red">revisar</span>}
+                  </td>
+                  <td style={{ textAlign: 'right' }}>
+                    <button className="btn sm ghost" onClick={() => setDetalleId(f.id)}>Ver constancia</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {detalleId && <ConstanciaModal id={detalleId} onClose={() => setDetalleId(null)} />}
+    </div>
+  );
+}
+
 // Ficha del cliente: contacto, numeros, ordenes, equipos y garantias.
 function Ficha({ cliente, datos, onAbrirOrden, onEditar, onBaja, onClose }) {
   const f = fichaCliente(cliente, datos);
@@ -258,6 +324,8 @@ function Ficha({ cliente, datos, onAbrirOrden, onEditar, onBaja, onClose }) {
           </ul>
         )}
       </div>
+
+      <Aceptaciones email={cliente.email} />
 
       <div className="mt16">
         <div className="card-title"><Icon name="shield" size={14} /> Garantías ({f.garantias.length})</div>

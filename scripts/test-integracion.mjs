@@ -355,6 +355,7 @@ async function main() {
       body: {
         nombre: 'Con Consentimiento', email: emailPriv, telefono: '11 5555-0000',
         asunto: 'Consulta', mensaje: 'Hola, necesito un presupuesto', website: '',
+        serie: 'TEST-PRIV-1',
         terminosVersion: LEGAL_DOCS.terminos.version,
         privacidadVersion: LEGAL_DOCS.privacidad.version,
         aceptaTerminos: true, aceptaPrivacidad: true, idempotencyKey: 'contacto-test-1',
@@ -374,6 +375,10 @@ async function main() {
     assert.equal(fila.terminos_url, `/legal/archivo/${LEGAL_DOCS.terminos.version}/terminos.html`);
     assert.equal(fila.privacidad_url, `/legal/archivo/${LEGAL_DOCS.privacidad.version}/privacidad.html`);
     assert.match(fila.hash, /^[a-f0-9]{64}$/);
+    assert.ok(con.json.codigo, 'el formulario de reparación devuelve el código de seguimiento');
+    const orden = (await db.query('SELECT id, consentimiento_id FROM ordenes WHERE consentimiento_id = $1', [fila.id])).rows[0];
+    assert.ok(orden, 'la orden creada desde el formulario queda vinculada a la aceptación');
+    assert.equal(orden.consentimiento_id, fila.id);
   });
 
   await test('reenviar el mismo formulario no duplica el consentimiento', async () => {
@@ -415,6 +420,10 @@ async function main() {
     assert.ok(lista.json.resumen.total >= 3);
     assert.ok(lista.json.filas.some((f) => f.id === consentCookiesId));
     assert.ok(lista.json.filas.every((f) => f.integro === true), 'el panel marca todas como íntegras');
+    const porEmail = await pedir(`/privacidad/consentimientos?email=${encodeURIComponent(emailPriv)}`, { token: tokenAdmin });
+    assert.equal(porEmail.status, 200, porEmail.texto);
+    assert.ok(porEmail.json.filas.length >= 1, 'la ficha del cliente encuentra sus aceptaciones por email');
+    assert.ok(porEmail.json.filas.every((f) => f.email === emailPriv.toLowerCase()));
 
     const detalle = await pedir(`/privacidad/consentimientos/${consentContactoId}`, { token: tokenAdmin });
     assert.equal(detalle.status, 200, detalle.texto);

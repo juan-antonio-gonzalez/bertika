@@ -412,6 +412,9 @@ y **Cambiar preferencias**.
   estado de integridad. **Ver detalle** muestra quién aceptó, cuándo, desde qué IP/página,
   qué documentos y hashes, con enlace al texto exacto archivado y **constancia descargable**.
   Se filtran, se exportan a CSV y se pueden anonimizar. Se conservan 5 años.
+- **Desde el cliente**: en su ficha, si tiene email, aparece **Aceptaciones** con sus
+  constancias. **Desde la orden**: si se creó por el formulario web, aparece
+  **Aceptación web** con el botón **Ver constancia**. Solo lo ve el admin.
 - **Versiones**: cada cambio de texto se publica con fecha y versión, y queda el archivo
   con el hash de lo que se aceptó.
 

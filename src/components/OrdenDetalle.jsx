@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useStore, usePermiso } from '../store/store';
+import ConstanciaModal from './ConstanciaModal';
 import { api } from '../store/api';
 import { Modal, ConfirmDialog, FormGrid, EstadoPill, Timeline, Icon, fmtDate, fmtARS, appIconName, fmtFecha, diasEnEstado, etiquetaAntiguedad, tonoAntiguedad, waNumero, numeroEnRango, nombreActor } from './ui';
 import { MIN_CAPACIDAD_PCT } from '../data/reglas';
@@ -354,6 +355,7 @@ export default function OrdenDetalle({ orden, role, onClose, onEntregado, onBaja
   // Solo se muestran las acciones que el usuario tiene habilitadas.
   const puedeEntregar = usePermiso('entregar');
   const puedeBaja = usePermiso('baja_orden');
+  const puedeVerConsentimiento = usePermiso('sistema');
   const data = useStore((s) => s.data);
   const asignarTecnico = useStore((s) => s.asignarTecnico);
   const startRepair = useStore((s) => s.startRepair);
@@ -370,6 +372,7 @@ export default function OrdenDetalle({ orden, role, onClose, onEntregado, onBaja
   const [entregar, setEntregar] = useState(false);
   const [compartir, setCompartir] = useState(null);
   const [versiones, setVersiones] = useState(null);
+  const [detalleConsentimiento, setDetalleConsentimiento] = useState(null);
 
   const bateria = data.baterias.find((b) => b.numero_serie === orden.bateria_serie);
   const cliente = data.clientes.find((c) => c.id === orden.cliente_id);
@@ -531,6 +534,17 @@ export default function OrdenDetalle({ orden, role, onClose, onEntregado, onBaja
               </div>
             </div>
           </div>
+          {puedeVerConsentimiento && orden.consentimiento_id && (
+            <div className="card" style={{ background: 'var(--bg-3)' }}>
+              <div className="card-title"><Icon name="shield" size={14} /> Aceptación web</div>
+              <p className="muted" style={{ margin: '8px 0 8px', fontSize: 12 }}>
+                Esta orden se creó desde el formulario de contacto. La persona aceptó los términos y la política de privacidad.
+              </p>
+              <button className="btn sm" type="button" onClick={() => setDetalleConsentimiento(orden.consentimiento_id)}>
+                Ver constancia
+              </button>
+            </div>
+          )}
           <div className="card" style={{ background: 'var(--bg-3)' }}>
             <div className="card-title"><Icon name="warn" size={14} /> Falla reportada</div>
             <p style={{ margin: '8px 0 0' }}>{orden.falla}</p>
@@ -886,6 +900,9 @@ export default function OrdenDetalle({ orden, role, onClose, onEntregado, onBaja
         Ventas (tel/WhatsApp): {CONTACTO.telefono} · Soporte técnico: {CONTACTO.telefonoSoporte}<br />
         {OFICIAL}
       </div>
+      {detalleConsentimiento && (
+        <ConstanciaModal id={detalleConsentimiento} onClose={() => setDetalleConsentimiento(null)} />
+      )}
     </Modal>
   );
 }

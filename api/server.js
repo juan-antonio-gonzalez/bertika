@@ -180,6 +180,9 @@ let indiceWamid = false;
 async function asegurarCodigos() {
   await query('ALTER TABLE ordenes ADD COLUMN IF NOT EXISTS codigo_seguimiento TEXT');
   await query('ALTER TABLE ordenes ADD COLUMN IF NOT EXISTS medio_pago TEXT');
+  // Aceptacion que origino la orden cuando entra por el formulario web.
+  await query('ALTER TABLE ordenes ADD COLUMN IF NOT EXISTS consentimiento_id TEXT');
+  await query('CREATE INDEX IF NOT EXISTS idx_ordenes_consentimiento ON ordenes (consentimiento_id)');
   // Trazabilidad: versiones de cotizacion (quien cotizo que y cuando).
   await query(`CREATE TABLE IF NOT EXISTS cotizaciones_historial (
     id TEXT PRIMARY KEY,
@@ -1171,6 +1174,11 @@ function filtrosConsentimientos(req) {
   if (['cookies', 'formulario', 'retiro'].includes(tipo)) {
     args.push(tipo);
     cond.push(`tipo = $${args.length}`);
+  }
+  const email = limStr(req.query?.email, 200).toLowerCase();
+  if (email) {
+    args.push(email);
+    cond.push(`LOWER(email) = $${args.length}`);
   }
   const q = limStr(req.query?.q, 120);
   if (q) {
@@ -2831,12 +2839,13 @@ app.post('/api/public/contacto', contactoLimiter, async (req, res) => {
       });
       codigoTxt = formatearCodigo(codigo);
       await client.query(
-        `INSERT INTO ordenes (id, codigo_seguimiento, bateria_serie, cliente_id, tecnico_id, falla, motivo, estado, fecha_ingreso, hora_entrega, eventos, cotizacion, estado_cotizacion, insumos_utilizados, prueba_final, diagnostico)
-         VALUES ($1,$2,$3,$4,NULL,$5,$5,'received',$6,$7,$8::jsonb,NULL,NULL,'[]'::jsonb,'{"estado":"pending"}',NULL)`,
+        `INSERT INTO ordenes (id, codigo_seguimiento, bateria_serie, cliente_id, tecnico_id, falla, motivo, estado, fecha_ingreso, hora_entrega, eventos, cotizacion, estado_cotizacion, insumos_utilizados, prueba_final, diagnostico, consentimiento_id)
+         VALUES ($1,$2,$3,$4,NULL,$5,$5,'received',$6,$7,$8::jsonb,NULL,NULL,'[]'::jsonb,'{"estado":"pending"}',NULL,$9)`,
         [
           ordId, codigo, serieTxt, c.id, mensajeT,
           nowIso(), new Date(Date.now() + 24 * 3600000).toISOString(),
           JSON.stringify([{ id: evId, tipo: 'ingreso', detalle: `Batería ${serieTxt} ingresada al taller (por web). Falla reportada: ${mensajeT}`, fecha: nowIso(), usuario: null }]),
+          consentimiento.id,
         ]
       );
     });

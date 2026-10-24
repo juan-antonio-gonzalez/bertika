@@ -124,5 +124,7 @@ En `/sistema` → **Privacidad** (permiso `sistema`): lista, filtra, exporta CSV
 anonimiza. Cada fila muestra su **ID**, la **integridad** (hash completo y hash legal)
 y un botón **Ver detalle**: ahí se ve quién aceptó, cuándo, desde qué IP/página, qué
 versiones y hashes, el enlace al **texto exacto archivado** y una **constancia
-descargable en JSON**. La exportación CSV incluye esos mismos campos y usa el escape
+descargable en JSON**. La misma constancia se abre desde la **ficha del cliente**
+(aceptaciones con su email) y desde la **orden** creada por el formulario web
+(campo `consentimiento_id`). La exportación CSV incluye esos mismos campos y usa el escape
 de fórmulas del resto de los CSV. Cada acción queda en la auditoría.

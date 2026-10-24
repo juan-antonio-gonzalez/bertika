@@ -249,11 +249,12 @@ supresión, oposición). Body:
 Guarda la solicitud antes de mandar el aviso por correo a `PRIVACY_EMAIL`.
 Devuelve `{ ok, id, duplicado }`. Tiene el mismo límite anti-spam que contacto.
 
-### `GET /privacidad/consentimientos?tipo=&q=&desde=&hasta=&limite=`
+### `GET /privacidad/consentimientos?tipo=&q=&email=&desde=&hasta=&limite=`
 Requiere el permiso `sistema` (admin). Devuelve `{ filas, resumen }`; cada fila
 incluye `integro`, `integro_legal` e `integro_completo`. Filtra por
-tipo (`cookies`, `formulario`, `retiro`), nombre/email y fecha. Los datos
-identificatorios pueden estar anonimizados.
+tipo (`cookies`, `formulario`, `retiro`), nombre/email (`q`), email exacto (`email`,
+para la ficha del cliente) y fecha. Los datos identificatorios pueden estar
+anonimizados.
 
 ### `GET /privacidad/consentimientos/:id`
 Requiere `sistema`. Devuelve el registro completo con `integro`, `integro_legal`,
@@ -273,7 +274,9 @@ hash como prueba. `409` si ya estaba anonimizado. Queda en la auditoría.
 `POST /public/contacto` y `POST /public/cotizacion-visita` exigen, cuando hay
 datos personales, `terminosVersion`, `privacidadVersion`, `aceptaTerminos: true`
 y `aceptaPrivacidad: true`. El consentimiento se guarda **antes** de crear la
-orden o enviar el correo. `idempotencyKey` evita duplicados por reintentos.
+orden o enviar el correo. `idempotencyKey` evita duplicados por reintentos. Si el
+formulario crea una orden de reparación, la orden guarda `consentimiento_id` y el
+detalle de la orden muestra la constancia (solo admin).
 
 ### Documentos y versiones
 Textos vigentes: `/legal/privacidad`, `/legal/cookies`, `/legal/terminos`.
