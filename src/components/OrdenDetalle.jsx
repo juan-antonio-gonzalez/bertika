@@ -7,6 +7,7 @@ import { MIN_CAPACIDAD_PCT } from '../data/reglas';
 import { esStockCritico } from '../data/inventario';
 import { OrdenTrabajo, ComprobanteEntrega } from './DocumentosTaller';
 import { CONTACTO, OFICIAL } from '../data/siteData';
+import { nubeUrl } from '../data/nube';
 import { enlaceSeguimiento } from '../data/respuestas';
 import EtiquetaBateria from './EtiquetaBateria';
 
@@ -456,6 +457,17 @@ export default function OrdenDetalle({ orden, role, onClose, onEntregado, onBaja
       footer={(
         <>
           <button type="button" className="btn izq" onClick={onClose}>Cerrar</button>
+          {role !== 'cliente' && (
+            <a
+              className="btn"
+              href={nubeUrl('taller')}
+              target="_blank"
+              rel="noreferrer"
+              title="Abrir la nube de archivos (espacio Taller) en una pestaña nueva"
+            >
+              <Icon name="folder" size={14} /> Nube
+            </a>
+          )}
           {role !== 'cliente' && (
             <button type="button" className="btn" onClick={abrirCompartir}>
               <Icon name="mail" size={14} /> Compartir

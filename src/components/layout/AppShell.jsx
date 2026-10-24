@@ -6,6 +6,7 @@ import { Icon } from '../ui';
 import { AltasForm, NewOrdenForm } from '../AccionesGlobales';
 import { contarTareasPendientes } from '../../data/crm.js';
 import { CONTACTO } from '../../data/siteData';
+import { NUBE_URL } from '../../data/nube';
 import { contarCriticos } from '../../data/inventario';
 import CentroNotificaciones from './CentroNotificaciones';
 import BusquedaGlobal from './BusquedaGlobal';
@@ -244,6 +245,25 @@ export default function AppShell({ children }) {
               ))}
             </div>
           ))}
+          {/* Acceso directo a la nube de archivos (OpenCloud). Es un enlace
+              externo: no suma una seccion de permisos porque los permisos
+              reales los aplica OpenCloud con el usuario de cada persona. */}
+          {user && user.rol !== 'cliente' && (
+            <div className="shell-grupo">
+              <div className="shell-grupo-t">Archivos</div>
+              <a
+                className="shell-item"
+                href={NUBE_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Abrir la nube de archivos en una pestaña nueva"
+              >
+                <Icon name="folder" size={15} />
+                <span className="shell-item-l">Nube de archivos</span>
+                <Icon name="external" size={12} style={{ marginLeft: 'auto', opacity: 0.65 }} />
+              </a>
+            </div>
+          )}
         </nav>
 
         <div className="shell-pie">

@@ -13,6 +13,7 @@ import { api } from '../store/api';
 import ConstanciaModal from './ConstanciaModal';
 import { Icon, Modal, ConfirmDialog, FormSection, FormGrid, EstadoPill, fmtARS, fmtFecha, waNumero } from './ui';
 import { CANALES_ORIGEN, camposComercialesCargados } from '../data/crm.js';
+import { nubeUrl } from '../data/nube';
 import { TIPOS_CLIENTE } from '../data/crm';
 import {
   resumenClientes, filtrarClientes, ordenarClientes, ORDENES, fichaCliente, tipoCliente,
@@ -234,6 +235,15 @@ function Ficha({ cliente, datos, onAbrirOrden, onEditar, onBaja, onClose }) {
       footer={(
         <>
           <button type="button" className="btn izq" onClick={onClose}>Cerrar</button>
+          <a
+            className="btn"
+            href={nubeUrl('ventas')}
+            target="_blank"
+            rel="noreferrer"
+            title="Abrir la nube de archivos (espacio Ventas) en una pestaña nueva"
+          >
+            <Icon name="folder" size={13} /> Nube
+          </a>
           {wa && (
             <a className="btn" href={`https://wa.me/${wa}`} target="_blank" rel="noreferrer">
               <Icon name="mail" size={13} /> WhatsApp
