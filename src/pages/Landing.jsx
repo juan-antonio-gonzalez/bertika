@@ -1,11 +1,40 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Icon } from '../components/ui';
 import { PRODUCTOS } from '../data/siteData';
 import { api } from '../store/api';
 
+// Video del hero (batería desarmándose). Se genera aparte y se deja acá.
+// Si el archivo falta, el navegador no puede reproducirlo y queda la foto fija.
+const HERO_VIDEO = '/video/hero-bateria-despiece.mp4';
+
 export default function Landing() {
   const [stats, setStats] = useState({ clientes: 0, baterias: 0, activas: 0, entregadas: 0 });
+  const [videoListo, setVideoListo] = useState(false);
+  const [videoFallo, setVideoFallo] = useState(false);
+  const [pocoMovimiento, setPocoMovimiento] = useState(false);
+  const videoRef = useRef(null);
+
+  // Respeta la preferencia "reducir movimiento" del sistema: sin video, foto fija.
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const aplicar = () => setPocoMovimiento(mq.matches);
+    aplicar();
+    mq.addEventListener('change', aplicar);
+    return () => mq.removeEventListener('change', aplicar);
+  }, []);
+
+  // Pausa el video cuando el hero sale de pantalla (ahorra batería y datos).
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return undefined;
+    const io = new IntersectionObserver(([entrada]) => {
+      if (entrada.isIntersecting) v.play().catch(() => {});
+      else v.pause();
+    }, { threshold: 0.2 });
+    io.observe(v);
+    return () => io.disconnect();
+  }, [videoListo, videoFallo, pocoMovimiento]);
 
   useEffect(() => {
     let activo = true;
@@ -25,9 +54,25 @@ export default function Landing() {
   return (
     <>
       {/* Hero */}
-      <section className="hero">
+      <section className={`hero${videoListo ? ' hero--video' : ''}`}>
         <div className="hero-bg">
           <img src="/img/slide00-drop.jpg" alt="Baterías industriales" />
+          {!pocoMovimiento && !videoFallo && (
+            <video
+              ref={videoRef}
+              className={`hero-video${videoListo ? ' is-ready' : ''}`}
+              autoPlay
+              muted
+              loop
+              playsInline
+              preload="metadata"
+              aria-hidden="true"
+              onCanPlay={() => setVideoListo(true)}
+              onError={() => setVideoFallo(true)}
+            >
+              <source src={HERO_VIDEO} type="video/mp4" />
+            </video>
+          )}
         </div>
         <div className="wrap">
           <div className="hero-inner">
