@@ -16,7 +16,8 @@ export default function Productos() {
       <section className="page-hero page-hero--video">
         <SectionVideo src="/video/vitrina-productos.mp4" poster="/img/vitrina-productos.jpg" className="sec-video--productos-hero" />
         <div className="wrap">
-          <h1>Productos — Baterías</h1>
+          <div className="page-hero-kicker">Productos</div>
+          <h1 className="page-hero-title"><span className="hl-orange">Energía</span> para cada aplicación industrial</h1>
           <div className="breadcrumb">
             <Link to="/">Home</Link> / Productos
           </div>

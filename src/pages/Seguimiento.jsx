@@ -51,7 +51,8 @@ export default function Seguimiento() {
       <section className="page-hero">
         <div className="page-hero-bg"><img src="/img/slide00-drop.jpg" alt="" /></div>
         <div className="wrap">
-          <h1>Seguimiento</h1>
+          <div className="page-hero-kicker">Seguimiento</div>
+          <h1 className="page-hero-title">Tu batería, en <span className="hl-orange">tiempo real</span></h1>
           <div className="breadcrumb"><Link to="/">Home</Link> / Seguimiento</div>
         </div>
       </section>

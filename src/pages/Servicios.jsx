@@ -36,7 +36,8 @@ export default function Servicios() {
       <section className="page-hero page-hero--video">
         <SectionVideo src="/video/servicios-nave.mp4" poster="/img/servicios-nave.jpg" className="sec-video--servicios-hero" />
         <div className="wrap">
-          <h1>Servicios</h1>
+          <div className="page-hero-kicker">Servicios</div>
+          <h1 className="page-hero-title">Devolvemos la <span className="hl-orange">energía</span> a tu operación</h1>
           <div className="breadcrumb">
             <Link to="/">Home</Link> / Servicios
           </div>

@@ -9,7 +9,8 @@ export default function ComoLlegar() {
           <img src="/img/fachada.jpg" alt="" />
         </div>
         <div className="wrap">
-          <h1>Cómo Llegar</h1>
+          <div className="page-hero-kicker">Cómo Llegar</div>
+          <h1 className="page-hero-title">Estamos <span className="hl-orange">cerca</span> de tu operación</h1>
           <div className="breadcrumb">
             <Link to="/">Home</Link> / Cómo Llegar
           </div>

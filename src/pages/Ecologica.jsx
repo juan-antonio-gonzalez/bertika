@@ -7,7 +7,8 @@ export default function Ecologica() {
       <section className="page-hero page-hero--eco-video">
         <SectionVideo src="/video/seccion-ecologia.mp4" poster="/img/seccion-ecologia.jpg" className="sec-video--eco-hero" />
         <div className="wrap">
-          <h1>Política Ecológica</h1>
+          <div className="page-hero-kicker">Política Ecológica</div>
+          <h1 className="page-hero-title">Cerramos el <span className="hl-orange">ciclo</span> de la energía</h1>
           <div className="breadcrumb">
             <Link to="/">Home</Link> / Política Ecológica
           </div>
