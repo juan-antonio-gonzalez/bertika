@@ -129,9 +129,17 @@ const publicLimiter = rateLimit({
 });
 
 // Contacto: limite estricto (anti-spam de ordenes/correos).
+// Produccion: 5 por hora y por IP (valor por defecto). En desarrollo, donde se
+// prueba el mismo formulario muchas veces, se sube con CONTACTO_RATE_LIMIT en
+// api/.env. Ojo: el limite es por IP, asi que una oficina detras de un solo
+// router comparte el cupo; si hiciera falta, se sube tambien en el VPS.
+const limiteContacto = (() => {
+  const n = Number(process.env.CONTACTO_RATE_LIMIT);
+  return Number.isInteger(n) && n > 0 ? n : 5;
+})();
 const contactoLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
-  limit: 5,
+  limit: limiteContacto,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   message: { error: 'Limite de envios alcanzado. Intenta de nuevo mas tarde.' },
@@ -1107,7 +1115,16 @@ app.post('/api/consentimiento', publicLimiter, async (req, res) => {
 // antes de avisar por correo: si el correo falla, la solicitud no se pierde.
 app.post('/api/privacidad/solicitud', contactoLimiter, async (req, res) => {
   const { email, nombre, tipo, motivo, declara, website, idempotencyKey } = req.body || {};
-  if (website) return res.status(201).json({ ok: true, descartado: true });
+  if (website) {
+    // Mismo criterio que el formulario de contacto: se responde 201 al bot, pero
+    // queda la linea en el log. Aca importa el doble: es una solicitud legal y no
+    // puede desaparecer sin ningun rastro.
+    console.warn(JSON.stringify({
+      nivel: 'aviso', fecha: nowIso(), reqId: req.requestId, ruta: req.path,
+      motivo: 'honeypot', ip: req.ip || null,
+    }));
+    return res.status(201).json({ ok: true, descartado: true });
+  }
   if (normalizarBooleano(declara) !== true) {
     return res.status(400).json({ error: 'Tenés que declarar que sos el titular o que actuás en su nombre.' });
   }
@@ -2781,8 +2798,17 @@ app.post('/api/public/contacto', contactoLimiter, async (req, res) => {
     nombre, empresa, email, telefono, serie, asunto, mensaje, cotizacion_codigo, website,
     terminosVersion, privacidadVersion, aceptaTerminos, aceptaPrivacidad, idempotencyKey,
   } = req.body || {};
-  // Honeypot: campo oculto que solo completan bots. Se descarta silenciosamente.
-  if (website) return res.status(201).json({ ok: true, emailEnviado: false, codigo: '' });
+  // Honeypot: campo oculto que solo completan bots. Se descarta silenciosamente
+  // (se responde 201 para no darle pistas al bot). Queda una linea en el log por
+  // si algun dia lo completa un gestor de contrasenas por error: asi se puede
+  // ver que la consulta existio y no se perdio sin rastro.
+  if (website) {
+    console.warn(JSON.stringify({
+      nivel: 'aviso', fecha: nowIso(), reqId: req.requestId, ruta: req.path,
+      motivo: 'honeypot', ip: req.ip || null,
+    }));
+    return res.status(201).json({ ok: true, emailEnviado: false, codigo: '' });
+  }
   const nombreT = limStr(nombre, 120);
   const emailT = String(email || '').trim();
   const mensajeT = limStr(mensaje, 2000);
