@@ -16,6 +16,12 @@ Instancia de OpenCloud con Collabora para el trabajo colaborativo del equipo
 | Credenciales iniciales | `/root/opencloud-credenciales.txt` (600 root) |
 | Respaldo | `/var/backups/opencloud` + `/usr/local/bin/opencloud-backup.sh` |
 
+![Documento abierto en Collabora desde OpenCloud](img/opencloud-editor.png)
+
+Verificación hecha el día de la instalación: login con `admin`, subida de un
+`.docx`, apertura en el editor y pedidos WOPI (`/wopi/files/...` y
+`.../contents`) respondiendo 200.
+
 ## Cómo está armado
 
 - **Docker + Compose** (paquetes de Ubuntu). El stack vive en `/opt/opencloud`,
