@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { Icon } from '../components/ui';
+import SectionVideo from '../components/SectionVideo';
 import { PRODUCTOS } from '../data/siteData';
 
 const servicios = [
@@ -44,7 +45,8 @@ export default function Servicios() {
         </div>
       </section>
 
-      <section className="sec">
+      <section className="sec sec-video-sec">
+        <SectionVideo src="/video/servicios-bench.mp4" poster="/img/servicios-bench.jpg" className="sec-video--servicios" />
         <div className="wrap">
           <h2 className="sec-title">Un servicio integral</h2>
           <p className="sec-sub">
@@ -66,20 +68,22 @@ export default function Servicios() {
             <Link to="/contacto" className="btn primary lg">Solicitar presupuesto</Link>
             <Link to="/cotizador" className="btn lg"><Icon name="calculator" size={15} /> Cotizador de visita</Link>
           </div>
+        </div>
+      </section>
 
-          <div className="mt32">
-            <h3 className="sec-title" style={{ fontSize: 22 }}>También comercializamos</h3>
-            <div className="service-grid">
-              {PRODUCTOS.map((p) => (
-                <Link key={p.id} to={`/productos#${p.id}`} className="service-card" style={{ color: 'inherit' }}>
-                  <div className="sc-thumb"><img src={p.img} alt={p.titulo} /></div>
-                  <div className="sc-body">
-                    <h3 className="sc-title" style={{ fontSize: 14 }}>{p.titulo}</h3>
-                    <hr className="hr-red" />
-                  </div>
-                </Link>
-              ))}
-            </div>
+      <section className="sec">
+        <div className="wrap">
+          <h3 className="sec-title" style={{ fontSize: 22 }}>También comercializamos</h3>
+          <div className="service-grid">
+            {PRODUCTOS.map((p) => (
+              <Link key={p.id} to={`/productos#${p.id}`} className="service-card" style={{ color: 'inherit' }}>
+                <div className="sc-thumb"><img src={p.img} alt={p.titulo} /></div>
+                <div className="sc-body">
+                  <h3 className="sc-title" style={{ fontSize: 14 }}>{p.titulo}</h3>
+                  <hr className="hr-red" />
+                </div>
+              </Link>
+            ))}
           </div>
         </div>
       </section>

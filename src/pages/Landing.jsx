@@ -98,8 +98,7 @@ export default function Landing() {
       </section>
 
       {/* Cifras */}
-      <section className="sec sec-video-sec">
-        <SectionVideo src="/video/seccion-cifras.mp4" poster="/img/seccion-cifras.jpg" className="sec-video--cifras" />
+      <section className="sec">
         <div className="wrap">
           <h2 className="sec-title" style={{ textAlign: 'center' }}>Nuestro progreso en números</h2>
           <p className="sec-sub" style={{ textAlign: 'center', maxWidth: 620, margin: '0 auto 26px' }}>
@@ -120,8 +119,7 @@ export default function Landing() {
       </section>
 
       {/* Productos */}
-      <section className="sec sec-video-sec sec-video-sec--banda">
-        <SectionVideo src="/video/seccion-productos.mp4" poster="/img/seccion-productos.jpg" className="sec-video--productos" />
+      <section className="sec sec-alt page-light">
         <div className="wrap">
           <h2 className="sec-title" style={{ textAlign: 'center' }}>Nuestras líneas de productos</h2>
           <p className="sec-sub" style={{ textAlign: 'center', maxWidth: 640, margin: '0 auto 26px' }}>
@@ -146,11 +144,13 @@ export default function Landing() {
       </section>
 
       {/* Empresa */}
-      <section className="sec sec-video-sec">
-        <SectionVideo src="/video/seccion-empresa.mp4" poster="/img/seccion-empresa.jpg" className="sec-video--empresa" />
+      <section className="sec sec-alt" style={{ background: '#fff' }}>
         <div className="wrap">
-          <div className="empresa-grid">
-            <div className="empresa-texto">
+          <div className="grid2" style={{ alignItems: 'center', gap: 40 }}>
+            <div>
+              <img src="/img/img-automatizacion.jpg" alt="Automatización industrial" style={{ width: '100%', borderRadius: 12, boxShadow: 'var(--shadow-lg)' }} />
+            </div>
+            <div>
               <h2 className="sec-title">Nuestra empresa</h2>
               <p className="sec-sub" style={{ marginBottom: 14 }}>
                 Bertika® Acumuladores Industriales nació de la unión de dos trayectorias complementarias:
