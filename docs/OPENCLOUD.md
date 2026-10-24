@@ -51,16 +51,46 @@ docker compose up -d              # aplicar cambios del .env
 docker compose down               # apagar todo
 ```
 
-**Usuarios y espacios:** se crean desde la interfaz (`admin`). Usuario `admin`
-+ clave en `/root/opencloud-credenciales.txt`. Para leerla:
+**Usuarios y espacios:** se administran desde la interfaz (`admin`) o por la
+API Graph. Usuario `admin` + claves en `/root/opencloud-credenciales.txt`:
 
 ```bash
 ssh bertika-vps 'cat /root/opencloud-credenciales.txt'
 ```
 
-Modelo recomendado: **Espacios** (`Taller`, `Clientes`, `Administración`,
-`Comercial`) y permisos por grupo. Los archivos de los espacios son de la
-empresa; si alguien se va, se le quita el acceso y los archivos quedan.
+## Equipo y espacios (creado el 24/10/2026)
+
+| Persona | Usuario | Correo | Grupo | Espacio que ve |
+| --- | --- | --- | --- | --- |
+| Marcos | `marcos` | marcos@bertika.com | Ventas | `Ventas` |
+| Juan | `juan` | juan@bertika.com | Taller | `Taller` |
+| Verónica | `veronica` | veronica@bertika.com | Administración | `Administración` |
+| Delfina | `delfina` | delfina@bertika.com | Cobranzas | `Cobranzas` |
+
+- Cada grupo es **Space Editor** de su espacio (puede crear, editar y borrar).
+- `admin` es **Manager** de todos los espacios.
+- Cuotas: **25 GB por espacio de área** y **10 GB por espacio personal**
+  (`role_quotas` en `config/opencloud/proxy.yaml` para los personales).
+- Las claves iniciales están en `/root/opencloud-credenciales.txt`; conviene que
+  cada persona la cambie en su primer ingreso (Configuración → Seguridad).
+
+**Pendiente:** `marcos@bertika.com`, `juan@bertika.com`, `veronica@bertika.com`
+y `delfina@bertika.com` **no existen todavía en Hostinger**. Si no se crean como
+casillas o alias, OpenCloud no puede enviarles avisos de compartidos ni
+restablecer contraseñas por correo (el login sigue funcionando).
+
+### Notas de la API (para futuras altas)
+
+- Usuarios, grupos y espacios: `POST /graph/v1.0/users`, `/groups`, `/drives`.
+- Invitar a un grupo a un espacio: `POST /graph/v1beta1/drives/{id}/root/invite`
+  con `{"recipients":[{"objectId":"<grupo>","@libre.graph.recipient.type":"group"}],"roles":["58c63c02-1d89-4572-916a-870abc5a1b7d"]}`
+  (`Space Editor`; `Manager` = `312c0871-5ef7-4b3a-85b6-0e4074c64049`).
+- Las invitaciones y permisos **solo existen en `v1beta1`**; en `v1.0` dan 404.
+- Para borrar un archivo, WebDAV es más simple que Graph:
+  `DELETE /dav/spaces/{driveId}/{nombre}` con el token del admin (204).
+
+Los archivos de los espacios son de la empresa; si alguien se va, se le quita el
+acceso y los archivos quedan.
 
 ## Actualizar versiones
 
