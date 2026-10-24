@@ -50,10 +50,8 @@ const impacto = [
 export default function Empresa() {
   return (
     <>
-      <section className="page-hero page-hero--vitrina">
-        <div className="page-hero-vitrina">
-          <SectionVideo src="/video/vitrina-productos.mp4" poster="/img/vitrina-productos.jpg" className="sec-video--vitrina" />
-        </div>
+      <section className="page-hero page-hero--video">
+        <SectionVideo src="/video/vitrina-productos.mp4" poster="/img/vitrina-productos.jpg" className="sec-video--empresa-hero" />
         <div className="wrap">
           <h1>Nuestra Empresa</h1>
           <div className="breadcrumb">

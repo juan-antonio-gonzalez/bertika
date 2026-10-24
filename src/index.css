@@ -634,6 +634,7 @@ button.chip:hover { border-color: var(--brand-amber); background: var(--brand-so
 .page-hero--video h1,
 .page-hero--eco-video h1 { text-shadow: 0 3px 26px rgba(0, 0, 0, 0.6); }
 .sec-video--servicios-hero::after { background: linear-gradient(180deg, rgba(10, 23, 64, 0.22) 0%, rgba(10, 23, 64, 0.45) 55%, rgba(10, 23, 64, 0.8) 100%); }
+.sec-video--empresa-hero::after { background: radial-gradient(ellipse at 50% 45%, rgba(5, 8, 14, 0.35) 0%, rgba(5, 8, 14, 0.55) 55%, rgba(10, 23, 64, 0.88) 100%); }
 .sec-video--eco-hero::after { background: linear-gradient(180deg, rgba(4, 12, 10, 0.28) 0%, rgba(4, 12, 10, 0.5) 55%, rgba(4, 12, 10, 0.82) 100%); }
 @media (max-width: 860px) {
   .page-hero--video,
@@ -642,15 +643,6 @@ button.chip:hover { border-color: var(--brand-amber); background: var(--brand-so
   .page-hero--eco-video > .wrap { padding: 48px 16px; }
 }
 
-/* Empresa: la vitrina 3D va como banda superior del hero. */
-.page-hero--vitrina { padding: 0 0 66px; }
-.page-hero-vitrina { position: relative; height: 380px; overflow: hidden; border-bottom: 1px solid rgba(255, 255, 255, 0.12); }
-.sec-video--vitrina::after { background: linear-gradient(180deg, rgba(5, 8, 14, 0.12) 0%, rgba(5, 8, 14, 0.28) 55%, rgba(10, 23, 64, 0.97) 100%); }
-.page-hero--vitrina > .wrap { padding-top: 64px; }
-@media (max-width: 860px) {
-  .page-hero-vitrina { height: 240px; }
-  .page-hero--vitrina > .wrap { padding-top: 44px; }
-}
 .page-hero-bg { position: absolute; inset: 0; }
 .page-hero-bg img { width: 100%; height: 100%; object-fit: cover; opacity: 0.28; }
 .page-hero > .wrap { position: relative; z-index: 1; }
