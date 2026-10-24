@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Icon } from '../components/ui';
+import SectionVideo from '../components/SectionVideo';
 import { PRODUCTOS } from '../data/siteData';
 import { api } from '../store/api';
 
@@ -97,7 +98,8 @@ export default function Landing() {
       </section>
 
       {/* Cifras */}
-      <section className="sec">
+      <section className="sec sec-video-sec">
+        <SectionVideo src="/video/seccion-cifras.mp4" poster="/img/seccion-cifras.jpg" className="sec-video--cifras" />
         <div className="wrap">
           <h2 className="sec-title" style={{ textAlign: 'center' }}>Nuestro progreso en números</h2>
           <p className="sec-sub" style={{ textAlign: 'center', maxWidth: 620, margin: '0 auto 26px' }}>
@@ -118,7 +120,8 @@ export default function Landing() {
       </section>
 
       {/* Productos */}
-      <section className="sec sec-alt page-light">
+      <section className="sec sec-video-sec sec-video-sec--banda">
+        <SectionVideo src="/video/seccion-productos.mp4" poster="/img/seccion-productos.jpg" className="sec-video--productos" />
         <div className="wrap">
           <h2 className="sec-title" style={{ textAlign: 'center' }}>Nuestras líneas de productos</h2>
           <p className="sec-sub" style={{ textAlign: 'center', maxWidth: 640, margin: '0 auto 26px' }}>
@@ -143,13 +146,11 @@ export default function Landing() {
       </section>
 
       {/* Empresa */}
-      <section className="sec sec-alt" style={{ background: '#fff' }}>
+      <section className="sec sec-video-sec">
+        <SectionVideo src="/video/seccion-empresa.mp4" poster="/img/seccion-empresa.jpg" className="sec-video--empresa" />
         <div className="wrap">
-          <div className="grid2" style={{ alignItems: 'center', gap: 40 }}>
-            <div>
-              <img src="/img/img-automatizacion.jpg" alt="Automatización industrial" style={{ width: '100%', borderRadius: 12, boxShadow: 'var(--shadow-lg)' }} />
-            </div>
-            <div>
+          <div className="empresa-grid">
+            <div className="empresa-texto">
               <h2 className="sec-title">Nuestra empresa</h2>
               <p className="sec-sub" style={{ marginBottom: 14 }}>
                 Bertika® Acumuladores Industriales nació de la unión de dos trayectorias complementarias:
@@ -171,13 +172,10 @@ export default function Landing() {
       </section>
 
       {/* Ecología */}
-      <section className="sec" style={{ backgroundColor: '#0a1740' }}>
+      <section className="sec sec-video-sec sec-video-sec--centrada">
+        <SectionVideo src="/video/seccion-ecologia.mp4" poster="/img/seccion-ecologia.jpg" className="sec-video--eco" />
         <div className="wrap">
-          <div className="grid2" style={{ alignItems: 'center', gap: 40 }}>
-            <div>
-              <img src="/img/img-mundo.jpg" alt="Reciclaje de baterías" style={{ width: '100%', borderRadius: 12 }} />
-            </div>
-            <div style={{ color: '#fff' }}>
+          <div className="eco-card">
               <h2 className="sec-title" style={{ color: '#fff' }}>Comprometidos con el medio ambiente</h2>
               <p style={{ color: 'rgba(255,255,255,0.75)', lineHeight: 1.7, margin: '0 0 16px' }}>
                 A nivel de gestión de recursos, los acumuladores eléctricos usados se consideran como una
@@ -190,7 +188,6 @@ export default function Landing() {
                 <span className="pill"><Icon name="check" size={12} /> Menos residuos urbanos</span>
               </div>
               <Link to="/politica-ecologica" className="btn lg">Conocé nuestra política ecológica</Link>
-            </div>
           </div>
         </div>
       </section>
