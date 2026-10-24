@@ -35,7 +35,7 @@ export default function Servicios() {
     <>
       <section className="page-hero page-hero--vitrina">
         <div className="page-hero-vitrina">
-          <SectionVideo src="/video/servicios-bench.mp4" poster="/img/servicios-bench.jpg" className="sec-video--vitrina" />
+          <SectionVideo src="/video/servicios-nave.mp4" poster="/img/servicios-nave.jpg" className="sec-video--vitrina" />
         </div>
         <div className="wrap">
           <h1>Servicios</h1>
