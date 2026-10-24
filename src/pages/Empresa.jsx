@@ -54,6 +54,9 @@ export default function Empresa() {
         <SectionVideo src="/video/empresa-industria.mp4" poster="/img/empresa-industria.jpg" className="sec-video--empresa-hero" />
         <div className="wrap">
           <h1>Nuestra Empresa</h1>
+          <p className="page-hero-lead">
+            La energía industrial que tu operación necesita, <span className="hl">bajo control</span>
+          </p>
           <div className="breadcrumb">
             <Link to="/">Home</Link> / Nuestra Empresa
           </div>
