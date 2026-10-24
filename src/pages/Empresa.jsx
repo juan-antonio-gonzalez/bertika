@@ -53,10 +53,10 @@ export default function Empresa() {
       <section className="page-hero page-hero--video">
         <SectionVideo src="/video/empresa-industria.mp4" poster="/img/empresa-industria.jpg" className="sec-video--empresa-hero" />
         <div className="wrap">
-          <h1>Nuestra Empresa</h1>
-          <p className="page-hero-lead">
+          <div className="empresa-eyebrow">Nuestra Empresa</div>
+          <h1 className="empresa-headline">
             Iniciamos un viaje con mucha <span className="hl-orange">Energía</span>
-          </p>
+          </h1>
           <div className="breadcrumb">
             <Link to="/">Home</Link> / Nuestra Empresa
           </div>

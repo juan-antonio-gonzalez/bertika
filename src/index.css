@@ -648,6 +648,20 @@ button.chip:hover { border-color: var(--brand-amber); background: var(--brand-so
 }
 .page-hero-lead .hl { color: #ffc02a; font-weight: 800; }
 .page-hero-lead .hl-orange { color: #ff8a1f; font-weight: 800; }
+.empresa-eyebrow {
+  display: inline-block; margin-bottom: 10px;
+  color: #ffc02a; font-size: 12px; font-weight: 800;
+  letter-spacing: 2.6px; text-transform: uppercase;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.55);
+}
+.empresa-headline {
+  max-width: 980px; margin: 0 auto;
+  font-size: clamp(30px, 4.4vw, 50px) !important;
+  line-height: 1.08; letter-spacing: -0.4px !important;
+  text-transform: none !important; font-weight: 800;
+  color: #fff; text-shadow: 0 3px 26px rgba(0, 0, 0, 0.6);
+}
+.empresa-headline .hl-orange { color: #ff8a1f; }
 .page-hero--video .breadcrumb { text-shadow: 0 2px 12px rgba(0, 0, 0, 0.6); }
 .sec-video--eco-hero::after { background: linear-gradient(180deg, rgba(4, 12, 10, 0.28) 0%, rgba(4, 12, 10, 0.5) 55%, rgba(4, 12, 10, 0.82) 100%); }
 @media (max-width: 860px) {
