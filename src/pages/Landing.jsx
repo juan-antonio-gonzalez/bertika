@@ -4,9 +4,9 @@ import { Icon } from '../components/ui';
 import { PRODUCTOS } from '../data/siteData';
 import { api } from '../store/api';
 
-// Video de fondo del hero: foto de dominio público (NARA, sala de baterías
-// de plomo-ácido) animada con un acercamiento lento. Sin marcas ni licencias.
-const HERO_VIDEO = '/video/hero-bateria-fondo.mp4';
+// Video de fondo del hero: escena 3D propia (nave de baterías) renderizada
+// con Three.js. Sin marcas de agua, sin stock y sin licencias de terceros.
+const HERO_VIDEO = '/video/hero-bateria-3d.mp4';
 
 export default function Landing() {
   const [stats, setStats] = useState({ clientes: 0, baterias: 0, activas: 0, entregadas: 0 });
@@ -56,7 +56,7 @@ export default function Landing() {
       {/* Hero */}
       <section className={`hero${videoListo ? ' hero--video' : ''}`}>
         <div className="hero-bg">
-          <img src="/img/hero-fondo-poster.jpg" alt="" />
+          <img src="/img/hero-3d-poster.jpg" alt="" />
           {!pocoMovimiento && !videoFallo && (
             <video
               ref={videoRef}
@@ -66,7 +66,7 @@ export default function Landing() {
               loop
               playsInline
               preload="metadata"
-              poster="/img/hero-fondo-poster.jpg"
+              poster="/img/hero-3d-poster.jpg"
               aria-hidden="true"
               onCanPlay={() => setVideoListo(true)}
               onError={() => setVideoFallo(true)}
