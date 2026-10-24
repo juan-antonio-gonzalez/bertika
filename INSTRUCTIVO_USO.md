@@ -68,7 +68,7 @@ desarrollo). En la maquina local estan anotadas en `local/credenciales-demo.txt`
 
 Pasos:
 
-1. Entra a `/auth` (boton **Acceder** en la landing).
+1. Entra a `/auth` (botón **LOGIN** en la landing).
 2. Escribi email y contrasena.
 3. El sistema redirige segun rol: Admin → `/hub` · Tecnico → `/tecnico` · Cliente → `/cliente`.
 

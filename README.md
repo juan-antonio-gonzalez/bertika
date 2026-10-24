@@ -72,6 +72,26 @@ Actions corre todo (`.github/workflows/ci.yml`) con un servicio PostgreSQL 16.
 - **Versiones congeladas** de cada documento con su hash, para acreditar qué texto aceptó
   cada persona. Detalle técnico: [docs/PRIVACIDAD.md](docs/PRIVACIDAD.md).
 
+## Sitio público y videos de portada
+
+- **Home**: hero con video 3D propio (nave de baterías) y título **«Salud energética para que tu operación nunca se detenga»**. «Salud energética» va en naranja.
+- **Heroes internos**: cada página arranca con video o imagen de fondo, un rótulo chico con el nombre de la página, una frase de impacto (con una palabra en naranja) y el breadcrumb.
+
+| Página | Frase de portada |
+| --- | --- |
+| Nuestra Empresa | Iniciamos un viaje con mucha Energía |
+| Productos | Energía para cada aplicación industrial |
+| Servicios | Devolvemos la energía a tu operación |
+| Política Ecológica | Cerramos el ciclo de la energía |
+| Cómo Llegar | Estamos cerca de tu operación |
+| Seguimiento | Tu batería, en tiempo real |
+
+`/contacto` usa un layout de formulario sin hero; no lleva frase de portada.
+
+- **Componente**: `src/components/SectionVideo.jsx` monta el video con poster, `preload="none"` e `IntersectionObserver`: reproduce solo cuando la sección entra en pantalla, pausa al salir, respeta `prefers-reduced-motion` y cae al poster si el video falla. La home usa su propio `<video>` con la misma lógica.
+- **Archivos**: videos en `public/video/` y posters en `public/img/` (`hero-bateria-3d.mp4`, `vitrina-productos.mp4`, `servicios-nave.mp4`, `empresa-industria.mp4`, `seccion-ecologia.mp4`). Para reemplazar uno, mantener el nombre o actualizar la ruta en la página y rebuild/deploy.
+- **Contenido y licencias**: la nave, la vitrina y el banco de prueba son renders 3D propios; el tren es de Mixkit (licencia libre, sin atribución obligatoria); el video del mundo en la mano lo aportó el cliente. Ningún asset lleva marca de agua.
+
 ## Stack
 
 - Frontend: Vite + React 19, Zustand (store global reactivo) con persistencia en `localStorage`, React Router (rutas SPA), CSS propio.
