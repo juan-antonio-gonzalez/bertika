@@ -396,6 +396,36 @@ export const useStore = create()((set, get) => ({
     return api('/clientes?papelera=1');
   },
 
+  // Borrado definitivo de UNA ficha de la papelera (solo admin, irreversible).
+  async eliminarClienteDefinitivo(id) {
+    try {
+      await api(`/clientes/${id}/permanente`, { method: 'DELETE' });
+      await get().sync();
+      get().toastShow('Cliente eliminado definitivamente', 'ok');
+      return true;
+    } catch (e) {
+      get().toastShow(e.message, 'error');
+      return false;
+    }
+  },
+
+  // Vacía la papelera: elimina todas las fichas sin órdenes ni equipos.
+  async vaciarPapelera() {
+    try {
+      const r = await api('/papelera/vaciar', { method: 'POST' });
+      await get().sync();
+      const omitidos = r?.omitidos?.length || 0;
+      get().toastShow(
+        `Papelera vaciada: ${r?.eliminados?.length || 0} eliminado(s)${omitidos ? `, ${omitidos} con datos asociados` : ''}`,
+        omitidos ? 'warn' : 'ok'
+      );
+      return r;
+    } catch (e) {
+      get().toastShow(e.message, 'error');
+      return null;
+    }
+  },
+
   async editarTecnico(id, campos) {
     try {
       const upd = await api(`/tecnicos/${id}`, { method: 'PATCH', body: campos });

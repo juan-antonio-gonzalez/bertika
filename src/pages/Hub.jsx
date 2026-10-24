@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
 import { useStore } from '../store/store';
-import { Icon, EstadoPill, OrdenCard, Modal, FormGrid, fmtDate, fmtARS, fmtFecha, nombreActor } from '../components/ui';
+import { Icon, EstadoPill, OrdenCard, Modal, FormGrid, ConfirmDialog, fmtDate, fmtARS, fmtFecha, nombreActor } from '../components/ui';
 import OrdenDetalle from '../components/OrdenDetalle';
 import CotizadorConfig from '../components/CotizadorConfig';
 import WhatsAppBandeja from '../components/WhatsAppBandeja';
@@ -452,14 +452,19 @@ function FormTecnico({ tecnico, onGuardar, onClose, busy }) {
   );
 }
 
-// Papelera: fichas dadas de baja (baja logica). Nada se borra de verdad, asi que
-// un error se puede deshacer desde aca.
+// Papelera: fichas dadas de baja (baja logica). Se pueden restaurar; el admin
+// ademas puede eliminarlas definitivamente (irreversible, queda en auditoria).
 function Papelera() {
   const papeleraClientes = useStore((s) => s.papeleraClientes);
   const restaurarCliente = useStore((s) => s.restaurarCliente);
+  const eliminarClienteDefinitivo = useStore((s) => s.eliminarClienteDefinitivo);
+  const vaciarPapelera = useStore((s) => s.vaciarPapelera);
+  const esAdmin = useStore((s) => s.user?.rol === 'admin');
   const [filas, setFilas] = useState(null); // null = cargando
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(null);
+  const [confirmar, setConfirmar] = useState(null); // { tipo: 'uno' | 'todos', cliente? }
+  const [borrando, setBorrando] = useState(false);
 
   const cargar = async () => {
     try {
@@ -483,6 +488,19 @@ function Papelera() {
     }
   };
 
+  const borrar = async () => {
+    if (!confirmar) return;
+    setBorrando(true);
+    try {
+      if (confirmar.tipo === 'todos') await vaciarPapelera();
+      else await eliminarClienteDefinitivo(confirmar.cliente.id);
+      setConfirmar(null);
+      await cargar();
+    } finally {
+      setBorrando(false);
+    }
+  };
+
   if (filas === null) return <p className="muted">Cargando la papelera...</p>;
 
   return (
@@ -490,10 +508,22 @@ function Papelera() {
       <div className="banner-info">
         <Icon name="info" size={15} />
         <span>
-          Acá quedan los clientes <b>dados de baja</b>: no se borraron, se guardaron con quién y cuándo los dio de baja.
+          Acá quedan los clientes <b>dados de baja</b>: se guardan con quién y cuándo los dio de baja.
           Restaurar los devuelve a la cartera con sus órdenes, equipos y garantías intactos.
+          {esAdmin && ' Como administrador también podés eliminarlos definitivamente.'}
         </span>
       </div>
+
+      {esAdmin && filas.length > 0 && (
+        <div className="row between wrap" style={{ gap: 8 }}>
+          <span className="muted" style={{ fontSize: 12.5 }}>
+            El borrado definitivo no se puede deshacer. Las fichas con órdenes o equipos asociados se saltean.
+          </span>
+          <button type="button" className="btn danger sm" onClick={() => setConfirmar({ tipo: 'todos' })}>
+            <Icon name="x" size={12} /> Vaciar papelera
+          </button>
+        </div>
+      )}
 
       {error && <p style={{ color: 'var(--red)' }}>No pude cargar la papelera: {error}</p>}
 
@@ -523,9 +553,22 @@ function Papelera() {
                     <td className="muted">{c.deleted_at ? fmtFecha(c.deleted_at) : '—'}</td>
                     <td className="muted">{c.deleted_by || '—'}</td>
                     <td>
-                      <button className="btn sm primary" disabled={busy === c.id} onClick={() => restaurar(c)}>
-                        <Icon name="refresh" size={12} /> {busy === c.id ? 'Restaurando...' : 'Restaurar'}
-                      </button>
+                      <div className="row" style={{ gap: 6, justifyContent: 'flex-end' }}>
+                        <button className="btn sm primary" disabled={busy === c.id} onClick={() => restaurar(c)}>
+                          <Icon name="refresh" size={12} /> {busy === c.id ? 'Restaurando...' : 'Restaurar'}
+                        </button>
+                        {esAdmin && (
+                          <button
+                            type="button"
+                            className="btn sm danger"
+                            disabled={busy === c.id}
+                            onClick={() => setConfirmar({ tipo: 'uno', cliente: c })}
+                            title="Eliminar definitivamente"
+                          >
+                            <Icon name="x" size={12} /> Eliminar
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -533,6 +576,22 @@ function Papelera() {
             </table>
           </div>
         </div>
+      )}
+
+      {confirmar && (
+        <ConfirmDialog
+          title={confirmar.tipo === 'todos' ? '¿Vaciar la papelera?' : '¿Eliminar definitivamente?'}
+          sub={confirmar.tipo === 'todos' ? `${filas.length} ficha(s) en la papelera` : confirmar.cliente.nombre}
+          confirmLabel={confirmar.tipo === 'todos' ? 'Vaciar papelera' : 'Eliminar'}
+          busy={borrando}
+          onCancel={() => { if (!borrando) setConfirmar(null); }}
+          onConfirm={borrar}
+        >
+          <p style={{ margin: 0 }}>
+            Esta acción <b>no se puede deshacer</b>. Se borra la ficha y sus datos de contacto.
+            Las fichas con órdenes o equipos asociados se saltean y quedan en la papelera.
+          </p>
+        </ConfirmDialog>
       )}
     </div>
   );

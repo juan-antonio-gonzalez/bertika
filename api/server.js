@@ -2207,6 +2207,57 @@ app.post('/api/clientes/:id/restaurar', authRequired, permisoRequerido('baja_cli
   return res.json(upd);
 });
 
+// Borrado DEFINITIVO desde la papelera. Reservado al admin: es irreversible y
+// no se puede auditar "despues" (la ficha ya no existe). Solo se permite si no
+// quedan ordenes ni equipos colgando: si los hay, primero hay que resolverlos.
+async function dependenciasCliente(clienteId) {
+  return one(
+    `SELECT (SELECT count(*)::int FROM ordenes WHERE cliente_id = $1) AS ordenes,
+            (SELECT count(*)::int FROM baterias WHERE cliente_id = $1) AS baterias`,
+    [clienteId]
+  );
+}
+const textoDependencias = (d) => [
+  d.ordenes > 0 ? `${d.ordenes} orden(es)` : '',
+  d.baterias > 0 ? `${d.baterias} equipo(s)` : '',
+].filter(Boolean).join(' y ');
+
+app.delete('/api/clientes/:id/permanente', authRequired, async (req, res) => {
+  if (!esAdmin(req)) return res.status(403).json({ error: 'Solo un administrador puede eliminar definitivamente' });
+  const c = await one('SELECT * FROM clientes WHERE id = $1', [req.params.id]);
+  if (!c) return res.status(404).json({ error: 'Cliente no encontrado' });
+  if (!c.deleted_at) return res.status(400).json({ error: 'Primero dá de baja al cliente: solo se elimina desde la papelera' });
+  const deps = await dependenciasCliente(c.id);
+  if (deps.ordenes > 0 || deps.baterias > 0) {
+    return res.status(400).json({
+      error: `No se puede eliminar: todavía tiene ${textoDependencias(deps)} asociados. Borralos primero o dejá la ficha en la papelera.`,
+    });
+  }
+  await query('DELETE FROM clientes WHERE id = $1', [c.id]);
+  await auditar({ req, tabla: 'clientes', registroId: c.id, accion: 'eliminar_definitivo', antes: c, despues: null });
+  return res.status(204).end();
+});
+
+// Vaciar la papelera de una vez. Elimina las fichas sin ordenes ni equipos y
+// devuelve las que se saltearon para que el admin sepa por qué no se borraron.
+app.post('/api/papelera/vaciar', authRequired, async (req, res) => {
+  if (!esAdmin(req)) return res.status(403).json({ error: 'Solo un administrador puede vaciar la papelera' });
+  const candidatos = await query('SELECT * FROM clientes WHERE deleted_at IS NOT NULL ORDER BY deleted_at');
+  const eliminados = [];
+  const omitidos = [];
+  for (const c of candidatos) {
+    const deps = await dependenciasCliente(c.id);
+    if (deps.ordenes > 0 || deps.baterias > 0) {
+      omitidos.push({ id: c.id, nombre: c.nombre, motivo: textoDependencias(deps) });
+      continue;
+    }
+    await query('DELETE FROM clientes WHERE id = $1', [c.id]);
+    await auditar({ req, tabla: 'clientes', registroId: c.id, accion: 'eliminar_definitivo', antes: c, despues: null });
+    eliminados.push({ id: c.id, nombre: c.nombre });
+  }
+  return res.json({ eliminados, omitidos });
+});
+
 app.post('/api/clientes/find-or-create', authRequired, permisoRequerido('crear_clientes'), async (req, res) => {
   const { nombre, empresa, email, telefono } = req.body || {};
   const emailT = String(email || '').trim();
