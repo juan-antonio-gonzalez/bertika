@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { PRODUCTOS } from '../data/siteData';
+import SectionVideo from '../components/SectionVideo';
 
 export default function Productos() {
   const location = useLocation();
@@ -12,14 +13,12 @@ export default function Productos() {
 
   return (
     <div className="page-light">
-      <section className="page-hero">
-        <div className="page-hero-bg">
-          <img src="/img/slide00-drop.jpg" alt="" />
-        </div>
+      <section className="page-hero page-hero--video">
+        <SectionVideo src="/video/vitrina-productos.mp4" poster="/img/vitrina-productos.jpg" className="sec-video--productos-hero" />
         <div className="wrap">
           <h1>Productos — Baterías</h1>
           <div className="breadcrumb">
-            <Link to="/">Home</Link> / Service
+            <Link to="/">Home</Link> / Productos
           </div>
         </div>
       </section>

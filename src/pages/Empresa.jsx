@@ -1,6 +1,5 @@
 import { Link } from 'react-router-dom';
 import { Icon } from '../components/ui';
-import SectionVideo from '../components/SectionVideo';
 
 const fundadores = [
   {
@@ -50,8 +49,10 @@ const impacto = [
 export default function Empresa() {
   return (
     <>
-      <section className="page-hero page-hero--video">
-        <SectionVideo src="/video/vitrina-productos.mp4" poster="/img/vitrina-productos.jpg" className="sec-video--empresa-hero" />
+      <section className="page-hero">
+        <div className="page-hero-bg">
+          <img src="/img/fachada.jpg" alt="" />
+        </div>
         <div className="wrap">
           <h1>Nuestra Empresa</h1>
           <div className="breadcrumb">
