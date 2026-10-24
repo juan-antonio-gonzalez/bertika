@@ -11,6 +11,22 @@ import { CONTACTO } from '../data/siteData';
 const CLAVE_TS = 'bertika-reload-deploy';
 const ESPERA_MS = 30000;
 
+// Recarga salteando la cache del navegador. `location.reload()` puede volver a
+// pedir el index.html viejo desde la cache y dejar al usuario en la misma
+// pantalla de error; agregar un parametro unico fuerza una descarga nueva.
+// El parametro se limpia solo al arrancar la app (ver main.jsx).
+export function recargarSinCache() {
+  try {
+    const url = new URL(window.location.href);
+    url.searchParams.set('_r', String(Date.now()));
+    window.location.replace(url.toString());
+    return true;
+  } catch {
+    window.location.reload();
+    return false;
+  }
+}
+
 // Recarga como maximo una vez cada 30 segundos: evita loops si el problema
 // persiste y se autocorrige en el proximo deploy.
 export function recargarUnaVez() {
@@ -21,7 +37,7 @@ export function recargarUnaVez() {
   } catch {
     /* sin sessionStorage igual recargamos */
   }
-  window.location.reload();
+  recargarSinCache();
   return true;
 }
 
@@ -70,7 +86,7 @@ export default class ErrorBoundary extends Component {
             Si el problema continúa, escribinos a <a href={`mailto:${CONTACTO.emailVentas}`} style={{ textDecoration: 'underline' }}>{CONTACTO.emailVentas}</a> o por WhatsApp al {CONTACTO.telefono} y lo resolvemos.
           </p>
           <div className="row" style={{ gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
-            <button className="btn primary" onClick={() => window.location.reload()}>Recargar la página</button>
+            <button className="btn primary" onClick={recargarSinCache}>Recargar la página</button>
             <a className="btn" href="/">Ir al inicio</a>
           </div>
           {import.meta.env.DEV && (
