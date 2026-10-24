@@ -450,6 +450,8 @@ function Privacidad() {
   const [error, setError] = useState('');
   const [aAnonimizar, setAAnonimizar] = useState(null);
   const [anonimizando, setAnonimizando] = useState(false);
+  const [detalle, setDetalle] = useState(null);
+  const [cargandoDetalle, setCargandoDetalle] = useState(false);
 
   const query = (f = filtros) => {
     const p = new URLSearchParams();
@@ -511,6 +513,30 @@ function Privacidad() {
     }
   };
 
+  const verDetalle = async (f) => {
+    setCargandoDetalle(true);
+    try {
+      setDetalle(await api(`/privacidad/consentimientos/${f.id}`));
+    } catch (e) {
+      toastShow(e.message, 'error');
+    } finally {
+      setCargandoDetalle(false);
+    }
+  };
+
+  const descargarConstancia = () => {
+    if (!detalle) return;
+    const blob = new Blob([JSON.stringify(detalle, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `constancia-${detalle.id}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
   const tipoTono = { cookies: 'blue', formulario: 'green', retiro: 'amber' };
 
   return (
@@ -562,12 +588,13 @@ function Privacidad() {
           ) : (
             <table className="tbl">
               <thead>
-                <tr><th>Fecha</th><th>Tipo</th><th>Persona</th><th>Documentos</th><th>Cookies</th><th>Canal / acción</th><th>IP</th><th /></tr>
+                <tr><th>Fecha</th><th>Registro</th><th>Tipo</th><th>Persona</th><th>Documentos</th><th>Cookies</th><th>Canal / acción</th><th>IP</th><th>Integridad</th><th /></tr>
               </thead>
               <tbody>
                 {filas.map((f) => (
                   <tr key={f.id}>
                     <td className="muted" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>{fmtF(f.creado_en)}</td>
+                    <td className="mono" style={{ fontSize: 10.5 }} title={f.id}>{String(f.id).replace(/^cons_/, '').slice(0, 8)}</td>
                     <td><span className={`badge ${tipoTono[f.tipo] || 'gray'}`}>{f.tipo}</span></td>
                     <td style={{ fontSize: 12.5 }}>
                       {f.anonimizado_en ? <span className="muted">anonimizado</span> : (
@@ -591,7 +618,15 @@ function Privacidad() {
                       <div className="muted">{f.accion || '—'}</div>
                     </td>
                     <td className="mono" style={{ fontSize: 11 }}>{f.anonimizado_en ? '—' : (f.ip || '—')}</td>
+                    <td>
+                      {f.integro
+                        ? <span className="badge green">íntegro</span>
+                        : <span className="badge red">revisar</span>}
+                    </td>
                     <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <button className="btn sm ghost" onClick={() => verDetalle(f)} disabled={cargandoDetalle}>
+                        Ver detalle
+                      </button>
                       {!f.anonimizado_en && (
                         <button className="btn sm ghost" onClick={() => setAAnonimizar(f)}>Anonimizar</button>
                       )}
@@ -603,6 +638,75 @@ function Privacidad() {
           )}
         </div>
       </div>
+
+      {detalle && (
+        <Modal
+          size="lg"
+          title="Constancia de aceptación"
+          sub={detalle.id}
+          onClose={() => setDetalle(null)}
+          footer={(
+            <>
+              <button type="button" className="btn" onClick={() => setDetalle(null)}>Cerrar</button>
+              <button type="button" className="btn primary" onClick={descargarConstancia}>
+                <Icon name="truck" size={13} /> Descargar constancia
+              </button>
+            </>
+          )}
+        >
+          <div className="row wrap" style={{ gap: 8, alignItems: 'center', marginBottom: 14 }}>
+            {detalle.integro
+              ? <span className="badge green">Registro íntegro</span>
+              : <span className="badge red">Registro alterado o incompleto</span>}
+            {detalle.anonimizado_en && <span className="badge gray">Anonimizado</span>}
+            <span className="muted" style={{ fontSize: 12 }}>
+              {detalle.integro_legal ? 'Hash legal OK' : 'Hash legal con diferencias'} ·{' '}
+              {detalle.integro_completo ? 'Hash completo OK' : 'Hash completo con diferencias'}
+            </span>
+          </div>
+
+          <dl className="privacidad-detalle">
+            <dt>Fecha</dt><dd>{fmtF(detalle.creado_en)}</dd>
+            <dt>Tipo</dt><dd>{detalle.tipo}</dd>
+            <dt>Nombre</dt><dd>{detalle.anonimizado_en ? 'anonimizado' : (detalle.nombre || '—')}</dd>
+            <dt>Email</dt><dd>{detalle.anonimizado_en ? 'anonimizado' : (detalle.email || '—')}</dd>
+            <dt>IP</dt><dd className="mono">{detalle.anonimizado_en ? 'anonimizada' : (detalle.ip || '—')}</dd>
+            <dt>Navegador</dt><dd style={{ fontSize: 12 }}>{detalle.anonimizado_en ? 'anonimizado' : (detalle.user_agent || '—')}</dd>
+            <dt>Origen / página</dt><dd>{detalle.origen || '—'} · {detalle.pagina || '—'}</dd>
+            <dt>Canal / acción</dt><dd>{detalle.canal || '—'} · {detalle.accion || '—'}</dd>
+            <dt>Motivo</dt><dd>{detalle.motivo || '—'}</dd>
+            <dt>Cookies</dt><dd>
+              Necesarias: {detalle.cookies_necesarias ? 'sí' : 'no'} · Medición: {detalle.cookies_analiticas ? 'sí' : 'no'} · Marketing: {detalle.cookies_marketing ? 'sí' : 'no'}
+              {detalle.cookies_version ? ` · versión ${detalle.cookies_version}` : ''}
+            </dd>
+            <dt>Idempotencia</dt><dd className="mono" style={{ fontSize: 11 }}>{detalle.idempotency_key || '—'}</dd>
+          </dl>
+
+          <h3 className="privacidad-detalle-titulo">Documentos aceptados</h3>
+          <div className="privacidad-docs">
+            {detalle.terminos_version ? (
+              <div>
+                <b>Términos v{detalle.terminos_version}</b>
+                {detalle.terminos_url && <a href={detalle.terminos_url} target="_blank" rel="noreferrer">Ver texto exacto</a>}
+                <code className="privacidad-hash">{detalle.terminos_hash}</code>
+              </div>
+            ) : <p className="muted">No aplica (no es un formulario).</p>}
+            {detalle.privacidad_version ? (
+              <div>
+                <b>Privacidad v{detalle.privacidad_version}</b>
+                {detalle.privacidad_url && <a href={detalle.privacidad_url} target="_blank" rel="noreferrer">Ver texto exacto</a>}
+                <code className="privacidad-hash">{detalle.privacidad_hash}</code>
+              </div>
+            ) : null}
+          </div>
+
+          <h3 className="privacidad-detalle-titulo">Huellas de integridad</h3>
+          <p className="muted" style={{ fontSize: 12 }}>Hash completo (incluye identidad):</p>
+          <code className="privacidad-hash">{detalle.hash}</code>
+          <p className="muted" style={{ fontSize: 12, marginTop: 10 }}>Hash legal (verificable tras anonimizar):</p>
+          <code className="privacidad-hash">{detalle.hash_legal || '—'}</code>
+        </Modal>
+      )}
 
       {aAnonimizar && (
         <ConfirmDialog

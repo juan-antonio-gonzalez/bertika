@@ -35,3 +35,12 @@ export function hashConsentimiento(fila, secreto) {
 export function hashLegalConsentimiento(fila, secreto) {
   return firmar(fila, CAMPOS_HASH_LEGAL, secreto);
 }
+
+// Resultado de integridad para el panel: la fila completa y la parte legal.
+// En una fila anonimizada no se puede verificar la identidad (se borró a
+// propósito), pero sí el texto y las cookies aceptadas.
+export function verificarConsentimiento(fila, secreto) {
+  const legalOk = Boolean(fila?.hash_legal) && hashLegalConsentimiento(fila, secreto) === fila.hash_legal;
+  const completoOk = Boolean(fila?.anonimizado_en) || hashConsentimiento(fila, secreto) === fila.hash;
+  return { integro: legalOk && completoOk, integro_legal: legalOk, integro_completo: completoOk };
+}

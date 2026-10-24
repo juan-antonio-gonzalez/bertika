@@ -408,8 +408,10 @@ y **Cambiar preferencias**.
 - **Tus datos**: formulario para pedir acceso, rectificación, supresión u oposición, o
   retirar el consentimiento. La solicitud queda registrada y se avisa a
   `admin@bertika.com`.
-- **Panel**: en **Sistema → Privacidad** (admin) se ven los consentimientos, se filtran,
-  se exportan a CSV y se pueden anonimizar. Se conservan 5 años.
+- **Panel**: en **Sistema → Privacidad** (admin) se ven los consentimientos con su ID y
+  estado de integridad. **Ver detalle** muestra quién aceptó, cuándo, desde qué IP/página,
+  qué documentos y hashes, con enlace al texto exacto archivado y **constancia descargable**.
+  Se filtran, se exportan a CSV y se pueden anonimizar. Se conservan 5 años.
 - **Versiones**: cada cambio de texto se publica con fecha y versión, y queda el archivo
   con el hash de lo que se aceptó.
 

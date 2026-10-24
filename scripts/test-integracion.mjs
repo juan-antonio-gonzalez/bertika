@@ -371,6 +371,8 @@ async function main() {
     assert.equal(fila.acepta_privacidad, true);
     assert.equal(fila.terminos_version, LEGAL_DOCS.terminos.version);
     assert.equal(fila.privacidad_version, LEGAL_DOCS.privacidad.version);
+    assert.equal(fila.terminos_url, `/legal/archivo/${LEGAL_DOCS.terminos.version}/terminos.html`);
+    assert.equal(fila.privacidad_url, `/legal/archivo/${LEGAL_DOCS.privacidad.version}/privacidad.html`);
     assert.match(fila.hash, /^[a-f0-9]{64}$/);
   });
 
@@ -412,9 +414,22 @@ async function main() {
     assert.equal(lista.status, 200, lista.texto);
     assert.ok(lista.json.resumen.total >= 3);
     assert.ok(lista.json.filas.some((f) => f.id === consentCookiesId));
+    assert.ok(lista.json.filas.every((f) => f.integro === true), 'el panel marca todas como íntegras');
+
+    const detalle = await pedir(`/privacidad/consentimientos/${consentContactoId}`, { token: tokenAdmin });
+    assert.equal(detalle.status, 200, detalle.texto);
+    assert.equal(detalle.json.integro, true);
+    assert.equal(detalle.json.integro_legal, true);
+    assert.equal(detalle.json.integro_completo, true);
+    assert.equal(detalle.json.terminos_url, `/legal/archivo/${LEGAL_DOCS.terminos.version}/terminos.html`);
+    assert.ok(detalle.json.hash_legal);
 
     const tec = await pedir('/privacidad/consentimientos', { token: tokenTec });
     assert.equal(tec.status, 403);
+    const tecDetalle = await pedir(`/privacidad/consentimientos/${consentContactoId}`, { token: tokenTec });
+    assert.equal(tecDetalle.status, 403);
+    const inexistente = await pedir('/privacidad/consentimientos/cons_no_existe', { token: tokenAdmin });
+    assert.equal(inexistente.status, 404);
 
     const exp = await pedir('/privacidad/consentimientos/export', { token: tokenAdmin });
     assert.equal(exp.status, 200);
@@ -431,6 +446,11 @@ async function main() {
     assert.ok(fila.anonimizado_en);
     assert.match(fila.hash, /^[a-f0-9]{64}$/, 'el hash se conserva como prueba');
     assert.match(fila.hash_legal, /^[a-f0-9]{64}$/, 'el hash legal queda verificable tras anonimizar');
+    const detAnon = await pedir(`/privacidad/consentimientos/${consentContactoId}`, { token: tokenAdmin });
+    assert.equal(detAnon.status, 200);
+    assert.equal(detAnon.json.integro, true);
+    assert.equal(detAnon.json.integro_legal, true);
+    assert.equal(detAnon.json.integro_completo, true, 'la identidad anonimizada no invalida la prueba legal');
     const otra = await pedir(`/privacidad/consentimientos/${consentContactoId}/anonimizar`, { method: 'POST', token: tokenAdmin });
     assert.equal(otra.status, 409);
   });

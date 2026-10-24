@@ -1098,3 +1098,14 @@ details[open] > .cz-summary::after { content: ' –'; }
 .legal-checkboxes label { display: flex; gap: 8px; align-items: flex-start; font-size: 12.5px; line-height: 1.5; cursor: pointer; }
 .legal-checkboxes input { margin-top: 3px; flex: none; }
 .legal-checkboxes a { color: var(--brand-orange); font-weight: 600; }
+
+/* ---------- detalle de una aceptación (panel de privacidad) ---------- */
+.privacidad-detalle { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 8px 16px; margin: 0 0 18px; font-size: 13px; }
+.privacidad-detalle dt { color: var(--muted); font-weight: 600; }
+.privacidad-detalle dd { margin: 0; word-break: break-word; }
+.privacidad-detalle-titulo { font-size: 14px; margin: 18px 0 8px; color: var(--navy); }
+.privacidad-docs { display: grid; gap: 10px; }
+.privacidad-docs > div { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 12.5px; }
+.privacidad-docs a { color: var(--brand-orange); font-weight: 600; }
+.privacidad-hash { display: block; font-family: monospace; font-size: 10.5px; background: var(--bg-3); padding: 6px 8px; border-radius: 6px; word-break: break-all; margin-top: 4px; }
+@media (max-width: 560px) { .privacidad-detalle { grid-template-columns: 1fr; gap: 2px 0; } .privacidad-detalle dd { margin-bottom: 8px; } }

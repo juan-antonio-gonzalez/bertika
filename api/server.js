@@ -37,7 +37,7 @@ import { resumenSla } from '../src/data/sla.js';
 import { filasCsv } from '../src/data/csv.js';
 import { auditar, listarAuditoria } from './auditoria.js';
 import { LEGAL_DOCS, LEGAL_META, textoLegalCanonico } from '../src/data/legal.js';
-import { hashConsentimiento, hashLegalConsentimiento } from './privacidad-hash.js';
+import { hashConsentimiento, hashLegalConsentimiento, verificarConsentimiento } from './privacidad-hash.js';
 import {
   encolar, procesarEnvio, procesarPendientes, reintentarEnvio, listarEnvios, resumenOutbox, iniciarOutbox,
 } from './outbox.js';
@@ -729,7 +729,9 @@ function documentoLegal(clave, version) {
   if (String(version || '') !== doc.version) {
     throw { status: 400, message: `La versión de ${doc.titulo.toLowerCase()} cambió. Recargá la página y volvé a aceptar.` };
   }
-  return { version: doc.version, url: doc.url, hash: hashLegal(clave) };
+  // URL exacta del archivo congelado: la constancia queda atada al texto que
+  // la persona tenía delante, no al texto que esté publicado hoy.
+  return { version: doc.version, url: `/legal/archivo/${doc.version}/${clave}.html`, hash: hashLegal(clave) };
 }
 
 // Guarda un consentimiento. Valida la versión contra el documento publicado y
@@ -1196,7 +1198,7 @@ app.get('/api/privacidad/consentimientos', authRequired, permisoRequerido('siste
             acepta_terminos, terminos_version, terminos_url, terminos_hash,
             acepta_privacidad, privacidad_version, privacidad_url, privacidad_hash,
             cookies_necesarias, cookies_analiticas, cookies_marketing, cookies_version,
-            accion, canal, motivo, hash_version, hash, hash_legal, anonimizado_en
+            accion, canal, motivo, idempotency_key, hash_version, hash, hash_legal, anonimizado_en
        FROM consentimientos
        ${cond.length ? `WHERE ${cond.join(' AND ')}` : ''}
       ORDER BY creado_en DESC
@@ -1209,33 +1211,40 @@ app.get('/api/privacidad/consentimientos', authRequired, permisoRequerido('siste
     resumen[r.tipo] = Number(r.n) || 0;
     resumen.total += Number(r.n) || 0;
   }
-  return res.json({ filas, resumen });
+  return res.json({
+    filas: filas.map((f) => ({ ...f, ...verificarConsentimiento(f, PRIVACY_HASH_SECRET) })),
+    resumen,
+  });
 });
 
 app.get('/api/privacidad/consentimientos/export', authRequired, permisoRequerido('sistema'), async (req, res) => {
   const { cond, args } = filtrosConsentimientos(req);
   const filas = await query(
-    `SELECT creado_en, tipo, nombre, email, ip, origen, pagina, acepta_terminos, terminos_version,
-            acepta_privacidad, privacidad_version, cookies_necesarias, cookies_analiticas,
-            cookies_marketing, cookies_version, accion, canal, motivo, hash, hash_legal, anonimizado_en
+    `SELECT creado_en, tipo, nombre, email, ip, user_agent, origen, pagina,
+            acepta_terminos, terminos_version, terminos_url, terminos_hash,
+            acepta_privacidad, privacidad_version, privacidad_url, privacidad_hash,
+            cookies_necesarias, cookies_analiticas, cookies_marketing, cookies_version,
+            accion, canal, motivo, idempotency_key, hash_version, hash, hash_legal, anonimizado_en
        FROM consentimientos
        ${cond.length ? `WHERE ${cond.join(' AND ')}` : ''}
       ORDER BY creado_en DESC
       LIMIT 5000`,
     args
   );
-  const encabezado = ['fecha', 'tipo', 'nombre', 'email', 'ip', 'origen', 'pagina', 'acepta_terminos',
-    'terminos_version', 'acepta_privacidad', 'privacidad_version', 'cookies_necesarias', 'cookies_analiticas',
-    'cookies_marketing', 'cookies_version', 'accion', 'canal', 'motivo', 'hash', 'hash_legal', 'anonimizado_en'];
+  const encabezado = ['fecha', 'tipo', 'nombre', 'email', 'ip', 'navegador', 'origen', 'pagina',
+    'acepta_terminos', 'terminos_version', 'terminos_url', 'terminos_hash',
+    'acepta_privacidad', 'privacidad_version', 'privacidad_url', 'privacidad_hash',
+    'cookies_necesarias', 'cookies_analiticas', 'cookies_marketing', 'cookies_version',
+    'accion', 'canal', 'motivo', 'idempotencia', 'hash_version', 'hash', 'hash_legal', 'anonimizado_en'];
   const csv = filasCsv([
     encabezado,
     ...filas.map((f) => [
       f.creado_en instanceof Date ? f.creado_en.toISOString() : f.creado_en,
-      f.tipo, f.nombre, f.email, f.ip, f.origen, f.pagina,
-      f.acepta_terminos ? 'si' : 'no', f.terminos_version,
-      f.acepta_privacidad ? 'si' : 'no', f.privacidad_version,
+      f.tipo, f.nombre, f.email, f.ip, f.user_agent, f.origen, f.pagina,
+      f.acepta_terminos ? 'si' : 'no', f.terminos_version, f.terminos_url, f.terminos_hash,
+      f.acepta_privacidad ? 'si' : 'no', f.privacidad_version, f.privacidad_url, f.privacidad_hash,
       f.cookies_necesarias ? 'si' : 'no', f.cookies_analiticas ? 'si' : 'no', f.cookies_marketing ? 'si' : 'no',
-      f.cookies_version, f.accion, f.canal, f.motivo, f.hash, f.hash_legal,
+      f.cookies_version, f.accion, f.canal, f.motivo, f.idempotency_key, f.hash_version, f.hash, f.hash_legal,
       f.anonimizado_en instanceof Date ? f.anonimizado_en.toISOString() : f.anonimizado_en,
     ]),
   ], { separador: ';' });
@@ -1243,6 +1252,12 @@ app.get('/api/privacidad/consentimientos/export', authRequired, permisoRequerido
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="bertika-privacidad-${new Date().toISOString().slice(0, 10)}.csv"`);
   return res.send(csv);
+});
+
+app.get('/api/privacidad/consentimientos/:id', authRequired, permisoRequerido('sistema'), async (req, res) => {
+  const fila = await one('SELECT * FROM consentimientos WHERE id = $1', [req.params.id]);
+  if (!fila) return res.status(404).json({ error: 'Registro no encontrado' });
+  return res.json({ ...fila, ...verificarConsentimiento(fila, PRIVACY_HASH_SECRET) });
 });
 
 app.post('/api/privacidad/consentimientos/:id/anonimizar', authRequired, permisoRequerido('sistema'), async (req, res) => {

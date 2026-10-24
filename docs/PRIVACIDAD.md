@@ -121,5 +121,8 @@ npm run test:integracion  # consentimientos, formularios, retiro, panel y anonim
 ## 10. Panel de privacidad
 
 En `/sistema` → **Privacidad** (permiso `sistema`): lista, filtra, exporta CSV y
-anonimiza. La exportación usa el mismo escape de fórmulas que el resto de los CSV.
-Cada acción queda en la auditoría.
+anonimiza. Cada fila muestra su **ID**, la **integridad** (hash completo y hash legal)
+y un botón **Ver detalle**: ahí se ve quién aceptó, cuándo, desde qué IP/página, qué
+versiones y hashes, el enlace al **texto exacto archivado** y una **constancia
+descargable en JSON**. La exportación CSV incluye esos mismos campos y usa el escape
+de fórmulas del resto de los CSV. Cada acción queda en la auditoría.

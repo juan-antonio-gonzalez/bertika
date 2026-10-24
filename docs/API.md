@@ -250,13 +250,20 @@ Guarda la solicitud antes de mandar el aviso por correo a `PRIVACY_EMAIL`.
 Devuelve `{ ok, id, duplicado }`. Tiene el mismo límite anti-spam que contacto.
 
 ### `GET /privacidad/consentimientos?tipo=&q=&desde=&hasta=&limite=`
-Requiere el permiso `sistema` (admin). Devuelve `{ filas, resumen }`. Filtra por
+Requiere el permiso `sistema` (admin). Devuelve `{ filas, resumen }`; cada fila
+incluye `integro`, `integro_legal` e `integro_completo`. Filtra por
 tipo (`cookies`, `formulario`, `retiro`), nombre/email y fecha. Los datos
 identificatorios pueden estar anonimizados.
 
+### `GET /privacidad/consentimientos/:id`
+Requiere `sistema`. Devuelve el registro completo con `integro`, `integro_legal`,
+`integro_completo`, las URLs de los documentos archivados y los dos hashes. Es lo
+que usa el panel para mostrar la constancia. `404` si no existe.
+
 ### `GET /privacidad/consentimientos/export`
 Requiere `sistema`. CSV con BOM y separador `;` (apto para Excel en español), con
-el mismo escape de fórmulas que el resto de las exportaciones.
+el mismo escape de fórmulas que el resto de las exportaciones. Incluye navegador,
+URLs y hashes de los documentos, idempotencia y los dos hashes de integridad.
 
 ### `POST /privacidad/consentimientos/:id/anonimizar`
 Requiere `sistema`. Quita nombre, email, IP y navegador; conserva fecha, versión y
