@@ -55,7 +55,7 @@ export default function Empresa() {
         <div className="wrap">
           <h1>Nuestra Empresa</h1>
           <p className="page-hero-lead">
-            La energía industrial que tu operación necesita, <span className="hl">bajo control</span>
+            Iniciamos un viaje con mucha <span className="hl-orange">Energía</span>
           </p>
           <div className="breadcrumb">
             <Link to="/">Home</Link> / Nuestra Empresa

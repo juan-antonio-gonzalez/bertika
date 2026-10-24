@@ -653,6 +653,7 @@ button.chip:hover { border-color: var(--brand-amber); background: var(--brand-so
   text-shadow: 0 2px 16px rgba(0, 0, 0, 0.55);
 }
 .page-hero-lead .hl { color: #ffc02a; font-weight: 800; }
+.page-hero-lead .hl-orange { color: #ff8a1f; font-weight: 800; }
 .page-hero--video .breadcrumb { text-shadow: 0 2px 12px rgba(0, 0, 0, 0.6); }
 .sec-video--eco-hero::after { background: linear-gradient(180deg, rgba(4, 12, 10, 0.28) 0%, rgba(4, 12, 10, 0.5) 55%, rgba(4, 12, 10, 0.82) 100%); }
 @media (max-width: 860px) {
