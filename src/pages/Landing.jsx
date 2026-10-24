@@ -82,9 +82,9 @@ export default function Landing() {
               <span className="pill"><Icon name="bolt" size={13} /> Taller especializado en baterías industriales</span>
               <span className="pill"><Icon name="shield" size={13} /> Representante oficial de AMSA Forbat</span>
             </div>
-            <div className="hero-kicker">Salud energética</div>
             <h1>
-              La energía industrial que tu operación necesita, <span className="hl">bajo control</span>
+              <span className="hl-orange">Salud energética</span><br />
+              para que tu operación nunca se detenga
             </h1>
             <p className="lead">
               Recepción, diagnóstico, reparación, prueba de carga y entrega con garantía. Un proceso
