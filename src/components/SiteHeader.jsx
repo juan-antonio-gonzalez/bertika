@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { Icon } from './ui';
+import { useStore } from '../store/store';
 
 const menuItems = [
   { label: 'HOME', to: '/' },
@@ -25,7 +27,11 @@ const menuItems = [
 
 export default function SiteHeader() {
   const location = useLocation();
+  const user = useStore((s) => s.user);
   const [open, setOpen] = useState(false);
+
+  // El login lleva al panel que corresponde si ya hay sesión abierta.
+  const loginDest = user?.rol === 'admin' ? '/hub' : user?.rol === 'tecnico' ? '/tecnico' : user?.rol === 'cliente' ? '/cliente' : '/auth';
 
   useEffect(() => {
     setOpen(false);
@@ -52,19 +58,25 @@ export default function SiteHeader() {
               </small>
             </span>
           </Link>
-          <div className="normas-box">
-            <div className="nb-item">
-              <img src="/img/check.png" alt="" />
-              <span className="nb-label">Norma Nacional<br />FA8019</span>
+          <div className="header-right">
+            <div className="normas-box">
+              <div className="nb-item">
+                <img src="/img/check.png" alt="" />
+                <span className="nb-label">Norma Nacional<br />FA8019</span>
+              </div>
+              <div className="nb-item">
+                <img src="/img/check.png" alt="" />
+                <span className="nb-label">Norma Nacional<br />FA8020</span>
+              </div>
+              <div className="nb-item">
+                <img src="/img/check.png" alt="" />
+                <span className="nb-label">Norma Internacional<br />S-508 AAFDM</span>
+              </div>
             </div>
-            <div className="nb-item">
-              <img src="/img/check.png" alt="" />
-              <span className="nb-label">Norma Nacional<br />FA8020</span>
-            </div>
-            <div className="nb-item">
-              <img src="/img/check.png" alt="" />
-              <span className="nb-label">Norma Internacional<br />S-508 AAFDM</span>
-            </div>
+            <Link to={loginDest} className="header-login" title="Ingreso de clientes">
+              <Icon name="user" size={16} />
+              <span>Login</span>
+            </Link>
           </div>
         </div>
       </header>

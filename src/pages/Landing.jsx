@@ -2,11 +2,9 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Icon } from '../components/ui';
 import { PRODUCTOS } from '../data/siteData';
-import { useStore } from '../store/store';
 import { api } from '../store/api';
 
 export default function Landing() {
-  const user = useStore((s) => s.user);
   const [stats, setStats] = useState({ clientes: 0, baterias: 0, activas: 0, entregadas: 0 });
 
   useEffect(() => {
@@ -16,8 +14,6 @@ export default function Landing() {
       .catch(() => { /* estadisticas opcionales */ });
     return () => { activo = false; };
   }, []);
-
-  const dest = user?.rol === 'admin' ? '/hub' : user?.rol === 'tecnico' ? '/tecnico' : user?.rol === 'cliente' ? '/cliente' : '/auth';
 
   const statList = [
     { n: stats.clientes, l: 'Clientes', ic: 'users' },
@@ -48,7 +44,6 @@ export default function Landing() {
             </p>
             <div className="ctas">
               <Link to="/productos" className="btn primary lg"><Icon name="bolt" size={18} /> Ver productos</Link>
-              <Link to={dest} className="btn lg"><Icon name="user" size={16} /> Ingreso clientes</Link>
               <Link to="/cotizador" className="btn lg"><Icon name="calculator" size={16} /> Cotizador de visita</Link>
             </div>
           </div>
