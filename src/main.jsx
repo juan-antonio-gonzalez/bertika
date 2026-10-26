@@ -3,6 +3,9 @@ import { createRoot } from 'react-dom/client';
 import App from './App.jsx';
 import { manejarPreloadError } from './components/ErrorBoundary.jsx';
 import './index.css';
+// Tema del sitio público (kit Bertika). Va después de index.css porque lo
+// re-tiñe solo, y todo su alcance está bajo `.site-pub`.
+import './styles/bertika-publico.css';
 
 // Si el navegador quedo con una version vieja y el deploy borro ese archivo,
 // Vite emite este evento: recargamos una vez para traer la version nueva.

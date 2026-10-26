@@ -145,7 +145,7 @@ export default function Landing() {
       </section>
 
       {/* Empresa */}
-      <section className="sec sec-alt" style={{ background: '#fff' }}>
+      <section className="sec sec-alt">
         <div className="wrap">
           <div className="grid2" style={{ alignItems: 'center', gap: 40 }}>
             <div>
@@ -177,8 +177,8 @@ export default function Landing() {
         <SectionVideo src="/video/seccion-ecologia.mp4" poster="/img/seccion-ecologia.jpg" className="sec-video--eco" />
         <div className="wrap">
           <div className="eco-card">
-              <h2 className="sec-title" style={{ color: '#fff' }}>Comprometidos con el medio ambiente</h2>
-              <p style={{ color: 'rgba(255,255,255,0.75)', lineHeight: 1.7, margin: '0 0 16px' }}>
+              <h2 className="sec-title">Comprometidos con el medio ambiente</h2>
+              <p style={{ color: 'rgba(211, 226, 220, 0.82)', lineHeight: 1.7, margin: '0 0 16px' }}>
                 A nivel de gestión de recursos, los acumuladores eléctricos usados se consideran como una
                 fuente de materias primas secundarias. Metales, plásticos y ácidos son recolectados,
                 clasificados y desviados de los residuos urbanos hacia operaciones de reutilización autorizadas.

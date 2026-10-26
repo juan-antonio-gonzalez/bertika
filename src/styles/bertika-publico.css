@@ -1,0 +1,1438 @@
+/* ==========================================================================
+   Bertika · tema del sitio público
+   --------------------------------------------------------------------------
+   Aplica el kit de estilos de la tarjeta digital
+   (`vcard/Taller-reparación/estilos-bertika.md`: paleta, tipografía,
+   componentes y foco) al sitio público.
+
+   Todo vive bajo `.site-pub`, que es el contenedor que arma PublicLayout:
+   el panel interno (AppShell) conserva su tema claro y sus tokens.
+
+   Reglas del kit:
+   - Fondo oscuro; verde SOLO como acento (iconos, un botón primario, foco).
+   - El texto sobre verde va siempre en --green-ink, nunca blanco.
+   - Tipografía del sistema, sin fuentes externas.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1 · Tokens del kit
+   Se redeclaran sobre el contenedor: cada componente que ya usaba var(--bg),
+   var(--text), var(--line), etc. se re-tiñe solo, sin tocar el panel.
+   -------------------------------------------------------------------------- */
+.site-pub {
+  /* Paleta */
+  --ink: #04100f;
+  --ink-deep: #020a09;
+  --panel: rgba(9, 30, 27, 0.72);
+  --panel-2: rgba(8, 26, 23, 0.6);
+  --line: rgba(92, 232, 148, 0.14);
+  --line-soft: rgba(92, 232, 148, 0.1);
+  --text: #f1f7f4;
+  --muted: #93a9a2;
+  --muted-2: #8fa39c;
+  --green: #2ee35c;
+  --green-500: #14d450;
+  --green-600: #0cb845;
+  --green-ink: #04220f;
+  --red: #e8352f;
+  --radius: 16px;
+  --shadow: 0 24px 60px -32px rgba(0, 0, 0, 0.9);
+  --ff: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Inter,
+    Roboto, "Helvetica Neue", Arial, sans-serif;
+
+  /* Tokens que ya usaba la app: se mapean a la paleta del kit. */
+  --bg: var(--ink);
+  --bg-2: var(--panel);
+  --bg-3: var(--panel-2);
+  --navy: #f1f7f4; /* títulos que antes iban en azul oscuro */
+  --navy-2: #d3e2dc;
+  --blue: #eaf5ef; /* cifras y destacados inline: ahora texto claro */
+  --blue-bg: rgba(92, 232, 148, 0.12);
+  --green-bg: rgba(46, 227, 92, 0.12);
+  --amber: var(--green);
+  --amber-d: #5cf08a;
+  --amber-bg: rgba(46, 227, 92, 0.14);
+  --orange: var(--green);
+  --orange-bg: rgba(46, 227, 92, 0.12);
+  --red-bg: rgba(232, 53, 47, 0.12);
+  --brand-amber: var(--green);
+  --brand-orange: var(--green-500);
+  --brand-soft: rgba(46, 227, 92, 0.14);
+  --brand-line: rgba(92, 232, 148, 0.38);
+  --grad-brand: linear-gradient(135deg, #4bf374 0%, var(--green-500) 52%, var(--green-600) 100%);
+
+  /* Sombras: profundas, como la tarjeta. */
+  --shadow-s: 0 10px 26px -20px rgba(0, 0, 0, 0.9);
+  --shadow-lg: 0 30px 70px -34px rgba(0, 0, 0, 0.95);
+
+  color-scheme: dark;
+  color: var(--text);
+  font-family: var(--ff);
+}
+
+/* El fondo vive en el body (lienzo) para que el degradé fijo no tape el
+   contenido: el respaldo va en z-index -1 y siempre queda por detrás.
+   --ink se repite acá porque los tokens están en .site-pub, no en el body. */
+body.site-pub-body {
+  --ink: #04100f;
+  background: var(--ink);
+  color: #f1f7f4;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI",
+    Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
+  color-scheme: dark;
+}
+
+/* --------------------------------------------------------------------------
+   2 · Respaldo: degradés verdes de marca + detalles rojos + textura
+   -------------------------------------------------------------------------- */
+.site-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  background:
+    radial-gradient(58% 44% at 88% -4%, rgba(22, 148, 76, 0.3) 0%, rgba(22, 148, 76, 0) 62%),
+    radial-gradient(52% 40% at 4% 8%, rgba(16, 120, 62, 0.16) 0%, rgba(16, 120, 62, 0) 60%),
+    radial-gradient(75% 55% at 50% 104%, rgba(10, 92, 50, 0.14) 0%, rgba(10, 92, 50, 0) 66%),
+    radial-gradient(130% 78% at 62% -20%, #0a2a1d 0%, #06140f 36%, #030b09 72%, #020a09 100%);
+}
+
+/* Textura sutil: evita el banding de los degradés grandes. */
+.site-backdrop::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0.05;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.6'/%3E%3C/svg%3E");
+}
+
+/* Trazos rojos de marca (solo en pantallas anchas, como el kit). */
+.site-streak {
+  position: absolute;
+  display: none;
+  width: 2px;
+  height: 150px;
+  background: linear-gradient(180deg, rgba(232, 53, 47, 0.85), rgba(232, 53, 47, 0));
+}
+
+@media (min-width: 700px) {
+  .site-streak {
+    display: block;
+    top: -34px;
+    right: 8%;
+    transform: rotate(34deg);
+    transform-origin: top center;
+  }
+
+  .site-streak-b {
+    top: auto;
+    right: auto;
+    bottom: -20px;
+    left: 6%;
+    height: 130px;
+    background: linear-gradient(0deg, rgba(232, 53, 47, 0.6), rgba(232, 53, 47, 0));
+    transform-origin: bottom center;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   3 · Base
+   -------------------------------------------------------------------------- */
+.site-pub ::selection {
+  background: var(--green);
+  color: var(--green-ink);
+}
+
+.site-pub :where(a, button, input, textarea, select, summary):focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 3px;
+}
+
+.site-pub ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.site-pub ::-webkit-scrollbar-track {
+  background: #04100f;
+}
+.site-pub ::-webkit-scrollbar-thumb {
+  background: rgba(92, 232, 148, 0.22);
+  border-radius: 6px;
+}
+.site-pub ::-webkit-scrollbar-thumb:hover {
+  background: rgba(92, 232, 148, 0.36);
+}
+
+.site-pub .muted {
+  color: var(--muted);
+}
+
+.site-pub .mono {
+  color: var(--text);
+}
+
+/* --------------------------------------------------------------------------
+   4 · Encabezado público
+   -------------------------------------------------------------------------- */
+.site-pub .site-header {
+  background: rgba(4, 16, 15, 0.72);
+  border-bottom: 1px solid var(--line);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+}
+
+.site-pub .site-header .wrap {
+  padding: 16px 20px;
+  gap: 20px;
+}
+
+.site-pub .site-header .brand {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+  color: var(--text);
+}
+
+.site-pub .brand-logo {
+  display: block;
+  width: 186px;
+  height: auto;
+}
+
+.site-pub .brand-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.site-pub .brand-tag {
+  color: var(--muted-2);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.3px;
+}
+
+.site-pub .brand-amsa {
+  color: var(--green);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.3px;
+}
+
+/* Normas: fichas de vidrio con el check en verde. */
+.site-pub .nb-item {
+  background: var(--panel-2);
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+}
+
+.site-pub .nb-label {
+  color: var(--muted);
+}
+
+/* Login: el botón primario del kit. */
+.site-pub .header-login {
+  background: linear-gradient(180deg, #4bf374 0%, var(--green-500) 52%, var(--green-600) 100%);
+  color: var(--green-ink) !important;
+  border-radius: 999px;
+  font-weight: 750;
+  box-shadow:
+    0 14px 34px -16px rgba(20, 212, 80, 0.8),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+.site-pub .header-login:hover {
+  filter: brightness(1.05);
+  color: var(--green-ink) !important;
+}
+
+.site-pub .header-login:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 3px;
+}
+
+/* --------------------------------------------------------------------------
+   5 · Navegación
+   -------------------------------------------------------------------------- */
+/* Ojo: sin backdrop-filter acá. Un backdrop-filter crea contexto de apilado y
+   el desplegable de Productos (z-index 70) quedaría debajo del hero. */
+.site-pub .site-nav {
+  position: relative;
+  z-index: 30;
+  background: rgba(6, 20, 17, 0.97);
+  border-top: 1px solid var(--line-soft);
+  border-bottom: 1px solid var(--line);
+}
+
+.site-pub .site-main-nav a {
+  color: var(--muted);
+  font-weight: 650;
+  letter-spacing: 0.55px;
+}
+
+.site-pub .site-main-nav a:hover {
+  background: rgba(92, 232, 148, 0.08);
+  color: var(--text);
+}
+
+.site-pub .site-main-nav a.active {
+  color: var(--green);
+  box-shadow: inset 0 -2px 0 var(--green);
+}
+
+.site-pub .site-main-nav .nav-cta {
+  background: linear-gradient(180deg, #4bf374 0%, var(--green-500) 52%, var(--green-600) 100%);
+  color: var(--green-ink) !important;
+  border-radius: 999px;
+  font-weight: 750;
+  box-shadow:
+    0 12px 28px -16px rgba(20, 212, 80, 0.85),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+.site-pub .site-main-nav .nav-cta:hover {
+  filter: brightness(1.05);
+  color: var(--green-ink) !important;
+}
+
+.site-pub .has-dropdown:hover > a {
+  background: rgba(92, 232, 148, 0.08);
+  color: var(--text);
+}
+
+.site-pub .dropdown {
+  background: rgba(6, 20, 17, 0.97);
+  border: 1px solid var(--line);
+  border-top: none;
+  border-radius: 0 0 14px 14px;
+  box-shadow: 0 24px 50px -20px rgba(0, 0, 0, 0.9);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+}
+
+.site-pub .dropdown a {
+  color: var(--muted) !important;
+  font-weight: 600;
+}
+
+.site-pub .dropdown a:hover {
+  background: rgba(92, 232, 148, 0.1);
+  color: var(--green) !important;
+}
+
+.site-pub .nav-toggle span {
+  background: var(--green);
+}
+
+@media (max-width: 960px) {
+  .site-pub .site-main-nav {
+    background: rgba(4, 16, 15, 0.98);
+    border-bottom: 1px solid var(--line);
+    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(16px);
+  }
+
+  .site-pub .site-main-nav a {
+    border-top: 1px solid var(--line-soft);
+  }
+
+  .site-pub .dropdown {
+    border-left: 2px solid var(--line);
+  }
+
+  .site-pub .site-main-nav a.active {
+    box-shadow: inset 3px 0 0 var(--green);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   6 · Portada (hero) y cabeceras de página
+   -------------------------------------------------------------------------- */
+.site-pub .hero {
+  background: var(--ink);
+  border-bottom: 1px solid var(--line);
+}
+
+.site-pub .hero-bg {
+  background: var(--ink-deep);
+}
+
+.site-pub .hero-bg img {
+  opacity: 0.22;
+}
+
+.site-pub .hero-bg::after {
+  background: radial-gradient(ellipse at 20% 20%, rgba(4, 16, 15, 0.5) 0%, #04100f 78%);
+}
+
+.site-pub .hero--video .hero-bg::after {
+  background:
+    linear-gradient(90deg, rgba(4, 16, 15, 0.88) 0%, rgba(4, 16, 15, 0.66) 34%, rgba(4, 16, 15, 0.3) 60%, rgba(4, 16, 15, 0.06) 100%),
+    linear-gradient(180deg, rgba(4, 16, 15, 0.3) 0%, rgba(4, 16, 15, 0.04) 45%, rgba(4, 16, 15, 0.6) 100%);
+}
+
+@media (max-width: 860px) {
+  .site-pub .hero--video .hero-bg::after {
+    background: linear-gradient(180deg, rgba(4, 16, 15, 0.9) 0%, rgba(4, 16, 15, 0.62) 55%, rgba(4, 16, 15, 0.92) 100%);
+  }
+}
+
+.site-pub .hero-inner {
+  padding: 78px 0 66px;
+}
+
+.site-pub .hero h1 {
+  color: var(--text);
+  font-weight: 750;
+  letter-spacing: -0.03em;
+  line-height: 1.04;
+}
+
+.site-pub .hero h1 .hl,
+.site-pub .hero h1 .hl-orange {
+  color: var(--green);
+  text-shadow: 0 0 44px rgba(46, 227, 92, 0.35);
+}
+
+.site-pub .hero p.lead {
+  color: var(--muted);
+  font-size: clamp(15px, 2vw, 18px);
+}
+
+/* Píldoras de vidrio */
+.site-pub .pill {
+  background: var(--panel-2);
+  border: 1px solid var(--line-soft);
+  color: var(--muted);
+  border-radius: 999px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.site-pub .pill svg {
+  color: var(--green);
+}
+
+.site-pub .hero .pill {
+  background: rgba(9, 30, 27, 0.7);
+  border-color: var(--line);
+  color: #d3e2dc;
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+/* Cabeceras de las páginas internas */
+.site-pub .page-hero {
+  background:
+    radial-gradient(80% 120% at 50% 0%, rgba(22, 148, 76, 0.22) 0%, rgba(22, 148, 76, 0) 70%),
+    linear-gradient(180deg, #08201a 0%, #04100f 100%);
+  border-bottom: 1px solid var(--line);
+}
+
+.site-pub .page-hero-bg img {
+  opacity: 0.22;
+}
+
+.site-pub .page-hero-kicker {
+  color: var(--green);
+  font-weight: 750;
+  letter-spacing: 0.18em;
+}
+
+.site-pub .page-hero h1,
+.site-pub .page-hero h1.page-hero-title {
+  color: var(--text);
+  font-weight: 750;
+  letter-spacing: -0.03em;
+  text-shadow: 0 3px 26px rgba(0, 0, 0, 0.5);
+}
+
+.site-pub .page-hero-title .hl-orange,
+.site-pub .page-hero-title .hl {
+  color: var(--green);
+}
+
+.site-pub .page-hero-lead {
+  color: var(--muted);
+  text-shadow: none;
+}
+
+.site-pub .page-hero-lead .hl,
+.site-pub .page-hero-lead .hl-orange {
+  color: var(--green);
+}
+
+.site-pub .breadcrumb {
+  color: var(--muted-2);
+}
+
+.site-pub .breadcrumb a {
+  color: var(--green);
+  font-weight: 650;
+}
+
+/* Overlays de los videos de cabecera: de navy a tinta. */
+.site-pub .sec-video--servicios-hero::after {
+  background: linear-gradient(180deg, rgba(4, 16, 15, 0.24) 0%, rgba(4, 16, 15, 0.48) 55%, rgba(4, 16, 15, 0.86) 100%);
+}
+
+.site-pub .sec-video--productos-hero::after {
+  background: linear-gradient(180deg, rgba(3, 10, 9, 0.6) 0%, rgba(3, 10, 9, 0.74) 55%, rgba(4, 16, 15, 0.95) 100%);
+}
+
+.site-pub .sec-video--empresa-hero::after {
+  background:
+    radial-gradient(ellipse at 50% 50%, rgba(4, 16, 15, 0.62) 0%, rgba(4, 16, 15, 0.44) 55%, rgba(4, 16, 15, 0.22) 100%),
+    linear-gradient(180deg, rgba(4, 16, 15, 0.36) 0%, rgba(4, 16, 15, 0.46) 60%, rgba(4, 16, 15, 0.66) 100%);
+}
+
+/* --------------------------------------------------------------------------
+   7 · Secciones, tarjetas y superficies
+   -------------------------------------------------------------------------- */
+.site-pub .sec {
+  background: transparent;
+}
+
+.site-pub .sec-alt {
+  background: rgba(6, 20, 17, 0.5);
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.site-pub .sec-title {
+  color: var(--text);
+  font-weight: 750;
+  letter-spacing: -0.025em;
+}
+
+.site-pub .sec-sub {
+  color: var(--muted);
+}
+
+/* La clase .page-light vuelve a fijar los tokens claros: se re-tiñe. */
+.site-pub .page-light {
+  --bg: transparent;
+  --bg-2: var(--panel);
+  --bg-3: var(--panel-2);
+  --line: rgba(92, 232, 148, 0.14);
+  --line-soft: rgba(92, 232, 148, 0.1);
+  --text: #f1f7f4;
+  --muted: #93a9a2;
+  --green: #2ee35c;
+  --blue: #eaf5ef;
+  --orange: #2ee35c;
+  --shadow: 0 24px 60px -32px rgba(0, 0, 0, 0.9);
+  background: transparent;
+  color: var(--text);
+}
+
+.site-pub .page-light .sec {
+  background: transparent;
+}
+
+.site-pub .page-light .card,
+.site-pub .page-light .kpi,
+.site-pub .page-light .service-card,
+.site-pub .page-light .auth-card {
+  background: linear-gradient(180deg, rgba(13, 42, 37, 0.78), rgba(8, 27, 24, 0.78));
+}
+
+.site-pub .page-light .input,
+.site-pub .page-light select.input {
+  background: rgba(8, 26, 23, 0.86);
+}
+
+.site-pub .page-light select.input option {
+  background: #08201c;
+  color: var(--text);
+}
+
+.site-pub .page-light .btn:not(.primary):hover {
+  background: var(--brand-soft);
+  border-color: var(--brand-line);
+  color: var(--green);
+}
+
+.site-pub .page-light .banner-info {
+  background: var(--green-bg);
+  border-color: var(--brand-line);
+  color: var(--green);
+}
+
+.site-pub .page-light .banner-cambio,
+.site-pub .page-light .banner-warn {
+  background: var(--green-bg);
+  border-color: var(--brand-line);
+  color: #9ff0bd;
+}
+
+.site-pub .page-light .tbl tbody tr:hover {
+  background: var(--bg-3);
+}
+
+/* Tarjetas: el mismo vidrio de las filas de contacto del kit. */
+.site-pub .card {
+  background: linear-gradient(180deg, rgba(13, 42, 37, 0.78), rgba(8, 27, 24, 0.82));
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.045),
+    0 18px 40px -30px rgba(0, 0, 0, 0.95);
+  color: var(--text);
+  transition: border-color 0.2s, background 0.2s, transform 0.15s;
+}
+
+.site-pub .card:hover {
+  border-color: rgba(92, 232, 148, 0.28);
+}
+
+.site-pub .card.pad0 {
+  overflow: hidden;
+}
+
+.site-pub .card.pad0 img {
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.site-pub .card-title {
+  color: var(--text);
+  font-weight: 700;
+  letter-spacing: -0.015em;
+}
+
+.site-pub .card-title svg {
+  color: var(--green);
+}
+
+.site-pub .card-sub {
+  color: var(--muted);
+}
+
+.site-pub .divider {
+  background: var(--line);
+}
+
+.site-pub .ulist li {
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.site-pub .empty {
+  color: var(--muted);
+}
+
+.site-pub .empty .big {
+  background: var(--brand-soft);
+  color: var(--green);
+}
+
+/* Cabecera de la portada: la línea roja es detalle de marca del kit. */
+.site-pub .hr-red {
+  background: var(--red);
+  opacity: 0.9;
+}
+
+/* --------------------------------------------------------------------------
+   8 · Botones, chips y badges
+   -------------------------------------------------------------------------- */
+.site-pub .btn {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: var(--text);
+  border-radius: 999px;
+  font-weight: 650;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+}
+
+.site-pub .btn:hover {
+  background: rgba(16, 52, 45, 0.85);
+  border-color: rgba(92, 232, 148, 0.4);
+  color: var(--text);
+}
+
+.site-pub .btn.primary {
+  background: linear-gradient(180deg, #4bf374 0%, var(--green-500) 52%, var(--green-600) 100%);
+  border: 0;
+  color: var(--green-ink);
+  font-weight: 750;
+  letter-spacing: -0.01em;
+  box-shadow:
+    0 14px 34px -14px rgba(20, 212, 80, 0.8),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.12);
+}
+
+.site-pub .btn.primary:hover {
+  background: linear-gradient(180deg, #4bf374 0%, var(--green-500) 52%, var(--green-600) 100%);
+  color: var(--green-ink);
+  filter: brightness(1.05);
+  box-shadow:
+    0 16px 40px -12px rgba(20, 212, 80, 0.9),
+    inset 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+
+.site-pub .btn.primary:active {
+  transform: scale(0.99);
+}
+
+.site-pub .btn.ghost {
+  background: transparent;
+}
+
+.site-pub .btn.danger {
+  border-color: rgba(232, 53, 47, 0.5);
+  color: #ff8f86;
+}
+
+.site-pub .btn.danger:hover {
+  background: var(--red-bg);
+  color: #ff8f86;
+  border-color: rgba(232, 53, 47, 0.6);
+}
+
+.site-pub .btn.lg {
+  padding: 15px 26px;
+  font-size: 15px;
+  min-height: 54px;
+}
+
+.site-pub .chip {
+  background: var(--panel-2);
+  border: 1px solid var(--line-soft);
+  color: var(--muted);
+}
+
+.site-pub button.chip {
+  background: var(--panel-2);
+  color: var(--muted);
+}
+
+.site-pub button.chip:hover {
+  border-color: var(--brand-line);
+  background: var(--brand-soft);
+  color: var(--green);
+}
+
+.site-pub .chip.on {
+  background: linear-gradient(180deg, #4bf374 0%, var(--green-500) 52%, var(--green-600) 100%);
+  border-color: transparent;
+  color: var(--green-ink);
+  font-weight: 750;
+}
+
+.site-pub .chip.on button:hover {
+  color: var(--green-ink);
+}
+
+.site-pub .badge {
+  background: var(--panel-2);
+  border-color: var(--line-soft);
+  color: var(--muted);
+}
+
+.site-pub .badge.amber {
+  background: var(--brand-soft);
+  color: var(--green);
+  border-color: var(--brand-line);
+}
+
+.site-pub .badge.green {
+  background: var(--green-bg);
+  color: var(--green);
+  border-color: var(--brand-line);
+}
+
+.site-pub .badge.orange {
+  background: var(--green-bg);
+  color: var(--green);
+  border-color: var(--brand-line);
+}
+
+.site-pub .badge.blue {
+  background: var(--blue-bg);
+  color: var(--text);
+  border-color: var(--line);
+}
+
+/* --------------------------------------------------------------------------
+   9 · Formularios
+   -------------------------------------------------------------------------- */
+.site-pub .input,
+.site-pub select.input {
+  background: rgba(8, 26, 23, 0.86);
+  border: 1px solid var(--line);
+  color: var(--text);
+  border-radius: 12px;
+}
+
+.site-pub .input::placeholder {
+  color: rgba(147, 169, 162, 0.7);
+}
+
+.site-pub .input:focus,
+.site-pub select.input:focus {
+  border-color: rgba(46, 227, 92, 0.55);
+  box-shadow: 0 0 0 3px rgba(46, 227, 92, 0.18);
+  outline: none;
+}
+
+.site-pub select.input option {
+  background: #08201c;
+  color: var(--text);
+}
+
+.site-pub .field label,
+.site-pub .lbl {
+  color: var(--muted);
+}
+
+.site-pub .input-error {
+  border-color: var(--red) !important;
+}
+
+.site-pub .input-error:focus {
+  box-shadow: 0 0 0 3px rgba(232, 53, 47, 0.22);
+}
+
+/* Avisos */
+.site-pub .banner-info {
+  background: var(--green-bg);
+  border: 1px solid var(--brand-line);
+  color: var(--green);
+}
+
+.site-pub .banner-warn,
+.site-pub .banner-cambio {
+  background: var(--green-bg);
+  border: 1px solid var(--brand-line);
+  color: #9ff0bd;
+}
+
+.site-pub .banner-green {
+  background: var(--green-bg);
+  border: 1px solid var(--brand-line);
+  color: var(--green);
+}
+
+.site-pub .banner-red {
+  background: var(--red-bg);
+  border: 1px solid rgba(232, 53, 47, 0.45);
+  color: #ff9a92;
+}
+
+/* --------------------------------------------------------------------------
+   10 · Servicios, proceso y confianza
+   -------------------------------------------------------------------------- */
+.site-pub .service-card {
+  background: linear-gradient(180deg, rgba(13, 42, 37, 0.78), rgba(8, 27, 24, 0.82));
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+  transition: border-color 0.2s, transform 0.15s, box-shadow 0.2s;
+}
+
+.site-pub .service-card:hover {
+  border-color: rgba(92, 232, 148, 0.34);
+  transform: translateY(-2px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 26px 50px -30px rgba(0, 0, 0, 0.95);
+}
+
+.site-pub .sc-thumb img {
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.site-pub .sc-title {
+  color: var(--text);
+  font-weight: 700;
+  letter-spacing: -0.015em;
+}
+
+.site-pub .sc-desc {
+  color: var(--muted);
+}
+
+.site-pub .pstep,
+.site-pub .app-card {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+}
+
+.site-pub .pstep .num {
+  background: var(--brand-soft);
+  color: var(--green);
+}
+
+.site-pub .trust-item .big {
+  color: var(--green);
+}
+
+.site-pub .trust-item .sm {
+  color: var(--muted);
+}
+
+/* Sección ecológica con video: mismo vidrio, verde de acento. */
+.site-pub .eco-card {
+  background: rgba(4, 12, 10, 0.72);
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  box-shadow: 0 30px 70px -30px rgba(0, 0, 0, 0.9);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+.site-pub .eco-card .pill {
+  background: rgba(9, 30, 27, 0.7);
+  border-color: var(--line);
+  color: #d3e2dc;
+}
+
+/* --------------------------------------------------------------------------
+   11 · Pie de página
+   -------------------------------------------------------------------------- */
+.site-pub .footer {
+  background: rgba(2, 10, 9, 0.72);
+  color: var(--muted);
+  border-top: 1px solid var(--line);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
+
+.site-pub .brand-footer {
+  color: var(--text);
+  font-weight: 750;
+}
+
+.site-pub .brand-footer img {
+  display: block;
+  width: 158px;
+  height: auto;
+}
+
+.site-pub .footer h4 {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+}
+
+.site-pub .footer-links a {
+  color: var(--muted);
+}
+
+.site-pub .footer-links a:hover {
+  color: var(--green);
+}
+
+.site-pub .footer-contact-item {
+  color: #cfe0d9;
+}
+
+.site-pub .footer-contact-item a {
+  color: var(--text);
+}
+
+.site-pub .footer-legal {
+  border-top: 1px solid var(--line);
+}
+
+.site-pub .footer-legal a,
+.site-pub .footer-legal button {
+  color: var(--muted);
+}
+
+.site-pub .footer-legal a:hover,
+.site-pub .footer-legal button:hover {
+  color: var(--green);
+}
+
+.site-pub .footer-copy {
+  color: var(--muted-2);
+  border-top: 1px solid var(--line-soft);
+}
+
+/* --------------------------------------------------------------------------
+   12 · Acceso / contacto (auth-wrap)
+   -------------------------------------------------------------------------- */
+.site-pub .auth-wrap {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  box-shadow: var(--shadow);
+}
+
+.site-pub .auth-brand {
+  background:
+    radial-gradient(90% 70% at 10% 0%, rgba(22, 148, 76, 0.32) 0%, rgba(22, 148, 76, 0) 65%),
+    linear-gradient(160deg, #08201a 0%, #04100f 100%);
+  color: var(--text);
+}
+
+.site-pub .auth-logo {
+  font-weight: 750;
+  letter-spacing: -0.02em;
+}
+
+.site-pub .auth-logo-box {
+  background: linear-gradient(160deg, #6df795 0%, var(--green-500) 52%, #0a8f37 100%);
+  color: var(--green-ink);
+}
+
+.site-pub .auth-tag {
+  color: var(--muted);
+}
+
+.site-pub .auth-brand-lead {
+  color: var(--muted);
+}
+
+.site-pub .auth-contact li {
+  color: #d3e2dc;
+}
+
+.site-pub .auth-contact .fi {
+  background: rgba(92, 232, 148, 0.12);
+  color: var(--green);
+}
+
+.site-pub .auth-contact .lbl {
+  color: var(--muted-2);
+}
+
+.site-pub .auth-contact a {
+  color: var(--green);
+}
+
+.site-pub .auth-amsa {
+  color: var(--muted);
+  border-top: 1px solid var(--line);
+}
+
+.site-pub .auth-form-side {
+  background: transparent;
+}
+
+.site-pub .auth-card {
+  background: rgba(8, 26, 23, 0.6);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+}
+
+.site-pub .auth-card .input,
+.site-pub .auth-card select.input {
+  background: rgba(4, 16, 15, 0.8);
+  padding: 10px 13px;
+}
+
+.site-pub .auth-card select.input option {
+  background: #08201c;
+  color: var(--text);
+}
+
+.site-pub .auth-sub {
+  color: var(--muted);
+}
+
+.site-pub .auth-back {
+  color: var(--muted);
+}
+
+.site-pub .auth-back:hover {
+  color: var(--green);
+}
+
+.site-pub .auth-foot {
+  border-top: 1px solid var(--line);
+}
+
+.site-pub .auth-submit {
+  border-radius: 999px;
+  box-shadow: 0 14px 34px -18px rgba(20, 212, 80, 0.8);
+}
+
+.site-pub .pass-eye {
+  color: var(--muted);
+}
+
+.site-pub .pass-eye:hover {
+  color: var(--green);
+}
+
+.site-pub .login-card {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: var(--text);
+}
+
+.site-pub .login-card:hover {
+  border-color: rgba(46, 227, 92, 0.5);
+  background: rgba(16, 52, 45, 0.8);
+}
+
+.site-pub .login-card p {
+  color: var(--muted);
+}
+
+/* --------------------------------------------------------------------------
+   13 · Páginas legales
+   -------------------------------------------------------------------------- */
+.site-pub .legal-page {
+  background: transparent;
+}
+
+.site-pub .legal-hero {
+  background:
+    radial-gradient(80% 120% at 50% 0%, rgba(22, 148, 76, 0.2) 0%, rgba(22, 148, 76, 0) 70%),
+    linear-gradient(180deg, #08201a 0%, #04100f 100%);
+  border-bottom: 1px solid var(--line);
+}
+
+.site-pub .legal-kicker {
+  color: var(--green);
+  letter-spacing: 0.18em;
+}
+
+.site-pub .legal-hero h1 {
+  color: var(--text);
+  font-weight: 750;
+  letter-spacing: -0.03em;
+}
+
+.site-pub .legal-meta {
+  color: var(--muted);
+}
+
+.site-pub .legal-prose {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  box-shadow: var(--shadow-s);
+  color: #dbe8e2;
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+
+.site-pub .legal-prose h2 {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.site-pub .legal-prose h3 {
+  color: var(--text);
+}
+
+.site-pub .legal-prose a {
+  color: var(--green);
+  font-weight: 600;
+}
+
+.site-pub .legal-prose code {
+  background: rgba(92, 232, 148, 0.12);
+  color: #c7f7d8;
+}
+
+.site-pub .legal-prose strong {
+  color: var(--text);
+}
+
+.site-pub .legal-nota {
+  background: rgba(46, 227, 92, 0.1);
+  border: 1px solid var(--brand-line);
+  color: #c7f7d8;
+}
+
+.site-pub .legal-table th,
+.site-pub .legal-table td {
+  border: 1px solid var(--line);
+}
+
+.site-pub .legal-table th {
+  background: rgba(92, 232, 148, 0.08);
+  color: var(--text);
+}
+
+.site-pub .legal-aside {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+
+.site-pub .legal-aside h2 {
+  color: var(--muted);
+}
+
+.site-pub .legal-aside nav a {
+  color: #d3e2dc;
+}
+
+.site-pub .legal-aside nav a:hover {
+  color: var(--green);
+}
+
+.site-pub .legal-aside-contacto {
+  color: var(--muted);
+}
+
+.site-pub .legal-volver {
+  color: var(--green);
+}
+
+.site-pub .legal-version {
+  border: 1px solid var(--line);
+}
+
+.site-pub .legal-ok {
+  border: 1px solid var(--brand-line);
+  background: var(--green-bg);
+}
+
+.site-pub .legal-pasos {
+  color: var(--muted);
+}
+
+.site-pub .legal-checkboxes {
+  background: rgba(8, 26, 23, 0.6);
+  border: 1px solid var(--line);
+}
+
+.site-pub .legal-checkboxes a {
+  color: var(--green);
+}
+
+.site-pub .privacidad-detalle-titulo {
+  color: var(--text);
+}
+
+.site-pub .privacidad-detalle dt {
+  color: var(--muted);
+}
+
+.site-pub .privacidad-docs > div {
+  border: 1px solid var(--line);
+}
+
+.site-pub .privacidad-docs a {
+  color: var(--green);
+}
+
+.site-pub .privacidad-hash {
+  background: rgba(92, 232, 148, 0.1);
+  color: #c7f7d8;
+}
+
+/* --------------------------------------------------------------------------
+   14 · Aviso de cookies
+   -------------------------------------------------------------------------- */
+.site-pub .cookie-overlay {
+  background: rgba(2, 10, 9, 0.62);
+}
+
+.site-pub .cookie-banner {
+  background: rgba(6, 20, 17, 0.97);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  box-shadow: 0 30px 70px -30px rgba(0, 0, 0, 0.95);
+  color: var(--text);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+}
+
+.site-pub .cookie-banner h2 {
+  color: var(--text);
+}
+
+.site-pub .cookie-banner p {
+  color: #d3e2dc;
+}
+
+.site-pub .cookie-banner a {
+  color: var(--green);
+}
+
+.site-pub .cookie-lista li {
+  border: 1px solid var(--line);
+}
+
+.site-pub .cookie-lista small {
+  color: var(--muted);
+}
+
+.site-pub .cookie-pie {
+  color: var(--muted) !important;
+}
+
+/* --------------------------------------------------------------------------
+   15 · Chat y botón de WhatsApp
+   -------------------------------------------------------------------------- */
+.site-pub .chat-panel {
+  background: rgba(6, 20, 17, 0.98);
+  border: 1px solid var(--line);
+  box-shadow: 0 30px 70px -28px rgba(0, 0, 0, 0.95);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+}
+
+.site-pub .chat-head {
+  background: linear-gradient(160deg, #08201a 0%, #04100f 100%);
+  border-bottom: 1px solid var(--line);
+  color: var(--text);
+}
+
+.site-pub .chat-avatar {
+  background: linear-gradient(160deg, #6df795 0%, var(--green-500) 55%, #0a8f37 100%);
+  color: var(--green-ink);
+}
+
+.site-pub .chat-status {
+  color: var(--muted);
+}
+
+.site-pub .chat-body {
+  background: transparent;
+}
+
+.site-pub .chat-msg {
+  color: #e3efe9;
+}
+
+.site-pub .chat-msg.bot {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+}
+
+.site-pub .chat-msg.user {
+  background: linear-gradient(180deg, #4bf374 0%, var(--green-500) 52%, var(--green-600) 100%);
+  color: var(--green-ink);
+  font-weight: 650;
+}
+
+.site-pub .chat-typing span {
+  background: rgba(147, 169, 162, 0.7);
+}
+
+.site-pub .chat-quick {
+  background: transparent;
+}
+
+.site-pub .chat-quick button {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: #c7f7d8;
+}
+
+.site-pub .chat-quick button:hover {
+  background: var(--brand-soft);
+  border-color: var(--brand-line);
+  color: var(--green);
+}
+
+.site-pub .chat-input {
+  background: transparent;
+  border-top: 1px solid var(--line-soft);
+  padding-top: 10px;
+}
+
+.site-pub .chat-input input {
+  background: rgba(4, 16, 15, 0.85);
+  border: 1px solid var(--line);
+  color: var(--text);
+}
+
+.site-pub .chat-input input::placeholder {
+  color: rgba(147, 169, 162, 0.7);
+}
+
+.site-pub .chat-input input:focus {
+  border-color: rgba(46, 227, 92, 0.55);
+  box-shadow: 0 0 0 3px rgba(46, 227, 92, 0.18);
+  background: rgba(4, 16, 15, 0.95);
+}
+
+.site-pub .chat-send {
+  background: linear-gradient(180deg, #4bf374 0%, var(--green-500) 52%, var(--green-600) 100%);
+  color: var(--green-ink);
+}
+
+.site-pub .chat-toggle {
+  background: linear-gradient(160deg, #0d2a22 0%, #04100f 100%);
+  border: 1px solid var(--line);
+  color: var(--green);
+  box-shadow:
+    0 18px 40px -18px rgba(0, 0, 0, 0.9),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.site-pub .wa-float {
+  background: #25d366;
+  box-shadow:
+    0 18px 40px -16px rgba(0, 0, 0, 0.85),
+    0 0 0 1px rgba(255, 255, 255, 0.12) inset;
+}
+
+/* --------------------------------------------------------------------------
+   16 · Responsive
+   -------------------------------------------------------------------------- */
+@media (max-width: 960px) {
+  .site-pub .brand-logo {
+    width: 168px;
+  }
+}
+
+@media (max-width: 560px) {
+  .site-pub .site-header .wrap {
+    padding: 13px 16px;
+  }
+
+  .site-pub .brand-logo {
+    width: 146px;
+  }
+
+  .site-pub .brand-amsa {
+    display: none;
+  }
+
+  .site-pub .header-login {
+    padding: 10px 14px;
+    font-size: 11.5px;
+  }
+
+  .site-pub .hero-inner {
+    padding: 56px 0 48px;
+  }
+}
+
+@media (max-width: 360px) {
+  .site-pub .brand-logo {
+    width: 128px;
+  }
+
+  .site-pub .brand-tag {
+    font-size: 10px;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   17 · Preferencias del usuario
+   -------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .site-pub *,
+  .site-pub *::before,
+  .site-pub *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .site-pub {
+    --line: rgba(92, 232, 148, 0.35);
+    --muted: #b9cdc6;
+  }
+}

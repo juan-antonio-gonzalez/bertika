@@ -42,20 +42,17 @@ export default function SiteHeader() {
       {/* Logo + normas */}
       <header className="site-header">
         <div className="wrap">
-          <Link to="/" className="brand">
-            <span className="logo">
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M13 2 4.5 13.5H11L9.5 22 19 10h-6.5L13 2z" />
-              </svg>
-            </span>
-            <span>
-              BERTIKA<sup style={{ fontSize: 9 }}>®</sup>
-              <small style={{ display: 'block', color: 'rgba(255,255,255,0.6)', fontSize: 11, letterSpacing: '0.3px' }}>
-                Acumuladores Industriales
-              </small>
-              <small style={{ display: 'block', color: 'var(--amber)', fontSize: 10, letterSpacing: '0.3px', fontWeight: 700 }}>
-                Representante oficial de AMSA Forbat
-              </small>
+          <Link to="/" className="brand" aria-label="Bertika — Acumuladores Industriales">
+            <img
+              className="brand-logo"
+              src="/img/logo-bertika.png"
+              alt="Bertika® Acumuladores Industriales"
+              width="460"
+              height="82"
+            />
+            <span className="brand-lines">
+              <span className="brand-tag">Acumuladores Industriales</span>
+              <span className="brand-amsa">Representante oficial de AMSA Forbat</span>
             </span>
           </Link>
           <div className="header-right">

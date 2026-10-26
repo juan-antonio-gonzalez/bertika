@@ -79,15 +79,29 @@ function RequireRol({ rol, children }) {
 function PublicLayout({ children }) {
   const { pathname } = useLocation();
   const ocultarChatbot = pathname.startsWith('/cotizador') || pathname.startsWith('/plataforma');
+
+  // El sitio público usa el tema oscuro de Bertika. La clase se pone en el
+  // body (no en el contenedor) para que el lienzo y el respaldo fijo cubran
+  // toda la ventana; al entrar al panel se saca y el panel sigue claro.
+  useEffect(() => {
+    document.body.classList.add('site-pub-body');
+    return () => document.body.classList.remove('site-pub-body');
+  }, []);
+
   return (
-    <>
+    <div className="site-pub">
+      {/* Respaldo fijo: degradés verdes de marca, trazos rojos y textura. */}
+      <div className="site-backdrop" aria-hidden="true">
+        <span className="site-streak site-streak-a" />
+        <span className="site-streak site-streak-b" />
+      </div>
       <SiteHeader />
       {children}
       <SiteFooter />
       {!ocultarChatbot && <Chatbot />}
       <WhatsAppFloat />
       <CookieConsent />
-    </>
+    </div>
   );
 }
 
