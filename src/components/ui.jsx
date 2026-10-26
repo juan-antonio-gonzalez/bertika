@@ -225,6 +225,12 @@ export function Modal({
   const cerrarRef = useRef(onClose);
   cerrarRef.current = onClose;
 
+  // El modal se monta por portal en el body, fuera de .site-pub. Si el tema
+  // público está activo se marca para que también salga oscuro; en el panel
+  // (sin esa clase) sigue igual que siempre.
+  const temaPublico = typeof document !== 'undefined'
+    && document.body.classList.contains('site-pub-body');
+
   useEffect(() => {
     const entrada = { el: caja, cerrar: () => cerrarRef.current?.() };
     apilarModal(entrada);
@@ -260,10 +266,10 @@ export function Modal({
   };
 
   return createPortal(
-    <div className="modal-back" onMouseDown={alBajarFondo} onClick={alClickFondo}>
+    <div className={`modal-back${temaPublico ? ' modal-back--dark' : ''}`} onMouseDown={alBajarFondo} onClick={alClickFondo}>
       <div
         ref={caja}
-        className={`modal ${TAMANO_MODAL[size] || ''} ${className}`.trim()}
+        className={`modal ${TAMANO_MODAL[size] || ''}${temaPublico ? ' modal--dark' : ''} ${className}`.trim()}
         role="dialog"
         aria-modal="true"
         aria-labelledby={idTitulo}

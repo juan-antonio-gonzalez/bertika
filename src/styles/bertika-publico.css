@@ -1375,7 +1375,265 @@ body.site-pub-body {
 }
 
 /* --------------------------------------------------------------------------
-   16 · Responsive
+   16 · Cotizador de visita (pantalla completa, sin header ni pie)
+   Usa su propia familia de clases (.cz-*) pero vive dentro de .site-pub, así
+   que hereda la paleta del kit. El documento imprimible (.doc) NO se toca:
+   es papel y sigue en blanco (además el modal va por portal, fuera del tema).
+   -------------------------------------------------------------------------- */
+.site-pub .cz {
+  background: transparent;
+  color: var(--text);
+}
+
+.site-pub .cz-top {
+  background: rgba(4, 16, 15, 0.86);
+  border-bottom: 1px solid var(--line);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+}
+
+.site-pub .cz-brand {
+  color: var(--text);
+  font-weight: 750;
+  letter-spacing: -0.01em;
+}
+
+.site-pub .cz-brand .logo {
+  background: linear-gradient(160deg, #6df795 0%, var(--green-500) 52%, #0a8f37 100%);
+  color: var(--green-ink);
+  box-shadow: 0 0 24px -8px rgba(46, 227, 92, 0.65);
+}
+
+.site-pub .cz-top-title {
+  color: var(--muted);
+  border-left: 1px solid var(--line);
+}
+
+.site-pub .cz-dolar {
+  background: var(--green-bg);
+  border: 1px solid var(--brand-line);
+  color: var(--green);
+}
+
+.site-pub .cz-dolar.off {
+  background: var(--panel-2);
+  border-color: var(--line);
+  color: var(--muted);
+}
+
+/* Tarjetas de configuración y de resultado */
+.site-pub .cz-card {
+  background: linear-gradient(180deg, rgba(13, 42, 37, 0.78), rgba(8, 27, 24, 0.82));
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.045),
+    0 18px 40px -32px rgba(0, 0, 0, 0.95);
+}
+
+.site-pub .cz-card-title {
+  color: var(--text);
+}
+
+.site-pub .cz-card-title .num {
+  background: var(--brand-soft);
+  color: var(--green);
+}
+
+.site-pub .cz-help,
+.site-pub .cz-zone,
+.site-pub .cz-note,
+.site-pub .cz-empty {
+  color: var(--muted);
+}
+
+.site-pub .cz-km input[type="range"] {
+  accent-color: var(--green);
+}
+
+/* Steppers de cantidad y distancia */
+.site-pub .cz-stepper {
+  background: rgba(4, 16, 15, 0.85);
+  border: 1px solid var(--line);
+}
+
+.site-pub .cz-stepper button {
+  background: transparent;
+  color: var(--muted);
+}
+
+.site-pub .cz-stepper button:hover {
+  background: rgba(92, 232, 148, 0.1);
+  color: var(--green);
+}
+
+.site-pub .cz-stepper input {
+  background: transparent;
+  border: 0;
+  border-left: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+  border-radius: 0;
+  color: var(--text);
+}
+
+/* Segmentos (modalidad, urgencia, turno) */
+.site-pub .cz-seg {
+  background: rgba(4, 16, 15, 0.7);
+  border: 1px solid var(--line-soft);
+}
+
+.site-pub .cz-seg button {
+  color: var(--muted);
+}
+
+.site-pub .cz-seg button:hover {
+  color: var(--text);
+}
+
+.site-pub .cz-seg button.on {
+  background: rgba(46, 227, 92, 0.16);
+  color: var(--green);
+  box-shadow: inset 0 0 0 1px var(--brand-line);
+}
+
+/* Servicios adicionales: se marcan con check verde */
+.site-pub .cz-chip {
+  background: rgba(4, 16, 15, 0.6);
+  border: 1px solid var(--line);
+  color: var(--text);
+}
+
+.site-pub .cz-chip:hover {
+  border-color: rgba(92, 232, 148, 0.32);
+}
+
+.site-pub .cz-chip.on {
+  background: rgba(46, 227, 92, 0.12);
+  border-color: var(--brand-line);
+}
+
+.site-pub .cz-chip .tick {
+  background: rgba(4, 16, 15, 0.9);
+  border: 1.5px solid rgba(92, 232, 148, 0.3);
+  color: transparent;
+}
+
+.site-pub .cz-chip.on .tick {
+  background: linear-gradient(180deg, #4bf374 0%, var(--green-600) 100%);
+  border-color: transparent;
+  color: var(--green-ink);
+}
+
+.site-pub .cz-chip .price {
+  color: var(--muted);
+}
+
+.site-pub .cz-badge {
+  background: var(--panel-2);
+  border: 1px solid var(--line-soft);
+  color: var(--muted);
+}
+
+.site-pub .cz-badge.green,
+.site-pub .cz-badge.amber {
+  background: var(--green-bg);
+  border-color: var(--brand-line);
+  color: var(--green);
+}
+
+/* Avisos: verde = informativo, rojo = bloqueo o error */
+.site-pub .cz-alert.info {
+  background: var(--green-bg);
+  border: 1px solid var(--brand-line);
+  color: var(--green);
+}
+
+.site-pub .cz-alert.warn {
+  background: rgba(232, 53, 47, 0.1);
+  border: 1px solid rgba(232, 53, 47, 0.28);
+  color: #ff9a92;
+}
+
+.site-pub .cz-alert.danger {
+  background: var(--red-bg);
+  border: 1px solid rgba(232, 53, 47, 0.42);
+  color: #ff9a92;
+}
+
+/* Detalle del cálculo */
+.site-pub .cz-line {
+  border-bottom: 1px dashed var(--line-soft);
+}
+
+.site-pub .cz-line .k {
+  color: var(--muted);
+}
+
+.site-pub .cz-line .v {
+  color: var(--text);
+}
+
+.site-pub .cz-line.big {
+  border-top: 1px solid var(--line);
+}
+
+/* Caja del total */
+.site-pub .cz-total {
+  background:
+    radial-gradient(90% 120% at 100% 0%, rgba(22, 148, 76, 0.22) 0%, rgba(22, 148, 76, 0) 62%),
+    linear-gradient(160deg, #08201a 0%, #04100f 100%);
+  border: 1px solid var(--line);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 22px 46px -28px rgba(0, 0, 0, 0.95);
+  color: var(--text);
+}
+
+.site-pub .cz-total .lbl {
+  color: var(--muted);
+  opacity: 1;
+}
+
+.site-pub .cz-total .amt {
+  color: var(--text);
+}
+
+.site-pub .cz-total .ars {
+  color: var(--muted);
+  opacity: 1;
+}
+
+.site-pub .cz-summary {
+  color: var(--text);
+}
+
+.site-pub .cz-summary::after {
+  color: var(--green);
+}
+
+.site-pub .cz-field label {
+  color: var(--muted);
+}
+
+/* Barra fija del celular (el display sigue en manos de index.css) */
+.site-pub .cz-bar {
+  background: rgba(4, 16, 15, 0.96);
+  border-top: 1px solid var(--line);
+  box-shadow: 0 -12px 30px -20px rgba(0, 0, 0, 0.95);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
+
+.site-pub .cz-bar .lbl {
+  color: var(--muted);
+}
+
+.site-pub .cz-bar .amt {
+  color: var(--text);
+}
+
+/* --------------------------------------------------------------------------
+   17 · Responsive
    -------------------------------------------------------------------------- */
 @media (max-width: 960px) {
   .site-pub .brand-logo {
@@ -1386,6 +1644,18 @@ body.site-pub-body {
 @media (max-width: 560px) {
   .site-pub .site-header .wrap {
     padding: 13px 16px;
+  }
+
+  /* El cotizador no entra en una línea: marca arriba, dólar y volver abajo. */
+  .site-pub .cz-top {
+    flex-wrap: wrap;
+    row-gap: 8px;
+    padding: 8px 12px;
+  }
+
+  .site-pub .cz-top-right {
+    width: 100%;
+    justify-content: space-between;
   }
 
   .site-pub .brand-logo {
@@ -1417,7 +1687,7 @@ body.site-pub-body {
 }
 
 /* --------------------------------------------------------------------------
-   17 · Preferencias del usuario
+   18 · Preferencias del usuario
    -------------------------------------------------------------------------- */
 @media (prefers-reduced-motion: reduce) {
   .site-pub *,
@@ -1435,4 +1705,96 @@ body.site-pub-body {
     --line: rgba(92, 232, 148, 0.35);
     --muted: #b9cdc6;
   }
+}
+
+/* --------------------------------------------------------------------------
+   19 · Modal sobre el tema público
+   El Modal se monta por portal en el body, así que no lo alcanza `.site-pub`.
+   Cuando el sitio público está activo (body.site-pub-body) se marca con
+   .modal--dark; en el panel, sin esa clase, el modal sigue igual que siempre.
+   El documento imprimible (.doc) queda en blanco a propósito: es papel.
+   -------------------------------------------------------------------------- */
+.modal-back--dark {
+  background: rgba(2, 10, 9, 0.66);
+}
+
+.modal--dark {
+  --bg: #04100f;
+  --bg-2: #091d19;
+  --bg-3: rgba(8, 26, 23, 0.6);
+  --line: rgba(92, 232, 148, 0.14);
+  --line-soft: rgba(92, 232, 148, 0.1);
+  --text: #f1f7f4;
+  --muted: #93a9a2;
+  --navy: #f1f7f4;
+  --amber: #2ee35c;
+  --amber-d: #5cf08a;
+  --brand-amber: #2ee35c;
+  --green: #2ee35c;
+  background: #091d19;
+  border-color: rgba(92, 232, 148, 0.14);
+  color: #f1f7f4;
+  box-shadow: 0 40px 90px -40px rgba(0, 0, 0, 0.95);
+}
+
+.modal--dark .modal-head,
+.modal--dark .modal-foot {
+  background: #091d19;
+  border-color: rgba(92, 232, 148, 0.14);
+}
+
+.modal--dark .modal-tabs {
+  border-bottom-color: rgba(92, 232, 148, 0.14);
+}
+
+.modal--dark h3 {
+  color: #f1f7f4;
+}
+
+.modal--dark .modal-sub {
+  color: #93a9a2;
+}
+
+.modal--dark .modal-x {
+  background: rgba(8, 26, 23, 0.6);
+  border-color: rgba(92, 232, 148, 0.14);
+  color: #93a9a2;
+}
+
+.modal--dark .modal-x:hover {
+  background: rgba(46, 227, 92, 0.14);
+  border-color: rgba(92, 232, 148, 0.38);
+  color: #f1f7f4;
+}
+
+.modal--dark .field label {
+  color: #93a9a2;
+}
+
+.modal--dark .btn {
+  background: rgba(8, 26, 23, 0.6);
+  border-color: rgba(92, 232, 148, 0.14);
+  color: #f1f7f4;
+}
+
+.modal--dark .btn:hover {
+  background: rgba(16, 52, 45, 0.85);
+  border-color: rgba(92, 232, 148, 0.4);
+  color: #f1f7f4;
+}
+
+.modal--dark .btn.primary {
+  background: linear-gradient(180deg, #4bf374 0%, #14d450 52%, #0cb845 100%);
+  border: 0;
+  color: #04220f;
+  font-weight: 750;
+  box-shadow:
+    0 14px 34px -14px rgba(20, 212, 80, 0.8),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+.modal--dark .btn.primary:hover {
+  background: linear-gradient(180deg, #4bf374 0%, #14d450 52%, #0cb845 100%);
+  color: #04220f;
+  filter: brightness(1.05);
 }

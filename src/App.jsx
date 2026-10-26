@@ -76,13 +76,10 @@ function RequireRol({ rol, children }) {
   return children;
 }
 
-function PublicLayout({ children }) {
-  const { pathname } = useLocation();
-  const ocultarChatbot = pathname.startsWith('/cotizador') || pathname.startsWith('/plataforma');
-
-  // El sitio público usa el tema oscuro de Bertika. La clase se pone en el
-  // body (no en el contenedor) para que el lienzo y el respaldo fijo cubran
-  // toda la ventana; al entrar al panel se saca y el panel sigue claro.
+// Tema oscuro de Bertika para todo lo público. La clase se pone en el body (no
+// en el contenedor) para que el lienzo y el respaldo fijo cubran toda la
+// ventana; al entrar al panel se saca y el panel sigue con su tema claro.
+function TemaPublico({ children }) {
   useEffect(() => {
     document.body.classList.add('site-pub-body');
     return () => document.body.classList.remove('site-pub-body');
@@ -95,13 +92,24 @@ function PublicLayout({ children }) {
         <span className="site-streak site-streak-a" />
         <span className="site-streak site-streak-b" />
       </div>
+      {children}
+    </div>
+  );
+}
+
+function PublicLayout({ children }) {
+  const { pathname } = useLocation();
+  const ocultarChatbot = pathname.startsWith('/cotizador') || pathname.startsWith('/plataforma');
+
+  return (
+    <TemaPublico>
       <SiteHeader />
       {children}
       <SiteFooter />
       {!ocultarChatbot && <Chatbot />}
       <WhatsAppFloat />
       <CookieConsent />
-    </div>
+    </TemaPublico>
   );
 }
 
@@ -155,8 +163,9 @@ export default function App() {
         <Route path="/legal/cookies" element={<PublicLayout><Cookies /></PublicLayout>} />
         <Route path="/legal/terminos" element={<PublicLayout><Terminos /></PublicLayout>} />
         <Route path="/legal/versiones" element={<PublicLayout><VersionesLegales /></PublicLayout>} />
-        {/* Pantalla completa propia: entra sin scroll, sin el header/footer del sitio */}
-        <Route path="/cotizador" element={<Cotizador />} />
+        {/* Pantalla completa propia: entra sin scroll, sin el header/footer del
+            sitio, pero con el mismo tema oscuro. */}
+        <Route path="/cotizador" element={<TemaPublico><Cotizador /></TemaPublico>} />
         <Route path="/seguimiento" element={<PublicLayout><Seguimiento /></PublicLayout>} />
         <Route path="/cotizacion/:orden_id" element={<PublicLayout><CotizacionPublica /></PublicLayout>} />
         <Route path="/plataforma" element={<PublicLayout><Plataforma /></PublicLayout>} />
