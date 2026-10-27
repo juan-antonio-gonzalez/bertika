@@ -46,7 +46,7 @@
   --line-soft: rgba(9, 40, 32, 0.1);
   /* Borde de tarjeta: verde tenue en reposo. Distinto de --line, que es el
      gris de inputs, divisores y tablas. */
-  --card-line: rgba(15, 155, 69, 0.28);
+  --card-line: rgba(15, 155, 69, 0.45);
   --text: #10231c;
   --muted: #5b6f68;
   --muted-2: #6b7f78;
@@ -833,11 +833,11 @@ body.site-pub-body {
 }
 
 /* Títulos de tarjeta con acento de marca. */
-.site-pub .card-title--red {
+.site-pub .card .card-title--red {
   color: var(--danger-fg);
 }
 
-.site-pub .card-title--green {
+.site-pub .card .card-title--green {
   color: var(--green-600);
 }
 
