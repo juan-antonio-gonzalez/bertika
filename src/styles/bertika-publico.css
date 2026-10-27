@@ -807,8 +807,16 @@ body.site-pub-body {
 }
 
 /* Banda ecológica sobre video */
+/* Velo liviano: el video se ve, y el texto se sostiene con sombra propia. */
 .site-pub .sec-video--eco::after {
-  background: linear-gradient(180deg, rgba(2, 10, 9, 0.72) 0%, rgba(2, 10, 9, 0.84) 55%, rgba(2, 10, 9, 0.94) 100%);
+  background: linear-gradient(180deg, rgba(2, 10, 9, 0.3) 0%, rgba(2, 10, 9, 0.42) 55%, rgba(2, 10, 9, 0.6) 100%);
+}
+
+.site-pub .eco-title,
+.site-pub .eco-lead,
+.site-pub .eco-list li,
+.site-pub .eco-band .eyebrow {
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55), 0 8px 30px rgba(0, 0, 0, 0.45);
 }
 
 .site-pub .eco-band {
