@@ -2151,7 +2151,55 @@ body.site-pub-body {
 }
 
 .site-pub .auth-card {
+  position: relative;
+  overflow: hidden;
   border-radius: 16px;
+}
+
+/* Líneas rojas de marca (como en la tarjeta digital): un trazo diagonal en las
+   esquinas del panel oscuro y otro en la esquina de la tarjeta del formulario. */
+.site-pub .auth-brand {
+  position: relative;
+  overflow: hidden;
+}
+
+.site-pub .auth-brand::before,
+.site-pub .auth-brand::after {
+  content: "";
+  position: absolute;
+  width: 2px;
+  pointer-events: none;
+}
+
+.site-pub .auth-brand::before {
+  top: -46px;
+  right: 14px;
+  height: 150px;
+  transform: rotate(34deg);
+  transform-origin: top center;
+  background: linear-gradient(180deg, rgba(232, 53, 47, 1), rgba(232, 53, 47, 0));
+}
+
+.site-pub .auth-brand::after {
+  bottom: -46px;
+  left: 12px;
+  height: 140px;
+  transform: rotate(34deg);
+  transform-origin: bottom center;
+  background: linear-gradient(0deg, rgba(232, 53, 47, 0.8), rgba(232, 53, 47, 0));
+}
+
+.site-pub .auth-card::before {
+  content: "";
+  position: absolute;
+  top: -34px;
+  right: 18px;
+  width: 2px;
+  height: 120px;
+  transform: rotate(34deg);
+  transform-origin: top center;
+  background: linear-gradient(180deg, rgba(232, 53, 47, 0.85), rgba(232, 53, 47, 0));
+  pointer-events: none;
 }
 
 .site-pub .auth-card .input,
