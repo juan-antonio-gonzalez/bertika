@@ -53,8 +53,8 @@ export default function Productos() {
                   <h3 className="producto-t">{p.titulo}</h3>
                   <p className="producto-d">{p.desc}</p>
                   <div className="producto-acciones">
-                    <Link to={`/productos/${p.id}`} className="btn primary">
-                      Ver ficha técnica
+                    <Link to={`/productos/${p.id}`} className="lineup-btn">
+                      Más info
                     </Link>
                     <Link
                       to={`/contacto?asunto=${encodeURIComponent(p.titulo)}`}
