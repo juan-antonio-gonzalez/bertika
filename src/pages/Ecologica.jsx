@@ -17,19 +17,14 @@ export default function Ecologica() {
 
       <section className="sec">
         <div className="wrap">
-          <div className="grid2" style={{ alignItems: 'center', gap: 40 }}>
-            <div>
-              <img src="/img/img-mundo.jpg" alt="Reciclaje de baterías" style={{ width: '100%', borderRadius: 12, boxShadow: 'var(--shadow-lg)' }} />
-            </div>
-            <div>
-              <h2 className="sec-title">Comprometidos con el medio ambiente</h2>
-              <p className="muted" style={{ lineHeight: 1.7 }}>
-                A nivel de gestión de recursos, los acumuladores eléctricos usados se consideran como una
-                fuente de materias primas secundarias. Metales, plásticos y ácidos son recolectados por el
-                sistema y desviados del circuito de los residuos urbanos, y dirigidos a operaciones de
-                reutilización y eliminación definitiva.
-              </p>
-            </div>
+          <div className="eco-intro">
+            <h2 className="sec-title">Comprometidos con el medio ambiente</h2>
+            <p>
+              A nivel de gestión de recursos, los acumuladores eléctricos usados se consideran como una
+              fuente de materias primas secundarias. Metales, plásticos y ácidos son recolectados por el
+              sistema y desviados del circuito de los residuos urbanos, y dirigidos a operaciones de
+              reutilización y eliminación definitiva.
+            </p>
           </div>
 
           <div className="grid3 mt32" style={{ gap: 20 }}>
