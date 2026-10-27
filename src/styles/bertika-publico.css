@@ -3409,5 +3409,6 @@ body.site-pub-body {
 /* Palabra de acento en verde de marca. */
 .site-pub .txt-green,
 .site-pub .sec-title .txt-green {
-  color: var(--green);
+  /* El mismo verde del hero («Energía»): literal para que no lo pise el scope. */
+  color: #2ee35c;
 }
