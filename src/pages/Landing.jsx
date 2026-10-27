@@ -11,9 +11,12 @@ const HERO_VIDEO = '/video/hero-bateria-3d.mp4';
 
 export default function Landing() {
   const [stats, setStats] = useState({ clientes: 0, baterias: 0, activas: 0, entregadas: 0 });
+  const [statsListo, setStatsListo] = useState(false);
   const [videoListo, setVideoListo] = useState(false);
   const [videoFallo, setVideoFallo] = useState(false);
   const [pocoMovimiento, setPocoMovimiento] = useState(false);
+  // Índice de líneas: la imagen y el detalle acompañan a la fila que se mira.
+  const [lineaActiva, setLineaActiva] = useState(0);
   const videoRef = useRef(null);
 
   // Respeta la preferencia "reducir movimiento" del sistema: sin video, foto fija.
@@ -40,10 +43,15 @@ export default function Landing() {
   useEffect(() => {
     let activo = true;
     api('/public/stats')
-      .then((s) => { if (activo) setStats(s); })
+      .then((s) => { if (activo) { setStats(s); setStatsListo(true); } })
       .catch(() => { /* estadisticas opcionales */ });
     return () => { activo = false; };
   }, []);
+
+  // Los títulos del catálogo están en mayúsculas; en el índice se leen mejor
+  // en caja baja (solo el índice, el catálogo conserva su estilo).
+  const enCajaBaja = (t) => t.charAt(0).toUpperCase() + t.slice(1).toLocaleLowerCase('es');
+  const linea = PRODUCTOS[lineaActiva] || PRODUCTOS[0];
 
   const statList = [
     { n: stats.clientes, l: 'Clientes', ic: 'users' },
@@ -98,21 +106,22 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* Cifras */}
+      {/* Cifras: banda con hairlines, los números son los protagonistas */}
       <section className="sec">
         <div className="wrap">
-          <h2 className="sec-title" style={{ textAlign: 'center' }}>Nuestro progreso en números</h2>
-          <p className="sec-sub" style={{ textAlign: 'center', maxWidth: 620, margin: '0 auto 26px' }}>
-            Cada batería es un eslabón crítico de tu cadena productiva. Trabajamos para que tu operación nunca se detenga.
-          </p>
-          <div className="grid4">
+          <header className="sec-head">
+            <span className="eyebrow">En números</span>
+            <h2 className="sec-title">El progreso se mide en baterías que vuelven a trabajar</h2>
+            <p className="sec-sub">
+              Cada batería es un eslabón crítico de tu cadena productiva. Trabajamos para que tu
+              operación nunca se detenga.
+            </p>
+          </header>
+          <div className="stats">
             {statList.map((s) => (
-              <div key={s.l} className="card" style={{ textAlign: 'center', padding: '22px 14px' }}>
-                <span className="chip" style={{ color: 'var(--amber)', width: 46, height: 46, borderRadius: '50%', margin: '0 auto 10px', fontSize: 18 }}>
-                  <Icon name={s.ic} size={18} />
-                </span>
-                <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--blue)' }}>{s.n}</div>
-                <p className="card-sub" style={{ margin: '6px 0 0' }}>{s.l}</p>
+              <div key={s.l} className="stat">
+                <span className="stat-n">{statsListo ? s.n : '—'}</span>
+                <span className="stat-l">{s.l}</span>
               </div>
             ))}
           </div>
@@ -122,71 +131,105 @@ export default function Landing() {
       {/* Productos */}
       <section className="sec sec-alt page-light">
         <div className="wrap">
-          <h2 className="sec-title" style={{ textAlign: 'center' }}>Nuestras líneas de productos</h2>
-          <p className="sec-sub" style={{ textAlign: 'center', maxWidth: 640, margin: '0 auto 26px' }}>
-            Ferroviarias, tracción, estacionarias, solar y eólico, arranque, especiales y cargadores.
-            Diseñadas para las exigencias reales de cada aplicación industrial.
-          </p>
-          {/* Índice de líneas, no el catálogo: las fichas con imagen y detalle
-              viven en /productos. Acá solo se nombra cada línea y se enlaza. */}
-          <div className="lineas">
-            {PRODUCTOS.map((p) => (
-              <Link key={p.id} to={`/productos#${p.id}`} className="linea">
-                <span className="linea-t">{p.titulo}</span>
-              </Link>
-            ))}
+          <div className="lineas-head">
+            <h2 className="sec-title">Nuestras líneas de productos</h2>
+            <p className="sec-sub">
+              Siete líneas para cada aplicación industrial. Elegí una y ves su uso y sus normas;
+              el detalle completo está en el catálogo.
+            </p>
           </div>
-          <div className="center" style={{ marginTop: 24 }}>
-            <Link to="/productos" className="btn primary lg">Ver todos los productos</Link>
+
+          {/* Índice editorial: la fila que se mira manda en la imagen. No repite
+              las fichas del catálogo, pero tampoco lo deja en una lista seca. */}
+          <div className="lineas-panel">
+            <figure className="lineas-media">
+              <img key={linea.id} src={linea.img} alt={linea.titulo} width="370" height="214" />
+              <figcaption>
+                <span className="lineas-media-kicker">En uso</span>
+                <strong className="lineas-media-t">{enCajaBaja(linea.titulo)}</strong>
+                <span className="lineas-media-d">{linea.desc}</span>
+              </figcaption>
+            </figure>
+
+            <ul className="lineas-lista">
+              {PRODUCTOS.map((p, i) => (
+                <li key={p.id}>
+                  <Link
+                    to={`/productos#${p.id}`}
+                    className={`linea-row${i === lineaActiva ? ' on' : ''}`}
+                    onMouseEnter={() => setLineaActiva(i)}
+                    onFocus={() => setLineaActiva(i)}
+                  >
+                    <span className="linea-num">{String(i + 1).padStart(2, '0')}</span>
+                    <span className="linea-nombre">{enCajaBaja(p.titulo)}</span>
+                    <span className="linea-go" aria-hidden="true">→</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="center" style={{ marginTop: 30 }}>
+            <Link to="/productos" className="btn primary lg">Ver el catálogo completo</Link>
           </div>
         </div>
       </section>
 
-      {/* Empresa */}
+      {/* Empresa: imagen + relato + datos duros */}
       <section className="sec sec-alt">
-        <div className="wrap">
-          <div className="grid2" style={{ alignItems: 'center', gap: 40 }}>
-            <div>
-              <img src="/img/img-automatizacion.jpg" alt="Automatización industrial" style={{ width: '100%', borderRadius: 12, boxShadow: 'var(--shadow-lg)' }} />
-            </div>
-            <div>
-              <h2 className="sec-title">Nuestra empresa</h2>
-              <p className="sec-sub" style={{ marginBottom: 14 }}>
-                Bertika® Acumuladores Industriales nació de la unión de dos trayectorias complementarias:
-                más de 20 años en automatización y optimización de procesos, y más de 30 años en gestión
-                industrial y comercial.
-              </p>
-              <div className="banner-warn" style={{ marginBottom: 16, maxWidth: 520 }}>
-                <Icon name="check" size={15} /> Representante oficial de la empresa AMSA Forbat
+        <div className="wrap split">
+          <figure className="split-media">
+            <img src="/img/img-automatizacion.jpg" alt="Planta y departamento técnico de Bertika" />
+            <figcaption>Departamento técnico propio, bancos de carga y prueba final obligatoria.</figcaption>
+          </figure>
+          <div className="split-body">
+            <span className="eyebrow">La empresa</span>
+            <h2 className="sec-title">Dos trayectorias, un mismo taller</h2>
+            <p className="split-lead">
+              Bertika® nació de la unión de dos recorridos complementarios: la precisión de la
+              automatización industrial y la visión de negocio de tres décadas de gestión comercial.
+            </p>
+            <dl className="datos">
+              <div>
+                <dt>+20 años</dt>
+                <dd>Automatización y procesos</dd>
               </div>
-              <p className="muted" style={{ lineHeight: 1.7, margin: '0 0 20px' }}>
-                Fusionamos la precisión de la ingeniería con la visión de negocio y el trabajo directo de taller.
-                Nuestra planta cuenta con departamento técnico propio, bancos de carga industriales y un proceso
-                controlado paso a paso: ninguna batería sale del taller sin la prueba final de capacidad y carga.
-              </p>
-              <Link to="/empresa" className="btn primary">Conozca más</Link>
-            </div>
+              <div>
+                <dt>+30 años</dt>
+                <dd>Gestión industrial y comercial</dd>
+              </div>
+              <div>
+                <dt>100%</dt>
+                <dd>Trazable por número de serie</dd>
+              </div>
+            </dl>
+            <Link to="/empresa" className="btn primary">Conozca más</Link>
           </div>
         </div>
       </section>
 
-      {/* Ecología */}
-      <section className="sec sec-video-sec sec-video-sec--centrada">
+      {/* Ecología: la banda de video es el fondo, el texto va encima */}
+      <section className="sec sec-video-sec">
         <SectionVideo src="/video/seccion-ecologia.mp4" poster="/img/seccion-ecologia.jpg" className="sec-video--eco" />
         <div className="wrap">
-          <div className="eco-card">
-              <h2 className="sec-title">Comprometidos con el medio ambiente</h2>
-              <p style={{ color: 'var(--muted)', lineHeight: 1.7, margin: '0 0 16px' }}>
-                A nivel de gestión de recursos, los acumuladores eléctricos usados se consideran como una
-                fuente de materias primas secundarias. Metales, plásticos y ácidos son recolectados,
-                clasificados y desviados de los residuos urbanos hacia operaciones de reutilización autorizadas.
+          <div className="eco-band">
+            <div>
+              <span className="eyebrow eyebrow--light">Política ecológica</span>
+              <h2 className="eco-title">Comprometidos con el medio ambiente</h2>
+            </div>
+            <div>
+              <p className="eco-lead">
+                Los acumuladores usados son una fuente de materias primas secundarias: metales,
+                plásticos y ácidos se recolectan, clasifican y desvían de los residuos urbanos hacia
+                operaciones de reutilización autorizadas.
               </p>
-              <div className="row" style={{ gap: 12, flexWrap: 'wrap', marginBottom: 22 }}>
-                <span className="pill"><Icon name="check" size={12} /> Reciclaje responsable</span>
-                <span className="pill"><Icon name="check" size={12} /> Operaciones autorizadas</span>
-                <span className="pill"><Icon name="check" size={12} /> Menos residuos urbanos</span>
-              </div>
+              <ul className="eco-list">
+                <li>Reciclaje responsable</li>
+                <li>Operaciones autorizadas</li>
+                <li>Menos residuos urbanos</li>
+              </ul>
               <Link to="/politica-ecologica" className="btn lg">Conocé nuestra política ecológica</Link>
+            </div>
           </div>
         </div>
       </section>

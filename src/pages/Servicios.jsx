@@ -1,7 +1,6 @@
 import { Link } from 'react-router-dom';
 import { Icon } from '../components/ui';
 import SectionVideo from '../components/SectionVideo';
-import { PRODUCTOS } from '../data/siteData';
 
 const servicios = [
   {
@@ -50,36 +49,19 @@ export default function Servicios() {
           <p className="sec-sub">
             Desde el diagnóstico hasta el reciclaje. Ninguna batería sale del taller sin pasar la prueba final de carga y capacidad.
           </p>
-          <div className="service-grid">
-            {servicios.map((s) => (
-              <div key={s.titulo} className="service-card">
-                <div className="sc-body">
-                  <h3 className="sc-title">{s.titulo}</h3>
-                  <hr className="hr-red" />
-                  <p className="sc-desc">{s.desc}</p>
-                </div>
-              </div>
+          <div className="servicios">
+            {servicios.map((s, i) => (
+              <article key={s.titulo} className="servicio">
+                <span className="servicio-num">{String(i + 1).padStart(2, '0')}</span>
+                <h3 className="servicio-t">{s.titulo}</h3>
+                <p className="servicio-d">{s.desc}</p>
+              </article>
             ))}
           </div>
 
           <div className="center mt32 row" style={{ justifyContent: 'center', gap: 10 }}>
             <Link to="/contacto" className="btn primary lg">Solicitar presupuesto</Link>
             <Link to="/cotizador" className="btn lg"><Icon name="calculator" size={15} /> Cotizador de visita</Link>
-          </div>
-
-          <div className="mt32">
-            <h3 className="sec-title" style={{ fontSize: 22 }}>También comercializamos</h3>
-            <div className="service-grid">
-              {PRODUCTOS.map((p) => (
-                <Link key={p.id} to={`/productos#${p.id}`} className="service-card" style={{ color: 'inherit' }}>
-                  <div className="sc-thumb"><img src={p.img} alt={p.titulo} /></div>
-                  <div className="sc-body">
-                    <h3 className="sc-title" style={{ fontSize: 14 }}>{p.titulo}</h3>
-                    <hr className="hr-red" />
-                  </div>
-                </Link>
-              ))}
-            </div>
           </div>
         </div>
       </section>
