@@ -8,7 +8,7 @@ export default function Productos() {
   useEffect(() => {
     if (!location.hash) return;
     const el = document.getElementById(location.hash.slice(1));
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, [location.hash]);
 
   return (
@@ -26,23 +26,45 @@ export default function Productos() {
 
       <section className="sec">
         <div className="wrap">
-          <div className="banner-warn" style={{ marginBottom: 24, maxWidth: 600, display: 'inline-flex' }}>
-            <span>Representante oficial de AMSA Forbat</span>
-          </div>
-          <div className="service-grid">
-            {PRODUCTOS.map((p) => (
-              <div key={p.id} id={p.id} className="service-card">
-                <div className="sc-thumb"><img src={p.img} alt={p.titulo} /></div>
-                <div className="sc-body">
-                  <h3 className="sc-title">{p.titulo}</h3>
-                  <hr className="hr-red" />
-                  <p className="sc-desc">{p.desc}</p>
+          <header className="sec-head">
+            <span className="eyebrow">Catálogo</span>
+            <h2 className="sec-title">Siete líneas de acumuladores industriales</h2>
+            <p className="sec-sub">
+              Cada línea está pensada para un régimen de trabajo distinto. Somos representantes
+              oficiales de AMSA Forbat: las mismas baterías del fabricante, con el respaldo del taller.
+            </p>
+          </header>
+
+          {/* Mismo formato que la ficha del fabricante: imagen grande + título +
+              descripción completa, una línea por fila. */}
+          <div className="productos">
+            {PRODUCTOS.map((p, i) => (
+              <article key={p.id} id={p.id} className="producto">
+                <figure className="producto-media">
+                  <img
+                    src={p.img}
+                    alt={p.titulo}
+                    width="370"
+                    height="214"
+                  />
+                </figure>
+                <div className="producto-body">
+                  <span className="producto-kicker">{String(i + 1).padStart(2, '0')} · Línea</span>
+                  <h3 className="producto-t">{p.titulo}</h3>
+                  <p className="producto-d">{p.desc}</p>
+                  <Link
+                    to={`/contacto?asunto=${encodeURIComponent(p.titulo)}`}
+                    className="producto-link"
+                  >
+                    Consultar esta línea <span aria-hidden="true">→</span>
+                  </Link>
                 </div>
-              </div>
+              </article>
             ))}
           </div>
 
-          <div className="center mt32">
+          <div className="productos-pie">
+            <p>¿No sabés qué línea te corresponde? Con el número de serie lo identificamos.</p>
             <Link to="/contacto" className="btn primary lg">Consultar disponibilidad</Link>
           </div>
         </div>
