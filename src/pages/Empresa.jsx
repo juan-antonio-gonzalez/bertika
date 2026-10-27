@@ -141,7 +141,7 @@ export default function Empresa() {
       {/* Nuestro impacto */}
       <section className="sec">
         <div className="wrap">
-          <h2 className="sec-title" style={{ textAlign: 'center' }}>Nuestro impacto</h2>
+          <h2 className="sec-title" style={{ textAlign: 'center' }}>Nuestro <span className="txt-green">impacto</span></h2>
           <p className="sec-sub" style={{ textAlign: 'center', maxWidth: 640, margin: '0 auto 26px' }}>
             Progreso medido en hechos: cada batería recuperada vuelve a trabajar y se convierte en un residuo menos.
           </p>

@@ -3404,3 +3404,8 @@ body.site-pub-body {
 .site-pub .txt-red {
   color: var(--danger-fg);
 }
+
+/* Palabra de acento en verde de marca. */
+.site-pub .txt-green {
+  color: var(--green-600);
+}
