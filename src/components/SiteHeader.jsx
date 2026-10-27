@@ -57,18 +57,19 @@ export default function SiteHeader() {
           </Link>
           <div className="header-right">
             <div className="normas-box">
-              <div className="nb-item">
-                <img src="/img/check.png" alt="" />
-                <span className="nb-label">Norma Nacional<br />FA8019</span>
-              </div>
-              <div className="nb-item">
-                <img src="/img/check.png" alt="" />
-                <span className="nb-label">Norma Nacional<br />FA8020</span>
-              </div>
-              <div className="nb-item">
-                <img src="/img/check.png" alt="" />
-                <span className="nb-label">Norma Internacional<br />S-508 AAFDM</span>
-              </div>
+              {[
+                { grupo: 'Norma Nacional', norma: 'FA8019' },
+                { grupo: 'Norma Nacional', norma: 'FA8020' },
+                { grupo: 'Norma Internacional', norma: 'S-508 AAFDM' },
+              ].map((n) => (
+                <div key={n.norma} className="nb-item">
+                  <span className="nb-check" aria-hidden="true">
+                    <Icon name="check" size={11} />
+                  </span>
+                  <span className="nb-label">{n.grupo}</span>
+                  <span className="nb-code">{n.norma}</span>
+                </div>
+              ))}
             </div>
             <Link to={loginDest} className="header-login" title="Ingreso de clientes">
               <Icon name="user" size={16} />
