@@ -3420,3 +3420,177 @@ body.site-pub-body {
   align-items: center;
   gap: 18px;
 }
+
+/* ===== Servicios ===== */
+.site-pub .srv-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+  margin-top: 12px;
+}
+
+.site-pub .srv {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 22px 22px 20px;
+}
+
+.site-pub .srv-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  margin-bottom: 14px;
+}
+
+.site-pub .srv-ic {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--well-bg);
+  border: 1px solid var(--card-line);
+  color: var(--green);
+}
+
+.site-pub .srv-num {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  color: var(--muted-2);
+}
+
+.site-pub .srv .card-title {
+  margin: 0 0 8px;
+}
+
+.site-pub .srv .card-sub {
+  margin: 0 0 16px;
+}
+
+.site-pub .srv-link {
+  margin-top: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13.5px;
+  font-weight: 650;
+  color: var(--green-600);
+}
+
+.site-pub .srv-link span {
+  transition: transform 0.18s ease;
+}
+
+.site-pub .srv-link:hover span {
+  transform: translateX(4px);
+}
+
+/* Proceso: cuatro pasos numerados sobre una línea. */
+.site-pub .proceso {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 26px;
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  counter-reset: paso;
+}
+
+.site-pub .proceso-paso {
+  position: relative;
+  padding-top: 22px;
+  border-top: 2px solid var(--card-line);
+}
+
+.site-pub .proceso-paso::before {
+  content: "";
+  position: absolute;
+  top: -5px;
+  left: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--green);
+}
+
+.site-pub .proceso-num {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  color: var(--green);
+}
+
+.site-pub .proceso-t {
+  margin: 0 0 6px;
+  font-size: 16px;
+  font-weight: 750;
+  letter-spacing: -0.015em;
+}
+
+.site-pub .proceso-d {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+/* Cierre con llamado a la acción. */
+.site-pub .cta-band {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 34px 36px;
+  border: 1px solid var(--card-line);
+  border-radius: 18px;
+  background: var(--well-bg);
+}
+
+.site-pub .cta-band-t {
+  margin: 0 0 8px;
+  font-size: clamp(22px, 2.2vw, 30px);
+  font-weight: 750;
+  letter-spacing: -0.03em;
+}
+
+.site-pub .cta-band-d {
+  margin: 0;
+  max-width: 520px;
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.site-pub .cta-band-acciones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+@media (max-width: 980px) {
+  .site-pub .srv-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .site-pub .proceso {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .site-pub .srv-grid,
+  .site-pub .proceso {
+    grid-template-columns: 1fr;
+  }
+
+  .site-pub .cta-band {
+    padding: 24px 22px;
+  }
+}
