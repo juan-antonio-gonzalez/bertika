@@ -3409,5 +3409,5 @@ body.site-pub-body {
 /* Palabra de acento en verde de marca. */
 .site-pub .txt-green,
 .site-pub .sec-title .txt-green {
-  color: #0e9c45;
+  color: var(--green);
 }
