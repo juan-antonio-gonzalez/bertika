@@ -19,146 +19,164 @@
    Se redeclaran sobre el contenedor: cada componente que ya usaba var(--bg),
    var(--text), var(--line), etc. se re-tiñe solo, sin tocar el panel.
    -------------------------------------------------------------------------- */
+/* --------------------------------------------------------------------------
+   1 · Tokens
+   El sitio público es CLARO (mismo fondo que la herramienta del cotizador) y
+   el "chrome" de marca —header, navegación, portada, pie y barras— va oscuro.
+   Cada bloque redefine variables y todo lo que cuelga de él se adapta solo.
+   -------------------------------------------------------------------------- */
 .site-pub {
-  /* Paleta */
+  /* Marca (el ink sigue existiendo: lo usan la portada y el chrome) */
   --ink: #04100f;
   --ink-deep: #020a09;
+  --red: #d92c1f;
+  --red-bg: rgba(217, 44, 31, 0.1);
+  --green-ink: #04220f;
+  --radius: 16px;
+  --ff: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Inter,
+    Roboto, "Helvetica Neue", Arial, sans-serif;
+
+  /* Lienzo y contenido: el mismo fondo claro del cotizador */
+  --bg: #e9f2ed;
+  --panel: #ffffff;
+  --panel-2: #f1f6f3;
+  --bg-2: #ffffff;
+  --bg-3: #f1f6f3;
+  --line: rgba(9, 40, 32, 0.19);
+  --line-soft: rgba(9, 40, 32, 0.1);
+  --text: #10231c;
+  --muted: #5b6f68;
+  --muted-2: #6b7f78;
+  --navy: #0b1b16;
+  --navy-2: #123029;
+  --blue: #0b1b16;
+  --blue-bg: rgba(15, 155, 69, 0.1);
+  --green: #0b8f3f;
+  --green-500: #0e9c45;
+  --green-600: #0a7a36;
+  --green-bg: rgba(15, 155, 69, 0.12);
+  --amber: #0b8f3f;
+  --amber-d: #0b7d37;
+  --amber-bg: rgba(15, 155, 69, 0.12);
+  --orange: #0b8f3f;
+  --orange-bg: rgba(15, 155, 69, 0.1);
+  --brand-amber: #0b8f3f;
+  --brand-orange: #0b7d37;
+  --brand-soft: rgba(15, 155, 69, 0.12);
+  --brand-line: rgba(15, 155, 69, 0.4);
+  --grad-brand: linear-gradient(135deg, #2ee35c 0%, #0b8f3f 100%);
+
+  /* Superficies: claras por defecto. Se pueden re-tiñar puntualmente
+     (por ejemplo el chrome) sin tocar los componentes. */
+  --surface-bg: #ffffff;
+  --well-bg: #f1f6f3;
+  --input-bg: #ffffff;
+  --tick-bg: #ffffff;
+  --accent-soft: rgba(15, 155, 69, 0.14);
+  --btn-hover-bg: #e9f4ee;
+  --btn-hover-line: rgba(15, 155, 69, 0.5);
+  --warn-fg: #0b6b35;
+  --danger-fg: #b3261e;
+  --code-fg: #0b6b35;
+  --surface-text: #10231c;
+  --hover-line: #0e9c45;
+  --hover-ring: rgba(15, 155, 69, 0.18);
+  --hover-ring-strong: rgba(15, 155, 69, 0.32);
+
+  /* Sombras suaves: el lienzo claro no pide profundidad negra */
+  --shadow-s: 0 1px 2px rgba(9, 40, 32, 0.07), 0 14px 30px -20px rgba(9, 40, 32, 0.4);
+  --shadow: 0 16px 34px -24px rgba(9, 40, 32, 0.35);
+  --shadow-lg: 0 32px 64px -34px rgba(9, 40, 32, 0.45);
+
+  color-scheme: light;
+  color: var(--text);
+  font-family: var(--ff);
+}
+
+/* Chrome oscuro: la marca sigue viviendo en el header, la portada, el pie y
+   las barras del cotizador. Estos contenedores vuelven a la paleta del kit. */
+.site-pub :is(
+  .site-header,
+  .site-nav,
+  .hero,
+  .page-hero,
+  .sec-video-sec,
+  .footer,
+  .legal-hero,
+  .auth-wrap,
+  .cz-top,
+  .cz-bar
+) {
   --panel: rgba(9, 30, 27, 0.72);
   --panel-2: rgba(8, 26, 23, 0.6);
+  --bg-2: rgba(9, 30, 27, 0.72);
+  --bg-3: rgba(8, 26, 23, 0.6);
   --line: rgba(92, 232, 148, 0.14);
   --line-soft: rgba(92, 232, 148, 0.1);
   --text: #f1f7f4;
   --muted: #93a9a2;
   --muted-2: #8fa39c;
+  --navy: #f1f7f4;
+  --navy-2: #d3e2dc;
+  --blue: #eaf5ef;
+  --blue-bg: rgba(92, 232, 148, 0.12);
   --green: #2ee35c;
   --green-500: #14d450;
   --green-600: #0cb845;
-  --green-ink: #04220f;
-  --red: #e8352f;
-  --radius: 16px;
-  --shadow: 0 24px 60px -32px rgba(0, 0, 0, 0.9);
-  --ff: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Inter,
-    Roboto, "Helvetica Neue", Arial, sans-serif;
-
-  /* Tokens que ya usaba la app: se mapean a la paleta del kit. */
-  --bg: var(--ink);
-  --bg-2: var(--panel);
-  --bg-3: var(--panel-2);
-  --navy: #f1f7f4; /* títulos que antes iban en azul oscuro */
-  --navy-2: #d3e2dc;
-  --blue: #eaf5ef; /* cifras y destacados inline: ahora texto claro */
-  --blue-bg: rgba(92, 232, 148, 0.12);
   --green-bg: rgba(46, 227, 92, 0.12);
-  --amber: var(--green);
+  --amber: #2ee35c;
   --amber-d: #5cf08a;
   --amber-bg: rgba(46, 227, 92, 0.14);
-  --orange: var(--green);
+  --orange: #2ee35c;
   --orange-bg: rgba(46, 227, 92, 0.12);
-  --red-bg: rgba(232, 53, 47, 0.12);
-  --brand-amber: var(--green);
-  --brand-orange: var(--green-500);
+  --brand-amber: #2ee35c;
+  --brand-orange: #14d450;
   --brand-soft: rgba(46, 227, 92, 0.14);
   --brand-line: rgba(92, 232, 148, 0.38);
-  --grad-brand: linear-gradient(135deg, #4bf374 0%, var(--green-500) 52%, var(--green-600) 100%);
-
-  /* Sombras: profundas, como la tarjeta. */
-  --shadow-s: 0 10px 26px -20px rgba(0, 0, 0, 0.9);
-  --shadow-lg: 0 30px 70px -34px rgba(0, 0, 0, 0.95);
-
-  /* ------------------------------------------------------------------------
-     Superficies. El lienzo es oscuro y la capa de contenido es clara, así que
-     estos valores se redefinen en el bloque "superficie clara" y todos los
-     componentes que los usan se adaptan solos. No hardcodear fondos de
-     tarjeta, inputs ni pozos fuera de este juego de variables.
-     ---------------------------------------------------------------------- */
-  --surface-bg: rgba(9, 30, 27, 0.72);
-  --well-bg: rgba(4, 16, 15, 0.85);
-  --input-bg: rgba(8, 26, 23, 0.86);
-  --tick-bg: rgba(4, 16, 15, 0.9);
   --accent-soft: rgba(46, 227, 92, 0.16);
   --btn-hover-bg: rgba(16, 52, 45, 0.85);
   --btn-hover-line: rgba(92, 232, 148, 0.4);
   --warn-fg: #9ff0bd;
   --danger-fg: #ff9a92;
+  --input-bg: rgba(8, 26, 23, 0.86);
+  --well-bg: rgba(4, 16, 15, 0.85);
+  --tick-bg: rgba(4, 16, 15, 0.9);
   --code-fg: #c7f7d8;
   --surface-text: #dbe8e2;
-  /* Borde y halo al pasar el mouse / hacer click sobre una superficie. */
   --hover-line: rgba(92, 232, 148, 0.5);
   --hover-ring: rgba(46, 227, 92, 0.2);
   --hover-ring-strong: rgba(46, 227, 92, 0.34);
+  --shadow-s: 0 10px 26px -20px rgba(0, 0, 0, 0.9);
+  --shadow-lg: 0 30px 70px -34px rgba(0, 0, 0, 0.95);
 
   color-scheme: dark;
-  color: var(--text);
-  font-family: var(--ff);
 }
 
-/* El fondo vive en el body (lienzo) para que el degradé fijo no tape el
-   contenido: el respaldo va en z-index -1 y siempre queda por detrás.
-   --ink se repite acá porque los tokens están en .site-pub, no en el body. */
+/* El lienzo: el mismo verde grisáceo del cotizador en todo el sitio. */
 body.site-pub-body {
   --ink: #04100f;
-  background: var(--ink);
-  color: #f1f7f4;
+  background: #e9f2ed;
+  color: #10231c;
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI",
     Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
-  color-scheme: dark;
+  color-scheme: light;
 }
 
 /* --------------------------------------------------------------------------
-   2 · Respaldo: degradés verdes de marca + detalles rojos + textura
+   2 · Lienzo
+   Fondo claro único para todo el sitio: el mismo verde grisáceo de la
+   herramienta del cotizador. El respaldo fijo sigue en z-index -1 para que
+   cubra la ventana aunque el contenido sea más corto.
    -------------------------------------------------------------------------- */
 .site-backdrop {
   position: fixed;
   inset: 0;
   z-index: -1;
-  overflow: hidden;
   pointer-events: none;
-  background:
-    radial-gradient(58% 44% at 88% -4%, rgba(22, 148, 76, 0.3) 0%, rgba(22, 148, 76, 0) 62%),
-    radial-gradient(52% 40% at 4% 8%, rgba(16, 120, 62, 0.16) 0%, rgba(16, 120, 62, 0) 60%),
-    radial-gradient(75% 55% at 50% 104%, rgba(10, 92, 50, 0.14) 0%, rgba(10, 92, 50, 0) 66%),
-    radial-gradient(130% 78% at 62% -20%, #0a2a1d 0%, #06140f 36%, #030b09 72%, #020a09 100%);
+  background: #e9f2ed;
 }
 
-/* Textura sutil: evita el banding de los degradés grandes. */
-.site-backdrop::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  opacity: 0.05;
-  mix-blend-mode: overlay;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.6'/%3E%3C/svg%3E");
-}
-
-/* Trazos rojos de marca (solo en pantallas anchas, como el kit). */
-.site-streak {
-  position: absolute;
-  display: none;
-  width: 2px;
-  height: 150px;
-  background: linear-gradient(180deg, rgba(232, 53, 47, 0.85), rgba(232, 53, 47, 0));
-}
-
-@media (min-width: 700px) {
-  .site-streak {
-    display: block;
-    top: -34px;
-    right: 8%;
-    transform: rotate(34deg);
-    transform-origin: top center;
-  }
-
-  .site-streak-b {
-    top: auto;
-    right: auto;
-    bottom: -20px;
-    left: 6%;
-    height: 130px;
-    background: linear-gradient(0deg, rgba(232, 53, 47, 0.6), rgba(232, 53, 47, 0));
-    transform-origin: bottom center;
-  }
-}
-
+/* --------------------------------------------------------------------------
 /* --------------------------------------------------------------------------
    3 · Base
    -------------------------------------------------------------------------- */
@@ -177,14 +195,17 @@ body.site-pub-body {
   height: 10px;
 }
 .site-pub ::-webkit-scrollbar-track {
-  background: #04100f;
+  background: #e9f2ed;
 }
 .site-pub ::-webkit-scrollbar-thumb {
-  background: rgba(92, 232, 148, 0.22);
+  background: rgba(9, 40, 32, 0.24);
   border-radius: 6px;
 }
 .site-pub ::-webkit-scrollbar-thumb:hover {
-  background: rgba(92, 232, 148, 0.36);
+  background: rgba(9, 40, 32, 0.38);
+}
+.site-pub :is(.site-header, .site-nav, .hero, .footer, .cz-top)::-webkit-scrollbar-track {
+  background: #04100f;
 }
 
 .site-pub .muted {
@@ -199,8 +220,9 @@ body.site-pub-body {
    4 · Encabezado público
    -------------------------------------------------------------------------- */
 .site-pub .site-header {
-  background: rgba(4, 16, 15, 0.72);
-  border-bottom: 1px solid var(--line);
+  /* Casi opaco: sobre un lienzo claro, la transparencia lo lavaba a gris. */
+  background: rgba(4, 16, 15, 0.96);
+  border-bottom: 1px solid rgba(92, 232, 148, 0.18);
   -webkit-backdrop-filter: blur(14px);
   backdrop-filter: blur(14px);
 }
@@ -519,9 +541,9 @@ body.site-pub-body {
 }
 
 .site-pub .sec-alt {
-  background: rgba(6, 20, 17, 0.5);
-  border-top: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
+  background: #e3ede8;
+  border-top: 1px solid var(--line-soft);
+  border-bottom: 1px solid var(--line-soft);
 }
 
 .site-pub .sec-title {
@@ -534,53 +556,22 @@ body.site-pub-body {
   color: var(--muted);
 }
 
-/* La clase .page-light vuelve a fijar los tokens claros: se re-tiñe. */
+/* .page-light era el scope claro del tema viejo (gris azulado). Ahora todo el
+   sitio es claro, así que solo se neutraliza para que no vuelva a fijar
+   tokens oscuros. */
 .site-pub .page-light {
-  --bg: transparent;
-  --bg-2: var(--panel);
-  --bg-3: var(--panel-2);
-  --line: rgba(92, 232, 148, 0.14);
-  --line-soft: rgba(92, 232, 148, 0.1);
-  --text: #f1f7f4;
-  --muted: #93a9a2;
-  --green: #2ee35c;
-  --blue: #eaf5ef;
-  --orange: #2ee35c;
-  --shadow: 0 24px 60px -32px rgba(0, 0, 0, 0.9);
   background: transparent;
-  color: var(--text);
+  color: inherit;
 }
 
 .site-pub .page-light .sec {
   background: transparent;
 }
 
-.site-pub .page-light .input,
-.site-pub .page-light select.input {
-  background: var(--input-bg);
-}
-
-.site-pub .page-light select.input option {
-  background: #fff;
-  color: #10231c;
-}
-
-.site-pub .page-light .banner-info {
-  background: var(--green-bg);
-  border-color: var(--brand-line);
-  color: var(--green);
-}
-
-.site-pub .page-light .tbl tbody tr:hover {
-  background: var(--bg-3);
-}
-
 /* --------------------------------------------------------------------------
-   Superficie clara: el lienzo sigue siendo oscuro, pero todo lo que es
-   contenido (tarjetas, formularios, documentos, avisos) se lee sobre claro.
-   Se definen los tokens acá y el resto del sitio se adapta solo: cualquier
-   componente que use var(--text), var(--line), var(--input-bg), etc. cambia
-   de piel dentro de estas superficies.
+   Superficie de contenido. El lienzo ya es claro, pero las tarjetas son
+   blancas: acá se fija el blanco, el borde y la sombra de todo lo que es
+   contenido (tarjetas, formularios, documentos, avisos).
    -------------------------------------------------------------------------- */
 .site-pub :is(
   .card,
@@ -984,7 +975,7 @@ body.site-pub-body {
    11 · Pie de página
    -------------------------------------------------------------------------- */
 .site-pub .footer {
-  background: rgba(2, 10, 9, 0.72);
+  background: rgba(2, 10, 9, 0.97);
   color: var(--muted);
   border-top: 1px solid var(--line);
   -webkit-backdrop-filter: blur(12px);
@@ -1512,8 +1503,8 @@ body.site-pub-body {
 }
 
 .site-pub .cz-top {
-  background: rgba(4, 16, 15, 0.86);
-  border-bottom: 1px solid var(--line);
+  background: rgba(4, 16, 15, 0.96);
+  border-bottom: 1px solid rgba(92, 232, 148, 0.18);
   -webkit-backdrop-filter: blur(14px);
   backdrop-filter: blur(14px);
 }
@@ -1862,6 +1853,18 @@ body.site-pub-body {
 
   .site-pub .hero-inner {
     padding: 56px 0 48px;
+  }
+
+  /* Los botones grandes tienen que entrar de a dos en 390 px. */
+  .site-pub .btn.lg {
+    padding: 13px 18px;
+    font-size: 14px;
+    min-height: 50px;
+  }
+
+  /* En celular las filas envuelven en vez de desbordar el margen. */
+  .site-pub .row {
+    flex-wrap: wrap;
   }
 }
 
