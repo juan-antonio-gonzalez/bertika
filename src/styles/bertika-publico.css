@@ -2167,8 +2167,8 @@ body.site-pub-body {
 .site-pub .auth-brand::after {
   content: "";
   position: absolute;
-  width: 3px;
-  border-radius: 3px;
+  width: 7px;
+  border-radius: 6px;
   pointer-events: none;
   z-index: 2;
 }
@@ -2176,19 +2176,21 @@ body.site-pub-body {
 .site-pub .auth-brand::before {
   top: -52px;
   right: 10px;
-  height: 200px;
+  height: 210px;
   transform: rotate(34deg);
   transform-origin: top center;
-  background: linear-gradient(180deg, #e8352f 0%, rgba(232, 53, 47, 0.55) 55%, rgba(232, 53, 47, 0) 100%);
+  background: linear-gradient(180deg, #ff3a33 0%, rgba(232, 53, 47, 0.8) 62%, rgba(232, 53, 47, 0) 100%);
+  /* Segunda línea paralela, como el doble trazo de la tarjeta. */
+  box-shadow: 14px 0 0 0 rgba(232, 53, 47, 0.6);
 }
 
 .site-pub .auth-brand::after {
   bottom: -52px;
   left: 10px;
-  height: 190px;
+  height: 210px;
   transform: rotate(34deg);
   transform-origin: bottom center;
-  background: linear-gradient(0deg, #e8352f 0%, rgba(232, 53, 47, 0.5) 55%, rgba(232, 53, 47, 0) 100%);
+  background: linear-gradient(0deg, #f03a33 0%, rgba(232, 53, 47, 0.7) 62%, rgba(232, 53, 47, 0) 100%);
 }
 
 .site-pub .auth-card .input,

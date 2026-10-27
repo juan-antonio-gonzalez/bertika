@@ -124,8 +124,7 @@ export default function Contacto() {
         <div className="auth-brand">
           <div>
             <div className="auth-logo">
-              <span className="auth-logo-box"><Icon name="bolt" size={22} /></span>
-              <span>BERTIKA<sup style={{ fontSize: 10 }}>®</sup></span>
+              <img src="/img/logo-bertika.png" alt="Bertika® Acumuladores Industriales" width="460" height="82" />
             </div>
             <div className="auth-tag">Acumuladores Industriales</div>
           </div>
