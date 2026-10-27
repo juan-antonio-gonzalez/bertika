@@ -9,14 +9,24 @@ import { api } from '../store/api';
 // con Three.js. Sin marcas de agua, sin stock y sin licencias de terceros.
 const HERO_VIDEO = '/video/hero-bateria-3d.mp4';
 
+// Ficha técnica resumida de cada línea. Sale de las descripciones del catálogo
+// (siteData.js): acá solo se abrevia, no se agregan datos nuevos.
+const LINEA_DATOS = {
+  ferroviarias: { app: 'Arranque de locomotoras', spec: 'Uso severo · alto ciclado' },
+  traccion: { app: 'Autoelevadores y tracción', spec: '230 – 1750 Ah' },
+  estacionarias: { app: 'Reserva y emergencia', spec: 'Suministro continuo' },
+  solar: { app: 'Acumulación solar y eólica', spec: 'Descarga profunda' },
+  arranque: { app: 'Ignición de motores', spec: 'Alta entrega de corriente' },
+  especiales: { app: 'AGM · Gel · pilas · Ni-Cd', spec: 'Aplicaciones específicas' },
+  cargadores: { app: 'Carga y ecualización', spec: 'Control automático' },
+};
+
 export default function Landing() {
   const [stats, setStats] = useState({ clientes: 0, baterias: 0, activas: 0, entregadas: 0 });
   const [statsListo, setStatsListo] = useState(false);
   const [videoListo, setVideoListo] = useState(false);
   const [videoFallo, setVideoFallo] = useState(false);
   const [pocoMovimiento, setPocoMovimiento] = useState(false);
-  // Índice de líneas: la imagen y el detalle acompañan a la fila que se mira.
-  const [lineaActiva, setLineaActiva] = useState(0);
   const videoRef = useRef(null);
 
   // Respeta la preferencia "reducir movimiento" del sistema: sin video, foto fija.
@@ -55,7 +65,6 @@ export default function Landing() {
   // Los títulos del catálogo están en mayúsculas; en el índice se leen mejor
   // en caja baja (solo el índice, el catálogo conserva su estilo).
   const enCajaBaja = (t) => t.charAt(0).toUpperCase() + t.slice(1).toLocaleLowerCase('es');
-  const linea = PRODUCTOS[lineaActiva] || PRODUCTOS[0];
 
   const statList = [
     { n: stats.clientes, l: 'Clientes', ic: 'users' },
@@ -135,49 +144,46 @@ export default function Landing() {
       </section>
       )}
 
-      {/* Productos */}
-      <section className="sec sec-alt page-light">
+      {/* Productos: matriz técnica. Densa y verificable, no un índice de tarjetas. */}
+      <section className="sec sec-alt">
         <div className="wrap">
-          <div className="lineas-head">
-            <h2 className="sec-title">Nuestras líneas de productos</h2>
+          <header className="sec-head">
+            <span className="eyebrow">Catálogo</span>
+            <h2 className="sec-title">Siete líneas, siete regímenes de trabajo</h2>
             <p className="sec-sub">
-              Siete líneas para cada aplicación industrial. Elegí una y ves su uso y sus normas;
-              el detalle completo está en el catálogo.
+              Cada aplicación exige una química y una construcción distinta. Esta es la referencia
+              rápida; el detalle con normas está en el catálogo.
             </p>
+          </header>
+
+          <div className="matriz">
+            <div className="matriz-head" aria-hidden="true">
+              <span />
+              <span>Línea</span>
+              <span>Aplicación</span>
+              <span>Referencia</span>
+              <span />
+            </div>
+
+            {PRODUCTOS.map((p) => {
+              const datos = LINEA_DATOS[p.id] || {};
+              return (
+                <Link key={p.id} to={`/productos#${p.id}`} className="matriz-row">
+                  <span className="matriz-thumb">
+                    <img src={p.img} alt="" loading="lazy" width="370" height="214" />
+                  </span>
+                  <span className="matriz-nombre">{enCajaBaja(p.titulo)}</span>
+                  <span className="matriz-app">{datos.app}</span>
+                  <span className="matriz-spec">{datos.spec}</span>
+                  <span className="matriz-go" aria-hidden="true">→</span>
+                </Link>
+              );
+            })}
           </div>
 
-          {/* Índice editorial: la fila que se mira manda en la imagen. No repite
-              las fichas del catálogo, pero tampoco lo deja en una lista seca. */}
-          <div className="lineas-panel">
-            <figure className="lineas-media">
-              <img key={linea.id} src={linea.img} alt={linea.titulo} width="370" height="214" />
-              <figcaption>
-                <span className="lineas-media-kicker">En uso</span>
-                <strong className="lineas-media-t">{enCajaBaja(linea.titulo)}</strong>
-                <span className="lineas-media-d">{linea.desc}</span>
-              </figcaption>
-            </figure>
-
-            <ul className="lineas-lista">
-              {PRODUCTOS.map((p, i) => (
-                <li key={p.id}>
-                  <Link
-                    to={`/productos#${p.id}`}
-                    className={`linea-row${i === lineaActiva ? ' on' : ''}`}
-                    onMouseEnter={() => setLineaActiva(i)}
-                    onFocus={() => setLineaActiva(i)}
-                  >
-                    <span className="linea-num">{String(i + 1).padStart(2, '0')}</span>
-                    <span className="linea-nombre">{enCajaBaja(p.titulo)}</span>
-                    <span className="linea-go" aria-hidden="true">→</span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          <div className="center" style={{ marginTop: 30 }}>
-            <Link to="/productos" className="btn primary lg">Ver el catálogo completo</Link>
+          <div className="matriz-pie">
+            <span>¿No sabés qué línea te corresponde? Con el número de serie lo identificamos.</span>
+            <Link to="/productos" className="btn primary">Ver el catálogo completo</Link>
           </div>
         </div>
       </section>
