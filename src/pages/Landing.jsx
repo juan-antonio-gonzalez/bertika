@@ -48,6 +48,10 @@ export default function Landing() {
     return () => { activo = false; };
   }, []);
 
+  // Si el taller todavía no tiene datos, la banda de cifras no se muestra:
+  // cuatro ceros no comunican nada.
+  const hayStats = statsListo && Object.values(stats).some((n) => Number(n) > 0);
+
   // Los títulos del catálogo están en mayúsculas; en el índice se leen mejor
   // en caja baja (solo el índice, el catálogo conserva su estilo).
   const enCajaBaja = (t) => t.charAt(0).toUpperCase() + t.slice(1).toLocaleLowerCase('es');
@@ -106,7 +110,9 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* Cifras: banda con hairlines, los números son los protagonistas */}
+      {/* Cifras: banda con hairlines, los números son los protagonistas.
+          Solo aparece cuando hay datos reales del taller. */}
+      {hayStats && (
       <section className="sec">
         <div className="wrap">
           <header className="sec-head">
@@ -127,6 +133,7 @@ export default function Landing() {
           </div>
         </div>
       </section>
+      )}
 
       {/* Productos */}
       <section className="sec sec-alt page-light">
