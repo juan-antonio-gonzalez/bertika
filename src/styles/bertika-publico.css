@@ -3401,11 +3401,13 @@ body.site-pub-body {
 }
 
 /* Palabra de acento en rojo de marca. */
-.site-pub .txt-red {
+.site-pub .txt-red,
+.site-pub .sec-title .txt-red {
   color: var(--danger-fg);
 }
 
 /* Palabra de acento en verde de marca. */
-.site-pub .txt-green {
+.site-pub .txt-green,
+.site-pub .sec-title .txt-green {
   color: var(--green-600);
 }
