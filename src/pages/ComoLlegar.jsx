@@ -19,8 +19,8 @@ export default function ComoLlegar() {
 
       <section className="sec">
         <div className="wrap">
-          <div className="grid2" style={{ gap: 24, alignItems: 'flex-start' }}>
-            <div className="card" style={{ padding: 24 }}>
+          <div className="grid2" style={{ gap: 24 }}>
+            <div className="card card--center" style={{ padding: 24 }}>
               <h3 className="card-title">Nuestra planta</h3>
               <hr className="hr-red" style={{ width: 65 }} />
               <div className="col" style={{ gap: 14 }}>
@@ -69,11 +69,11 @@ export default function ComoLlegar() {
 
           <div className="card mt24">
             <h3 className="card-title">Horarios de atención</h3>
-            <div className="ulist">
+            <div className="horarios">
               {HORARIOS.map((h) => (
-                <div key={h.dias} className="row between" style={{ padding: '8px 0' }}>
-                  <span>{h.dias}</span>
-                  <strong>{h.horas}</strong>
+                <div key={h.dias} className="horario">
+                  <span className="horario-dia">{h.dias}</span>
+                  <strong className="horario-horas">{h.horas}</strong>
                 </div>
               ))}
             </div>

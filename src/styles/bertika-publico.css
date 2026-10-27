@@ -719,6 +719,14 @@ body.site-pub-body {
   border-color: var(--hover-line);
 }
 
+/* index.css trae `.card + .card { margin-top: 12px }`. Dentro de una grilla o
+   una fila ese margen desalinea: la primera tarjeta queda más alta y el resto
+   12 px más abajo. El espaciado lo da el gap. */
+.site-pub :is(.grid2, .grid3, .grid4) > .card + .card,
+.site-pub .row > .card + .card {
+  margin-top: 0;
+}
+
 .site-pub .card.pad0 {
   overflow: hidden;
 }
@@ -739,6 +747,14 @@ body.site-pub-body {
 
 .site-pub .card-sub {
   color: var(--muted);
+}
+
+/* Cuando una tarjeta se estira para igualar a su vecina (por ejemplo al lado
+   de un mapa), su contenido se centra en vez de quedar pegado arriba. */
+.site-pub .card--center {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
 .site-pub .divider {
@@ -764,6 +780,44 @@ body.site-pub-body {
   opacity: 1;
   height: 3px;
   border-radius: 3px;
+}
+
+/* Horarios: dos bloques que llenan el ancho, en vez de una fila con el valor
+   empujado al extremo opuesto de una tarjeta de 1200 px. */
+.site-pub .horarios {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.site-pub .horario {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--well-bg);
+}
+
+.site-pub .horario-dia {
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.site-pub .horario-horas {
+  font-size: 16px;
+  font-weight: 750;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Las listas de datos no se estiran a lo ancho de toda la tarjeta. */
+.site-pub .card > .ulist {
+  max-width: 640px;
 }
 
 /* --------------------------------------------------------------------------
@@ -2226,25 +2280,10 @@ body.site-pub-body {
 
 /* --------------------------------------------------------------------------
    20 · Detalles de rojo (marca)
-   El rojo del kit es un detalle de línea, no un color de fondo: se usa en la
-   pestaña de las tarjetas, el filete bajo los títulos, los recargos del
-   cotizador y el total.
+   El rojo del kit es un detalle de línea, no un color de fondo: se usa en el
+   filete bajo los títulos, el guion del kicker, los recargos del cotizador y
+   la línea del total. Las tarjetas quedan sin pestaña: el borde ya las define.
    -------------------------------------------------------------------------- */
-.site-pub .card:not(.pad0) {
-  position: relative;
-}
-
-.site-pub .card:not(.pad0)::before {
-  content: "";
-  position: absolute;
-  top: -1px;
-  left: 18px;
-  width: 38px;
-  height: 3px;
-  border-radius: 0 0 3px 3px;
-  background: var(--red);
-}
-
 /* Pestaña roja del encabezado de cada página interna. */
 .site-pub .page-hero-kicker::before {
   content: "";
