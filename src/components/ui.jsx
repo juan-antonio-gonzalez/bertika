@@ -266,10 +266,10 @@ export function Modal({
   };
 
   return createPortal(
-    <div className={`modal-back${temaPublico ? ' modal-back--dark' : ''}`} onMouseDown={alBajarFondo} onClick={alClickFondo}>
+    <div className={`modal-back${temaPublico ? ' modal-back--bertika' : ''}`} onMouseDown={alBajarFondo} onClick={alClickFondo}>
       <div
         ref={caja}
-        className={`modal ${TAMANO_MODAL[size] || ''}${temaPublico ? ' modal--dark' : ''} ${className}`.trim()}
+        className={`modal ${TAMANO_MODAL[size] || ''}${temaPublico ? ' modal--bertika' : ''} ${className}`.trim()}
         role="dialog"
         aria-modal="true"
         aria-labelledby={idTitulo}

@@ -65,6 +65,28 @@
   --shadow-s: 0 10px 26px -20px rgba(0, 0, 0, 0.9);
   --shadow-lg: 0 30px 70px -34px rgba(0, 0, 0, 0.95);
 
+  /* ------------------------------------------------------------------------
+     Superficies. El lienzo es oscuro y la capa de contenido es clara, así que
+     estos valores se redefinen en el bloque "superficie clara" y todos los
+     componentes que los usan se adaptan solos. No hardcodear fondos de
+     tarjeta, inputs ni pozos fuera de este juego de variables.
+     ---------------------------------------------------------------------- */
+  --surface-bg: rgba(9, 30, 27, 0.72);
+  --well-bg: rgba(4, 16, 15, 0.85);
+  --input-bg: rgba(8, 26, 23, 0.86);
+  --tick-bg: rgba(4, 16, 15, 0.9);
+  --accent-soft: rgba(46, 227, 92, 0.16);
+  --btn-hover-bg: rgba(16, 52, 45, 0.85);
+  --btn-hover-line: rgba(92, 232, 148, 0.4);
+  --warn-fg: #9ff0bd;
+  --danger-fg: #ff9a92;
+  --code-fg: #c7f7d8;
+  --surface-text: #dbe8e2;
+  /* Borde y halo al pasar el mouse / hacer click sobre una superficie. */
+  --hover-line: rgba(92, 232, 148, 0.5);
+  --hover-ring: rgba(46, 227, 92, 0.2);
+  --hover-ring-strong: rgba(46, 227, 92, 0.34);
+
   color-scheme: dark;
   color: var(--text);
   font-family: var(--ff);
@@ -533,27 +555,14 @@ body.site-pub-body {
   background: transparent;
 }
 
-.site-pub .page-light .card,
-.site-pub .page-light .kpi,
-.site-pub .page-light .service-card,
-.site-pub .page-light .auth-card {
-  background: linear-gradient(180deg, rgba(13, 42, 37, 0.78), rgba(8, 27, 24, 0.78));
-}
-
 .site-pub .page-light .input,
 .site-pub .page-light select.input {
-  background: rgba(8, 26, 23, 0.86);
+  background: var(--input-bg);
 }
 
 .site-pub .page-light select.input option {
-  background: #08201c;
-  color: var(--text);
-}
-
-.site-pub .page-light .btn:not(.primary):hover {
-  background: var(--brand-soft);
-  border-color: var(--brand-line);
-  color: var(--green);
+  background: #fff;
+  color: #10231c;
 }
 
 .site-pub .page-light .banner-info {
@@ -562,31 +571,126 @@ body.site-pub-body {
   color: var(--green);
 }
 
-.site-pub .page-light .banner-cambio,
-.site-pub .page-light .banner-warn {
-  background: var(--green-bg);
-  border-color: var(--brand-line);
-  color: #9ff0bd;
-}
-
 .site-pub .page-light .tbl tbody tr:hover {
   background: var(--bg-3);
 }
 
-/* Tarjetas: el mismo vidrio de las filas de contacto del kit. */
-.site-pub .card {
-  background: linear-gradient(180deg, rgba(13, 42, 37, 0.78), rgba(8, 27, 24, 0.82));
+/* --------------------------------------------------------------------------
+   Superficie clara: el lienzo sigue siendo oscuro, pero todo lo que es
+   contenido (tarjetas, formularios, documentos, avisos) se lee sobre claro.
+   Se definen los tokens acá y el resto del sitio se adapta solo: cualquier
+   componente que use var(--text), var(--line), var(--input-bg), etc. cambia
+   de piel dentro de estas superficies.
+   -------------------------------------------------------------------------- */
+.site-pub :is(
+  .card,
+  .service-card,
+  .cz-card,
+  .auth-card,
+  .eco-card,
+  .legal-prose,
+  .legal-aside,
+  .cookie-banner,
+  .pstep,
+  .app-card,
+  .login-card
+) {
+  /* Neutros */
+  --surface-bg: #ffffff;
+  --well-bg: #f1f6f3;
+  --input-bg: #ffffff;
+  --tick-bg: #ffffff;
+  --panel: #ffffff;
+  --panel-2: #f1f6f3;
+  --bg-2: #ffffff;
+  --bg-3: #f1f6f3;
+  --text: #10231c;
+  --muted: #5b6f68;
+  --muted-2: #6b7f78;
+  --line: rgba(9, 40, 32, 0.19);
+  --line-soft: rgba(9, 40, 32, 0.1);
+  --navy: #0b1b16;
+  --navy-2: #123029;
+  --surface-text: #10231c;
+  --code-fg: #0b6b35;
+
+  /* Verde: más profundo para que tenga contraste AA sobre blanco */
+  --green: #0b8f3f;
+  --green-500: #0e9c45;
+  --green-600: #0a7a36;
+  --green-bg: rgba(15, 155, 69, 0.12);
+  --blue: #0b1b16;
+  --blue-bg: rgba(15, 155, 69, 0.1);
+  --amber: #0b8f3f;
+  --amber-d: #0b7d37;
+  --amber-bg: rgba(15, 155, 69, 0.12);
+  --orange: #0b8f3f;
+  --orange-bg: rgba(15, 155, 69, 0.1);
+  --brand-amber: #0b8f3f;
+  --brand-orange: #0b7d37;
+  --brand-soft: rgba(15, 155, 69, 0.12);
+  --brand-line: rgba(15, 155, 69, 0.4);
+  --accent-soft: rgba(15, 155, 69, 0.14);
+  --grad-brand: linear-gradient(135deg, #2ee35c 0%, #0b8f3f 100%);
+
+  /* Rojos y avisos */
+  --red: #d92c1f;
+  --red-bg: rgba(217, 44, 31, 0.1);
+  --danger-fg: #b3261e;
+  --warn-fg: #0b6b35;
+
+  /* Interacción: bordes bien visibles sobre blanco */
+  --hover-line: #0e9c45;
+  --hover-ring: rgba(15, 155, 69, 0.18);
+  --hover-ring-strong: rgba(15, 155, 69, 0.32);
+  --btn-hover-bg: #e9f4ee;
+  --btn-hover-line: rgba(15, 155, 69, 0.5);
+
+  /* Sombras: suaves y cortas, el lienzo ya aporta profundidad */
+  --shadow-s: 0 1px 2px rgba(9, 40, 32, 0.07), 0 14px 30px -20px rgba(9, 40, 32, 0.4);
+  --shadow: 0 16px 34px -24px rgba(9, 40, 32, 0.35);
+  --shadow-lg: 0 32px 64px -34px rgba(9, 40, 32, 0.45);
+
+  background: var(--surface-bg);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.045),
-    0 18px 40px -30px rgba(0, 0, 0, 0.95);
   color: var(--text);
-  transition: border-color 0.2s, background 0.2s, transform 0.15s;
+  box-shadow: var(--shadow-s);
+  /* Los controles nativos (checkbox, select, date) acompañan la superficie:
+     sin esto quedarían oscuros sobre la tarjeta blanca. */
+  color-scheme: light;
 }
 
-.site-pub .card:hover {
-  border-color: rgba(92, 232, 148, 0.28);
+/* Tarjetas interactivas: borde que se enciende y halo al pasar el mouse. */
+.site-pub :is(.card, .service-card, .cz-card, .pstep, .login-card) {
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.15s ease;
+}
+
+/* El inset repite el borde por dentro: se ve más grueso sin mover el layout. */
+.site-pub :is(.card, .service-card, .cz-card, .pstep, .login-card):hover {
+  border-color: var(--hover-line);
+  box-shadow:
+    inset 0 0 0 1px var(--hover-line),
+    0 0 0 4px var(--hover-ring),
+    var(--shadow);
+  transform: translateY(-2px);
+}
+
+.site-pub :is(.card, .service-card, .cz-card, .pstep, .login-card):active {
+  border-color: var(--hover-line);
+  box-shadow:
+    inset 0 0 0 2px var(--hover-line),
+    0 0 0 5px var(--hover-ring-strong),
+    var(--shadow-s);
+  transform: translateY(0) scale(0.995);
+}
+
+/* En teclado el foco también marca el borde, no solo el outline. */
+.site-pub :is(.card, .service-card, .cz-card, .pstep, .login-card):focus-within {
+  border-color: var(--hover-line);
 }
 
 .site-pub .card.pad0 {
@@ -628,10 +732,12 @@ body.site-pub-body {
   color: var(--green);
 }
 
-/* Cabecera de la portada: la línea roja es detalle de marca del kit. */
+/* Detalle de marca: la línea roja del kit bajo los títulos. */
 .site-pub .hr-red {
   background: var(--red);
-  opacity: 0.9;
+  opacity: 1;
+  height: 3px;
+  border-radius: 3px;
 }
 
 /* --------------------------------------------------------------------------
@@ -647,8 +753,8 @@ body.site-pub-body {
 }
 
 .site-pub .btn:hover {
-  background: rgba(16, 52, 45, 0.85);
-  border-color: rgba(92, 232, 148, 0.4);
+  background: var(--btn-hover-bg);
+  border-color: var(--btn-hover-line);
   color: var(--text);
 }
 
@@ -683,12 +789,12 @@ body.site-pub-body {
 
 .site-pub .btn.danger {
   border-color: rgba(232, 53, 47, 0.5);
-  color: #ff8f86;
+  color: var(--danger-fg);
 }
 
 .site-pub .btn.danger:hover {
   background: var(--red-bg);
-  color: #ff8f86;
+  color: var(--danger-fg);
   border-color: rgba(232, 53, 47, 0.6);
 }
 
@@ -761,25 +867,26 @@ body.site-pub-body {
    -------------------------------------------------------------------------- */
 .site-pub .input,
 .site-pub select.input {
-  background: rgba(8, 26, 23, 0.86);
+  background: var(--input-bg);
   border: 1px solid var(--line);
   color: var(--text);
   border-radius: 12px;
 }
 
 .site-pub .input::placeholder {
-  color: rgba(147, 169, 162, 0.7);
+  color: var(--muted);
+  opacity: 0.75;
 }
 
 .site-pub .input:focus,
 .site-pub select.input:focus {
-  border-color: rgba(46, 227, 92, 0.55);
-  box-shadow: 0 0 0 3px rgba(46, 227, 92, 0.18);
+  border-color: var(--green);
+  box-shadow: 0 0 0 3px var(--hover-ring);
   outline: none;
 }
 
 .site-pub select.input option {
-  background: #08201c;
+  background: var(--input-bg);
   color: var(--text);
 }
 
@@ -807,7 +914,7 @@ body.site-pub-body {
 .site-pub .banner-cambio {
   background: var(--green-bg);
   border: 1px solid var(--brand-line);
-  color: #9ff0bd;
+  color: var(--warn-fg);
 }
 
 .site-pub .banner-green {
@@ -819,28 +926,13 @@ body.site-pub-body {
 .site-pub .banner-red {
   background: var(--red-bg);
   border: 1px solid rgba(232, 53, 47, 0.45);
-  color: #ff9a92;
+  color: var(--danger-fg);
 }
 
 /* --------------------------------------------------------------------------
    10 · Servicios, proceso y confianza
+   (la tarjeta y su hover salen del bloque de superficies)
    -------------------------------------------------------------------------- */
-.site-pub .service-card {
-  background: linear-gradient(180deg, rgba(13, 42, 37, 0.78), rgba(8, 27, 24, 0.82));
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
-  transition: border-color 0.2s, transform 0.15s, box-shadow 0.2s;
-}
-
-.site-pub .service-card:hover {
-  border-color: rgba(92, 232, 148, 0.34);
-  transform: translateY(-2px);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    0 26px 50px -30px rgba(0, 0, 0, 0.95);
-}
-
 .site-pub .sc-thumb img {
   border-bottom: 1px solid var(--line-soft);
 }
@@ -874,20 +966,18 @@ body.site-pub-body {
   color: var(--muted);
 }
 
-/* Sección ecológica con video: mismo vidrio, verde de acento. */
+/* Sección ecológica: tarjeta clara sobre el video. */
 .site-pub .eco-card {
-  background: rgba(4, 12, 10, 0.72);
-  border: 1px solid var(--line);
   border-radius: 24px;
-  box-shadow: 0 30px 70px -30px rgba(0, 0, 0, 0.9);
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
+  padding: 34px 38px;
+  box-shadow: 0 40px 80px -40px rgba(0, 0, 0, 0.85);
 }
 
+/* El pie de la tarjeta ecológica no lleva más vidrio: usa los chips claros. */
 .site-pub .eco-card .pill {
-  background: rgba(9, 30, 27, 0.7);
+  background: var(--well-bg);
   border-color: var(--line);
-  color: #d3e2dc;
+  color: var(--muted);
 }
 
 /* --------------------------------------------------------------------------
@@ -1016,19 +1106,16 @@ body.site-pub-body {
 }
 
 .site-pub .auth-card {
-  background: rgba(8, 26, 23, 0.6);
-  border: 1px solid var(--line);
   border-radius: 16px;
 }
 
 .site-pub .auth-card .input,
 .site-pub .auth-card select.input {
-  background: rgba(4, 16, 15, 0.8);
   padding: 10px 13px;
 }
 
 .site-pub .auth-card select.input option {
-  background: #08201c;
+  background: var(--input-bg);
   color: var(--text);
 }
 
@@ -1106,13 +1193,10 @@ body.site-pub-body {
 }
 
 .site-pub .legal-prose {
-  background: var(--panel);
-  border: 1px solid var(--line);
   border-radius: 20px;
-  box-shadow: var(--shadow-s);
-  color: #dbe8e2;
-  -webkit-backdrop-filter: blur(10px);
-  backdrop-filter: blur(10px);
+  font-size: 15px;
+  line-height: 1.7;
+  max-width: 900px;
 }
 
 .site-pub .legal-prose h2 {
@@ -1130,8 +1214,8 @@ body.site-pub-body {
 }
 
 .site-pub .legal-prose code {
-  background: rgba(92, 232, 148, 0.12);
-  color: #c7f7d8;
+  background: var(--brand-soft);
+  color: var(--code-fg);
 }
 
 .site-pub .legal-prose strong {
@@ -1139,9 +1223,9 @@ body.site-pub-body {
 }
 
 .site-pub .legal-nota {
-  background: rgba(46, 227, 92, 0.1);
+  background: var(--green-bg);
   border: 1px solid var(--brand-line);
-  color: #c7f7d8;
+  color: var(--code-fg);
 }
 
 .site-pub .legal-table th,
@@ -1150,16 +1234,12 @@ body.site-pub-body {
 }
 
 .site-pub .legal-table th {
-  background: rgba(92, 232, 148, 0.08);
+  background: var(--brand-soft);
   color: var(--text);
 }
 
 .site-pub .legal-aside {
-  background: var(--panel);
-  border: 1px solid var(--line);
   border-radius: 16px;
-  -webkit-backdrop-filter: blur(10px);
-  backdrop-filter: blur(10px);
 }
 
 .site-pub .legal-aside h2 {
@@ -1167,7 +1247,7 @@ body.site-pub-body {
 }
 
 .site-pub .legal-aside nav a {
-  color: #d3e2dc;
+  color: var(--text);
 }
 
 .site-pub .legal-aside nav a:hover {
@@ -1196,7 +1276,7 @@ body.site-pub-body {
 }
 
 .site-pub .legal-checkboxes {
-  background: rgba(8, 26, 23, 0.6);
+  background: var(--well-bg);
   border: 1px solid var(--line);
 }
 
@@ -1221,8 +1301,8 @@ body.site-pub-body {
 }
 
 .site-pub .privacidad-hash {
-  background: rgba(92, 232, 148, 0.1);
-  color: #c7f7d8;
+  background: var(--brand-soft);
+  color: var(--code-fg);
 }
 
 /* --------------------------------------------------------------------------
@@ -1233,13 +1313,8 @@ body.site-pub-body {
 }
 
 .site-pub .cookie-banner {
-  background: rgba(6, 20, 17, 0.97);
-  border: 1px solid var(--line);
   border-radius: 20px;
-  box-shadow: 0 30px 70px -30px rgba(0, 0, 0, 0.95);
-  color: var(--text);
-  -webkit-backdrop-filter: blur(16px);
-  backdrop-filter: blur(16px);
+  box-shadow: 0 40px 80px -36px rgba(0, 0, 0, 0.8);
 }
 
 .site-pub .cookie-banner h2 {
@@ -1247,7 +1322,7 @@ body.site-pub-body {
 }
 
 .site-pub .cookie-banner p {
-  color: #d3e2dc;
+  color: var(--surface-text);
 }
 
 .site-pub .cookie-banner a {
@@ -1267,104 +1342,149 @@ body.site-pub-body {
 }
 
 /* --------------------------------------------------------------------------
-   15 · Chat y botón de WhatsApp
+   15 · Chat
+   Misma lógica que las tarjetas: la conversación va sobre superficie clara y
+   el encabezado mantiene la tinta de marca. El botón flotante queda oscuro
+   para no competir con WhatsApp, que conserva su verde.
    -------------------------------------------------------------------------- */
 .site-pub .chat-panel {
-  background: rgba(6, 20, 17, 0.98);
-  border: 1px solid var(--line);
-  box-shadow: 0 30px 70px -28px rgba(0, 0, 0, 0.95);
-  -webkit-backdrop-filter: blur(16px);
-  backdrop-filter: blur(16px);
+  background: #ffffff;
+  border: 1px solid rgba(9, 40, 32, 0.14);
+  border-radius: 20px;
+  box-shadow:
+    0 40px 80px -32px rgba(0, 0, 0, 0.75),
+    0 2px 8px rgba(9, 40, 32, 0.08);
+  color-scheme: light;
 }
 
 .site-pub .chat-head {
-  background: linear-gradient(160deg, #08201a 0%, #04100f 100%);
-  border-bottom: 1px solid var(--line);
-  color: var(--text);
+  background:
+    radial-gradient(120% 140% at 100% 0%, rgba(22, 148, 76, 0.32) 0%, rgba(22, 148, 76, 0) 62%),
+    linear-gradient(160deg, #0b241d 0%, #04100f 100%);
+  border-bottom: 1px solid rgba(92, 232, 148, 0.16);
+  color: #f1f7f4;
 }
 
 .site-pub .chat-avatar {
-  background: linear-gradient(160deg, #6df795 0%, var(--green-500) 55%, #0a8f37 100%);
-  color: var(--green-ink);
+  width: 38px;
+  height: 38px;
+  background: linear-gradient(160deg, #6df795 0%, #14d450 55%, #0a8f37 100%);
+  color: #04220f;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.25),
+    0 0 22px -8px rgba(46, 227, 92, 0.7);
+}
+
+.site-pub .chat-title {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
 
 .site-pub .chat-status {
-  color: var(--muted);
+  color: rgba(241, 247, 244, 0.66);
+}
+
+.site-pub .chat-close {
+  color: rgba(241, 247, 244, 0.72);
+}
+
+.site-pub .chat-close:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
 }
 
 .site-pub .chat-body {
-  background: transparent;
+  background: #f4f9f6;
 }
 
 .site-pub .chat-msg {
-  color: #e3efe9;
+  font-size: 13px;
+  line-height: 1.55;
+  border-radius: 14px;
+  padding: 10px 13px;
+  color: #10231c;
 }
 
 .site-pub .chat-msg.bot {
-  background: var(--panel-2);
-  border: 1px solid var(--line);
+  background: #ffffff;
+  border: 1px solid rgba(9, 40, 32, 0.1);
+  border-bottom-left-radius: 5px;
+  box-shadow: 0 6px 16px -12px rgba(9, 40, 32, 0.45);
 }
 
 .site-pub .chat-msg.user {
-  background: linear-gradient(180deg, #4bf374 0%, var(--green-500) 52%, var(--green-600) 100%);
-  color: var(--green-ink);
-  font-weight: 650;
+  background: linear-gradient(180deg, #4bf374 0%, #14d450 60%, #0cb845 100%);
+  border: 0;
+  border-bottom-right-radius: 5px;
+  color: #04220f;
+  font-weight: 600;
+  box-shadow: 0 10px 22px -14px rgba(20, 212, 80, 0.9);
 }
 
 .site-pub .chat-typing span {
-  background: rgba(147, 169, 162, 0.7);
+  background: rgba(11, 143, 63, 0.55);
 }
 
 .site-pub .chat-quick {
-  background: transparent;
+  background: #ffffff;
 }
 
 .site-pub .chat-quick button {
-  background: var(--panel-2);
-  border: 1px solid var(--line);
-  color: #c7f7d8;
+  background: #ffffff;
+  border: 1px solid rgba(15, 155, 69, 0.38);
+  color: #0b7d37;
+  font-weight: 600;
+  border-radius: 999px;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
 
 .site-pub .chat-quick button:hover {
-  background: var(--brand-soft);
-  border-color: var(--brand-line);
-  color: var(--green);
+  background: rgba(15, 155, 69, 0.12);
+  border-color: #0e9c45;
+  color: #0b7d37;
 }
 
 .site-pub .chat-input {
-  background: transparent;
-  border-top: 1px solid var(--line-soft);
-  padding-top: 10px;
+  background: #ffffff;
+  border-top: 1px solid rgba(9, 40, 32, 0.09);
 }
 
 .site-pub .chat-input input {
-  background: rgba(4, 16, 15, 0.85);
-  border: 1px solid var(--line);
-  color: var(--text);
+  background: #f1f6f3;
+  border: 1px solid rgba(9, 40, 32, 0.12);
+  border-radius: 999px;
+  color: #10231c;
 }
 
 .site-pub .chat-input input::placeholder {
-  color: rgba(147, 169, 162, 0.7);
+  color: #7b8d86;
 }
 
 .site-pub .chat-input input:focus {
-  border-color: rgba(46, 227, 92, 0.55);
-  box-shadow: 0 0 0 3px rgba(46, 227, 92, 0.18);
-  background: rgba(4, 16, 15, 0.95);
+  background: #ffffff;
+  border-color: #0e9c45;
+  box-shadow: 0 0 0 3px rgba(15, 155, 69, 0.18);
 }
 
 .site-pub .chat-send {
-  background: linear-gradient(180deg, #4bf374 0%, var(--green-500) 52%, var(--green-600) 100%);
-  color: var(--green-ink);
+  background: linear-gradient(180deg, #4bf374 0%, #14d450 60%, #0cb845 100%);
+  color: #04220f;
+  box-shadow: 0 10px 22px -12px rgba(20, 212, 80, 0.9);
 }
 
 .site-pub .chat-toggle {
-  background: linear-gradient(160deg, #0d2a22 0%, #04100f 100%);
-  border: 1px solid var(--line);
-  color: var(--green);
+  background: linear-gradient(160deg, #123029 0%, #05130f 100%);
+  border: 1px solid rgba(92, 232, 148, 0.32);
+  color: #2ee35c;
   box-shadow:
-    0 18px 40px -18px rgba(0, 0, 0, 0.9),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    0 18px 40px -16px rgba(0, 0, 0, 0.85),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.site-pub .chat-toggle:hover {
+  border-color: rgba(92, 232, 148, 0.55);
+  color: #4bf374;
 }
 
 .site-pub .wa-float {
@@ -1380,9 +1500,15 @@ body.site-pub-body {
    que hereda la paleta del kit. El documento imprimible (.doc) NO se toca:
    es papel y sigue en blanco (además el modal va por portal, fuera del tema).
    -------------------------------------------------------------------------- */
+/* El cotizador es una herramienta: el área de trabajo va clara (como una
+   planilla) y el chrome de marca queda oscuro arriba y abajo. Así las tarjetas
+   se separan por borde y no por contraste contra el negro. */
 .site-pub .cz {
-  background: transparent;
-  color: var(--text);
+  background: #e9f2ed;
+  color: #10231c;
+  /* Toda el área de trabajo es clara: los scrollbars y controles nativos
+     tienen que acompañar (el chrome oscuro está arriba y abajo). */
+  color-scheme: light;
 }
 
 .site-pub .cz-top {
@@ -1422,15 +1548,6 @@ body.site-pub-body {
 }
 
 /* Tarjetas de configuración y de resultado */
-.site-pub .cz-card {
-  background: linear-gradient(180deg, rgba(13, 42, 37, 0.78), rgba(8, 27, 24, 0.82));
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.045),
-    0 18px 40px -32px rgba(0, 0, 0, 0.95);
-}
-
 .site-pub .cz-card-title {
   color: var(--text);
 }
@@ -1453,7 +1570,7 @@ body.site-pub-body {
 
 /* Steppers de cantidad y distancia */
 .site-pub .cz-stepper {
-  background: rgba(4, 16, 15, 0.85);
+  background: var(--well-bg);
   border: 1px solid var(--line);
 }
 
@@ -1463,7 +1580,7 @@ body.site-pub-body {
 }
 
 .site-pub .cz-stepper button:hover {
-  background: rgba(92, 232, 148, 0.1);
+  background: var(--brand-soft);
   color: var(--green);
 }
 
@@ -1478,7 +1595,7 @@ body.site-pub-body {
 
 /* Segmentos (modalidad, urgencia, turno) */
 .site-pub .cz-seg {
-  background: rgba(4, 16, 15, 0.7);
+  background: var(--well-bg);
   border: 1px solid var(--line-soft);
 }
 
@@ -1491,14 +1608,14 @@ body.site-pub-body {
 }
 
 .site-pub .cz-seg button.on {
-  background: rgba(46, 227, 92, 0.16);
+  background: var(--accent-soft);
   color: var(--green);
   box-shadow: inset 0 0 0 1px var(--brand-line);
 }
 
 /* Servicios adicionales: se marcan con check verde */
 .site-pub .cz-chip {
-  background: rgba(4, 16, 15, 0.6);
+  background: var(--well-bg);
   border: 1px solid var(--line);
   color: var(--text);
 }
@@ -1508,13 +1625,13 @@ body.site-pub-body {
 }
 
 .site-pub .cz-chip.on {
-  background: rgba(46, 227, 92, 0.12);
-  border-color: var(--brand-line);
+  background: var(--brand-soft);
+  border-color: var(--hover-line);
 }
 
 .site-pub .cz-chip .tick {
-  background: rgba(4, 16, 15, 0.9);
-  border: 1.5px solid rgba(92, 232, 148, 0.3);
+  background: var(--tick-bg);
+  border: 1.5px solid var(--brand-line);
   color: transparent;
 }
 
@@ -1549,15 +1666,15 @@ body.site-pub-body {
 }
 
 .site-pub .cz-alert.warn {
-  background: rgba(232, 53, 47, 0.1);
-  border: 1px solid rgba(232, 53, 47, 0.28);
-  color: #ff9a92;
+  background: var(--red-bg);
+  border: 1px solid rgba(217, 44, 31, 0.28);
+  color: var(--danger-fg);
 }
 
 .site-pub .cz-alert.danger {
   background: var(--red-bg);
-  border: 1px solid rgba(232, 53, 47, 0.42);
-  color: #ff9a92;
+  border: 1px solid rgba(217, 44, 31, 0.42);
+  color: var(--danger-fg);
 }
 
 /* Detalle del cálculo */
@@ -1579,27 +1696,28 @@ body.site-pub-body {
 
 /* Caja del total */
 .site-pub .cz-total {
+  position: relative;
+  overflow: hidden;
   background:
-    radial-gradient(90% 120% at 100% 0%, rgba(22, 148, 76, 0.22) 0%, rgba(22, 148, 76, 0) 62%),
+    radial-gradient(90% 120% at 100% 0%, rgba(22, 148, 76, 0.24) 0%, rgba(22, 148, 76, 0) 62%),
     linear-gradient(160deg, #08201a 0%, #04100f 100%);
-  border: 1px solid var(--line);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.05),
-    0 22px 46px -28px rgba(0, 0, 0, 0.95);
-  color: var(--text);
+  border: 1px solid rgba(241, 247, 244, 0.12);
+  border-top: 3px solid var(--red);
+  box-shadow: 0 24px 48px -30px rgba(0, 0, 0, 0.85);
+  color: #f1f7f4;
 }
 
 .site-pub .cz-total .lbl {
-  color: var(--muted);
+  color: rgba(241, 247, 244, 0.66);
   opacity: 1;
 }
 
 .site-pub .cz-total .amt {
-  color: var(--text);
+  color: #ffffff;
 }
 
 .site-pub .cz-total .ars {
-  color: var(--muted);
+  color: rgba(241, 247, 244, 0.74);
   opacity: 1;
 }
 
@@ -1613,6 +1731,77 @@ body.site-pub-body {
 
 .site-pub .cz-field label {
   color: var(--muted);
+}
+
+/* Refinamiento: aire y jerarquía de la calculadora. */
+.site-pub .cz-top {
+  min-height: 62px;
+  padding: 10px 20px;
+}
+
+.site-pub .cz-brand {
+  font-size: 17px;
+}
+
+.site-pub .cz-brand .logo {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+}
+
+.site-pub .cz-top-title {
+  font-size: 12.5px;
+}
+
+.site-pub .cz-body {
+  gap: 20px;
+  padding: 20px 20px 22px;
+}
+
+.site-pub .cz-col {
+  gap: 16px;
+}
+
+.site-pub .cz-card {
+  padding: 18px 20px;
+  border-radius: 18px;
+}
+
+.site-pub .cz-card-title {
+  font-size: 12px;
+  letter-spacing: 0.5px;
+  color: #0b1b16;
+  margin-bottom: 12px;
+}
+
+.site-pub .cz-card-title .num {
+  width: 22px;
+  height: 22px;
+  font-size: 11.5px;
+  font-weight: 800;
+}
+
+.site-pub .cz-line {
+  padding: 6px 0;
+}
+
+.site-pub .cz-total {
+  padding: 16px 18px;
+  border-radius: 14px;
+}
+
+.site-pub .cz-total .amt {
+  font-size: 32px;
+}
+
+.site-pub .cz-cta {
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.site-pub .cz-note {
+  font-size: 11.5px;
+  line-height: 1.6;
 }
 
 /* Barra fija del celular (el display sigue en manos de index.css) */
@@ -1711,79 +1900,81 @@ body.site-pub-body {
    19 · Modal sobre el tema público
    El Modal se monta por portal en el body, así que no lo alcanza `.site-pub`.
    Cuando el sitio público está activo (body.site-pub-body) se marca con
-   .modal--dark; en el panel, sin esa clase, el modal sigue igual que siempre.
+   .modal--bertika y usa la misma superficie clara que las tarjetas; en el
+   panel, sin esa clase, el modal sigue igual que siempre.
    El documento imprimible (.doc) queda en blanco a propósito: es papel.
    -------------------------------------------------------------------------- */
-.modal-back--dark {
+.modal-back--bertika {
   background: rgba(2, 10, 9, 0.66);
 }
 
-.modal--dark {
-  --bg: #04100f;
-  --bg-2: #091d19;
-  --bg-3: rgba(8, 26, 23, 0.6);
-  --line: rgba(92, 232, 148, 0.14);
-  --line-soft: rgba(92, 232, 148, 0.1);
-  --text: #f1f7f4;
-  --muted: #93a9a2;
-  --navy: #f1f7f4;
-  --amber: #2ee35c;
-  --amber-d: #5cf08a;
-  --brand-amber: #2ee35c;
-  --green: #2ee35c;
-  background: #091d19;
-  border-color: rgba(92, 232, 148, 0.14);
-  color: #f1f7f4;
-  box-shadow: 0 40px 90px -40px rgba(0, 0, 0, 0.95);
+.modal--bertika {
+  --bg: #f4f8f6;
+  --bg-2: #ffffff;
+  --bg-3: #f1f6f3;
+  --line: rgba(9, 40, 32, 0.19);
+  --line-soft: rgba(9, 40, 32, 0.1);
+  --text: #10231c;
+  --muted: #5b6f68;
+  --navy: #0b1b16;
+  --amber: #0b8f3f;
+  --amber-d: #0b7d37;
+  --brand-amber: #0b8f3f;
+  --brand-soft: rgba(15, 155, 69, 0.12);
+  --green: #0b8f3f;
+  background: #ffffff;
+  border-color: rgba(9, 40, 32, 0.16);
+  color: #10231c;
+  box-shadow: 0 40px 90px -40px rgba(0, 0, 0, 0.8);
 }
 
-.modal--dark .modal-head,
-.modal--dark .modal-foot {
-  background: #091d19;
-  border-color: rgba(92, 232, 148, 0.14);
+.modal--bertika .modal-head,
+.modal--bertika .modal-foot {
+  background: #ffffff;
+  border-color: rgba(9, 40, 32, 0.14);
 }
 
-.modal--dark .modal-tabs {
-  border-bottom-color: rgba(92, 232, 148, 0.14);
+.modal--bertika .modal-tabs {
+  border-bottom-color: rgba(9, 40, 32, 0.14);
 }
 
-.modal--dark h3 {
-  color: #f1f7f4;
+.modal--bertika h3 {
+  color: #0b1b16;
 }
 
-.modal--dark .modal-sub {
-  color: #93a9a2;
+.modal--bertika .modal-sub {
+  color: #5b6f68;
 }
 
-.modal--dark .modal-x {
-  background: rgba(8, 26, 23, 0.6);
-  border-color: rgba(92, 232, 148, 0.14);
-  color: #93a9a2;
+.modal--bertika .modal-x {
+  background: #ffffff;
+  border-color: rgba(9, 40, 32, 0.16);
+  color: #5b6f68;
 }
 
-.modal--dark .modal-x:hover {
-  background: rgba(46, 227, 92, 0.14);
-  border-color: rgba(92, 232, 148, 0.38);
-  color: #f1f7f4;
+.modal--bertika .modal-x:hover {
+  background: #f1f6f3;
+  border-color: #0e9c45;
+  color: #0b1b16;
 }
 
-.modal--dark .field label {
-  color: #93a9a2;
+.modal--bertika .field label {
+  color: #5b6f68;
 }
 
-.modal--dark .btn {
-  background: rgba(8, 26, 23, 0.6);
-  border-color: rgba(92, 232, 148, 0.14);
-  color: #f1f7f4;
+.modal--bertika .btn {
+  background: #f6faf8;
+  border-color: rgba(9, 40, 32, 0.16);
+  color: #10231c;
 }
 
-.modal--dark .btn:hover {
-  background: rgba(16, 52, 45, 0.85);
-  border-color: rgba(92, 232, 148, 0.4);
-  color: #f1f7f4;
+.modal--bertika .btn:hover {
+  background: #eaf4ee;
+  border-color: #0e9c45;
+  color: #10231c;
 }
 
-.modal--dark .btn.primary {
+.modal--bertika .btn.primary {
   background: linear-gradient(180deg, #4bf374 0%, #14d450 52%, #0cb845 100%);
   border: 0;
   color: #04220f;
@@ -1793,8 +1984,67 @@ body.site-pub-body {
     inset 0 1px 0 rgba(255, 255, 255, 0.4);
 }
 
-.modal--dark .btn.primary:hover {
+.modal--bertika .btn.primary:hover {
   background: linear-gradient(180deg, #4bf374 0%, #14d450 52%, #0cb845 100%);
   color: #04220f;
   filter: brightness(1.05);
+}
+
+.modal--bertika .btn.danger {
+  color: #b3261e;
+}
+
+/* La hoja impresa se separa del modal blanco con un borde suave. */
+.modal--bertika .doc {
+  border: 1px solid rgba(9, 40, 32, 0.12);
+  box-shadow: 0 16px 40px -28px rgba(9, 40, 32, 0.45);
+}
+
+/* --------------------------------------------------------------------------
+   20 · Detalles de rojo (marca)
+   El rojo del kit es un detalle de línea, no un color de fondo: se usa en la
+   pestaña de las tarjetas, el filete bajo los títulos, los recargos del
+   cotizador y el total.
+   -------------------------------------------------------------------------- */
+.site-pub .card:not(.pad0) {
+  position: relative;
+}
+
+.site-pub .card:not(.pad0)::before {
+  content: "";
+  position: absolute;
+  top: -1px;
+  left: 18px;
+  width: 38px;
+  height: 3px;
+  border-radius: 0 0 3px 3px;
+  background: var(--red);
+}
+
+/* Pestaña roja del encabezado de cada página interna. */
+.site-pub .page-hero-kicker::before {
+  content: "";
+  display: inline-block;
+  width: 26px;
+  height: 2px;
+  margin-right: 10px;
+  border-radius: 2px;
+  vertical-align: middle;
+  background: var(--red);
+}
+
+/* Recargos del cotizador: suman al precio, así que van en rojo. */
+.site-pub .cz-seg button.cz-recargo {
+  color: var(--danger-fg);
+}
+
+.site-pub .cz-seg button.cz-recargo.on {
+  background: var(--red-bg);
+  color: var(--danger-fg);
+  box-shadow: inset 0 0 0 1px rgba(217, 44, 31, 0.38);
+}
+
+.site-pub .cz-line--recargo .v {
+  color: var(--danger-fg);
+  font-weight: 700;
 }

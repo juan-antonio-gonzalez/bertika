@@ -178,7 +178,7 @@ export default function Landing() {
         <div className="wrap">
           <div className="eco-card">
               <h2 className="sec-title">Comprometidos con el medio ambiente</h2>
-              <p style={{ color: 'rgba(211, 226, 220, 0.82)', lineHeight: 1.7, margin: '0 0 16px' }}>
+              <p style={{ color: 'var(--muted)', lineHeight: 1.7, margin: '0 0 16px' }}>
                 A nivel de gestión de recursos, los acumuladores eléctricos usados se consideran como una
                 fuente de materias primas secundarias. Metales, plásticos y ácidos son recolectados,
                 clasificados y desviados de los residuos urbanos hacia operaciones de reutilización autorizadas.

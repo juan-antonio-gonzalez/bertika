@@ -422,11 +422,11 @@ export default function Cotizador() {
             <div className="row wrap between" style={{ gap: 10 }}>
               <div className="cz-seg" role="group" aria-label="Urgencia">
                 <button type="button" className={urgencia === 'normal' ? 'on' : ''} onClick={() => setUrgencia('normal')}>Normal</button>
-                <button type="button" className={urgencia === 'express' ? 'on' : ''} onClick={() => setUrgencia('express')}>Express 48 h +{Math.round(config.urgencia.express * 100)}%</button>
+                <button type="button" className={`cz-recargo${urgencia === 'express' ? ' on' : ''}`} onClick={() => setUrgencia('express')}>Express 48 h +{Math.round(config.urgencia.express * 100)}%</button>
               </div>
               <div className="cz-seg" role="group" aria-label="Turno">
                 <button type="button" className={turno === 'comercial' ? 'on' : ''} onClick={() => setTurno('comercial')}>Horario comercial</button>
-                <button type="button" className={turno === 'finde' ? 'on' : ''} onClick={() => setTurno('finde')}>Fin de semana +{Math.round(config.turno.finde * 100)}%</button>
+                <button type="button" className={`cz-recargo${turno === 'finde' ? ' on' : ''}`} onClick={() => setTurno('finde')}>Fin de semana +{Math.round(config.turno.finde * 100)}%</button>
               </div>
             </div>
           </section>
@@ -519,7 +519,7 @@ export default function Cotizador() {
                     </div>
                   )}
                   {r.recargo > 0 && (
-                    <div className="cz-line">
+                    <div className="cz-line cz-line--recargo">
                       <span className="k">Recargos (+{Math.round(r.recargoPct * 100)}%)</span>
                       <span className="v">{fmtUSD.format(r.recargo)}</span>
                     </div>
