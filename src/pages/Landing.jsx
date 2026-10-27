@@ -127,14 +127,12 @@ export default function Landing() {
             Ferroviarias, tracción, estacionarias, solar y eólico, arranque, especiales y cargadores.
             Diseñadas para las exigencias reales de cada aplicación industrial.
           </p>
-          <div className="grid3">
-            {PRODUCTOS.slice(0, 6).map((p) => (
-              <Link key={p.id} to={`/productos#${p.id}`} className="card pad0" style={{ textDecoration: 'none' }}>
-                <img src={p.img} alt={p.titulo} style={{ width: '100%', height: 170, objectFit: 'cover', display: 'block' }} />
-                <div style={{ padding: 14 }}>
-                  <div style={{ fontWeight: 800, fontSize: 13.5, color: 'var(--blue)' }}>{p.titulo}</div>
-                  <p className="card-sub" style={{ margin: '6px 0 0' }}>{p.desc}</p>
-                </div>
+          {/* Índice de líneas, no el catálogo: las fichas con imagen y detalle
+              viven en /productos. Acá solo se nombra cada línea y se enlaza. */}
+          <div className="lineas">
+            {PRODUCTOS.map((p) => (
+              <Link key={p.id} to={`/productos#${p.id}`} className="linea">
+                <span className="linea-t">{p.titulo}</span>
               </Link>
             ))}
           </div>
