@@ -2191,6 +2191,8 @@ body.site-pub-body {
   transform: rotate(34deg);
   transform-origin: bottom center;
   background: linear-gradient(0deg, #f03a33 0%, rgba(232, 53, 47, 0.7) 62%, rgba(232, 53, 47, 0) 100%);
+  /* También en doble trazo, como la esquina superior. */
+  box-shadow: 14px 0 0 0 rgba(232, 53, 47, 0.5);
 }
 
 .site-pub .auth-card .input,
