@@ -118,7 +118,9 @@ export default function Empresa() {
       {/* Misión · Visión · Calidad · Compromiso */}
       <section className="sec sec-alt">
         <div className="wrap">
-          <h2 className="sec-title" style={{ textAlign: 'center' }}>Misión, visión y valores</h2>
+          <h2 className="sec-title" style={{ textAlign: 'center' }}>
+            <span className="txt-red">Misión</span>, <span className="txt-green">visión</span> y valores
+          </h2>
           <p className="sec-sub" style={{ textAlign: 'center', maxWidth: 620, margin: '0 auto 26px' }}>
             Lo que nos mueve y lo que prometemos con cada batería que pasa por nuestro taller.
           </p>
@@ -128,9 +130,7 @@ export default function Empresa() {
                 <span className="chip" style={{ color: 'var(--amber)', fontSize: 16, width: 42, height: 42, borderRadius: 12, marginBottom: 10 }}>
                   <Icon name={v.ic} size={18} />
                 </span>
-                <h4 className={`card-title${v.t === 'Misión' ? ' card-title--red' : v.t === 'Visión' ? ' card-title--green' : ''}`}>
-                  {v.t}
-                </h4>
+                <h4 className="card-title">{v.t}</h4>
                 <p className="card-sub">{v.d}</p>
               </div>
             ))}
