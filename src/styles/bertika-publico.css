@@ -1426,8 +1426,40 @@ body.site-pub-body {
 .site-pub .lineup-item {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: stretch;
   min-width: 0;
+  overflow: hidden;
+  background: #ffffff;
+  border: 1px solid var(--card-line);
+  border-radius: 16px;
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.15s ease;
+}
+
+.site-pub .lineup-item:hover {
+  border-color: var(--hover-line);
+  box-shadow:
+    0 0 0 4px var(--hover-ring),
+    var(--shadow);
+  transform: translateY(-2px);
+}
+
+.site-pub .lineup-item:active {
+  border-color: var(--hover-line);
+  box-shadow:
+    0 0 0 5px var(--hover-ring-strong),
+    var(--shadow-s);
+  transform: translateY(0) scale(0.996);
+}
+
+.site-pub .lineup-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 16px 20px 20px;
 }
 
 .site-pub .lineup-foto {
@@ -1450,7 +1482,7 @@ body.site-pub-body {
 }
 
 .site-pub .lineup-t {
-  margin: 16px 0 8px;
+  margin: 0 0 8px;
   font-size: 14.5px;
   font-weight: 750;
   letter-spacing: 0.02em;

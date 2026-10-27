@@ -144,11 +144,13 @@ export default function Landing() {
                 <Link to={`/productos/${p.id}`} className="lineup-foto" tabIndex={-1} aria-hidden="true">
                   <img src={p.img} alt="" width="370" height="214" />
                 </Link>
-                <h3 className="lineup-t">
-                  <Link to={`/productos/${p.id}`}>{p.titulo}</Link>
-                </h3>
-                <p className="lineup-d">{p.desc}</p>
-                <Link to={`/productos/${p.id}`} className="lineup-btn">Más info</Link>
+                <div className="lineup-body">
+                  <h3 className="lineup-t">
+                    <Link to={`/productos/${p.id}`}>{p.titulo}</Link>
+                  </h3>
+                  <p className="lineup-d">{p.desc}</p>
+                  <Link to={`/productos/${p.id}`} className="lineup-btn">Más info</Link>
+                </div>
               </article>
             ))}
           </div>
