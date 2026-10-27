@@ -832,6 +832,15 @@ body.site-pub-body {
   margin-top: 26px;
 }
 
+/* Títulos de tarjeta con acento de marca. */
+.site-pub .card-title--red {
+  color: var(--danger-fg);
+}
+
+.site-pub .card-title--green {
+  color: var(--green-600);
+}
+
 /* Intro de la página ecológica: texto solo, sin imagen. */
 .site-pub .eco-intro {
   max-width: 760px;
@@ -1054,8 +1063,9 @@ body.site-pub-body {
 /* index.css trae `.card + .card { margin-top: 12px }`. Dentro de una grilla o
    una fila ese margen desalinea: la primera tarjeta queda más alta y el resto
    12 px más abajo. El espaciado lo da el gap. */
-.site-pub :is(.grid2, .grid3, .grid4) > .card + .card,
-.site-pub .row > .card + .card {
+/* index.css suma 12px entre tarjetas consecutivas; en grillas eso deja la
+   primera más alta que el resto. */
+.site-pub .card + .card {
   margin-top: 0;
 }
 
@@ -3360,4 +3370,37 @@ body.site-pub-body {
 .site-pub .cz-line--recargo .v {
   color: var(--danger-fg);
   font-weight: 700;
+}
+
+
+/* Todas las tarjetas se comportan como las de producto: crecen y el borde
+   verde se marca al pasar el mouse y al presionar. */
+.site-pub .card {
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.18s cubic-bezier(0.22, 0.8, 0.24, 1);
+}
+
+.site-pub .card:hover {
+  border-color: var(--hover-line);
+  box-shadow:
+    0 0 0 3px var(--hover-ring),
+    inset 0 0 0 1px var(--hover-line),
+    0 18px 40px -26px rgba(3, 22, 17, 0.5);
+  transform: translateY(-3px) scale(1.012);
+}
+
+.site-pub .card:active {
+  border-color: var(--hover-line);
+  box-shadow:
+    0 0 0 6px var(--hover-ring-strong),
+    inset 0 0 0 2px var(--hover-line),
+    var(--shadow-s);
+  transform: translateY(-1px) scale(1.006);
+}
+
+/* Palabra de acento en rojo de marca. */
+.site-pub .txt-red {
+  color: var(--danger-fg);
 }

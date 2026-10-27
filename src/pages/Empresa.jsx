@@ -70,7 +70,7 @@ export default function Empresa() {
               <img src="/img/img-automatizacion.jpg" alt="Automatización industrial" style={{ width: '100%', borderRadius: 12, boxShadow: 'var(--shadow-lg)' }} />
             </div>
             <div>
-              <h2 className="sec-title">Del terreno a la acción</h2>
+              <h2 className="sec-title">Del terreno a la <span className="txt-red">acción</span></h2>
               <p style={{ lineHeight: 1.7, margin: '0 0 12px', color: 'var(--text)' }}>
                 Durante años compartimos proyectos, desafíos y jornadas de trabajo codo a codo en el sector
                 industrial. Nos movía una misma visión y el dinamismo del día a día, pero sabíamos que podíamos
@@ -128,7 +128,9 @@ export default function Empresa() {
                 <span className="chip" style={{ color: 'var(--amber)', fontSize: 16, width: 42, height: 42, borderRadius: 12, marginBottom: 10 }}>
                   <Icon name={v.ic} size={18} />
                 </span>
-                <h4 className="card-title">{v.t}</h4>
+                <h4 className={`card-title${v.t === 'Misión' ? ' card-title--red' : v.t === 'Visión' ? ' card-title--green' : ''}`}>
+                  {v.t}
+                </h4>
                 <p className="card-sub">{v.d}</p>
               </div>
             ))}
