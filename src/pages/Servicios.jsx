@@ -89,23 +89,25 @@ export default function Servicios() {
 
       <section className="sec sec-alt">
         <div className="wrap">
-          <header className="sec-head">
-            <span className="eyebrow">Proceso</span>
-            <h2 className="sec-title">Cómo <span className="txt-green">trabajamos</span></h2>
-            <p className="sec-sub">
-              Cuatro pasos, siempre en el mismo orden. Es lo que permite garantizar lo que entregamos.
-            </p>
-          </header>
+          <div className="card proceso-card">
+            <header className="sec-head">
+              <span className="eyebrow eyebrow--red">Proceso</span>
+              <h2 className="sec-title">Cómo <span className="txt-green">trabajamos</span></h2>
+              <p className="sec-sub">
+                Cuatro pasos, siempre en el mismo orden. Es lo que permite garantizar lo que entregamos.
+              </p>
+            </header>
 
-          <ol className="proceso">
-            {proceso.map((p, i) => (
-              <li key={p.t} className="proceso-paso">
-                <span className="proceso-num">{String(i + 1).padStart(2, '0')}</span>
-                <h3 className="proceso-t">{p.t}</h3>
-                <p className="proceso-d">{p.d}</p>
-              </li>
-            ))}
-          </ol>
+            <ol className="proceso">
+              {proceso.map((p, i) => (
+                <li key={p.t} className="proceso-paso">
+                  <span className="proceso-num">{String(i + 1).padStart(2, '0')}</span>
+                  <h3 className="proceso-t">{p.t}</h3>
+                  <p className="proceso-d">{p.d}</p>
+                </li>
+              ))}
+            </ol>
+          </div>
         </div>
       </section>
 

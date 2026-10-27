@@ -3594,3 +3594,18 @@ body.site-pub-body {
     padding: 24px 22px;
   }
 }
+
+/* Proceso enmarcado y con el antetítulo en rojo de marca. */
+.site-pub .eyebrow--red {
+  color: #e8352f;
+}
+
+.site-pub .proceso-card {
+  padding: 36px 38px 32px;
+}
+
+@media (max-width: 620px) {
+  .site-pub .proceso-card {
+    padding: 24px 20px;
+  }
+}
