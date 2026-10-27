@@ -1092,6 +1092,12 @@ body.site-pub-body {
   letter-spacing: -0.02em;
 }
 
+.site-pub .auth-logo img {
+  display: block;
+  width: 210px;
+  height: auto;
+}
+
 .site-pub .auth-logo-box {
   background: linear-gradient(160deg, #6df795 0%, var(--green-500) 52%, #0a8f37 100%);
   color: var(--green-ink);
@@ -1759,75 +1765,255 @@ body.site-pub-body {
   color: var(--muted);
 }
 
-/* Refinamiento: aire y jerarquía de la calculadora. */
+/* ==========================================================================
+   Refinamiento UX de la calculadora
+   Objetivo: lectura de un vistazo, cero texto cortado y el resultado como
+   protagonista. El orden de esta sección importa: va después de las reglas
+   base del cotizador y las pisa.
+   ========================================================================== */
+
+/* --- Marca: el logo real, el mismo de la home --- */
+.site-pub .cz-brand img {
+  display: block;
+  width: 152px;
+  height: auto;
+}
+
 .site-pub .cz-top {
-  min-height: 62px;
-  padding: 10px 20px;
-}
-
-.site-pub .cz-brand {
-  font-size: 17px;
-}
-
-.site-pub .cz-brand .logo {
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
+  min-height: 64px;
+  padding: 10px 22px;
 }
 
 .site-pub .cz-top-title {
-  font-size: 12.5px;
+  font-size: 13px;
 }
 
+/* --- Área de trabajo --- */
 .site-pub .cz-body {
-  gap: 20px;
-  padding: 20px 20px 22px;
+  gap: 22px;
+  padding: 22px 22px 26px;
 }
 
 .site-pub .cz-col {
   gap: 16px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(9, 40, 32, 0.22) transparent;
 }
 
+.site-pub .cz-col::-webkit-scrollbar {
+  width: 8px;
+}
+
+.site-pub .cz-col::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.site-pub .cz-col::-webkit-scrollbar-thumb {
+  background: rgba(9, 40, 32, 0.18);
+  border-radius: 8px;
+}
+
+.site-pub .cz-col::-webkit-scrollbar-thumb:hover {
+  background: rgba(9, 40, 32, 0.3);
+}
+
+/* --- Tarjetas: títulos en caja baja y legibles --- */
 .site-pub .cz-card {
-  padding: 18px 20px;
+  padding: 20px 22px;
   border-radius: 18px;
 }
 
 .site-pub .cz-card-title {
-  font-size: 12px;
-  letter-spacing: 0.5px;
+  gap: 10px;
+  margin-bottom: 14px;
+  font-size: 14px;
+  font-weight: 750;
+  letter-spacing: -0.01em;
+  text-transform: none;
   color: #0b1b16;
-  margin-bottom: 12px;
 }
 
 .site-pub .cz-card-title .num {
-  width: 22px;
-  height: 22px;
-  font-size: 11.5px;
+  width: 24px;
+  height: 24px;
+  font-size: 12px;
   font-weight: 800;
 }
 
+.site-pub .cz-help,
+.site-pub .cz-zone {
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+/* --- Controles --- */
+/* Se sacan las flechitas nativas del input numérico: los steppers ya están. */
+.site-pub .cz input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.site-pub .cz input[type="number"]::-webkit-outer-spin-button,
+.site-pub .cz input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.site-pub .cz-stepper input {
+  font-size: 14px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.site-pub .cz-km input[type="range"] {
+  height: 26px;
+}
+
+.site-pub .cz-seg button {
+  padding: 9px 14px;
+  font-size: 13px;
+}
+
+.site-pub .cz-badge {
+  font-size: 10.5px;
+  padding: 3px 9px;
+}
+
+/* --- Servicios adicionales: lista de filas, sin textos cortados --- */
+.site-pub .cz-chips {
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.site-pub .cz-chip {
+  flex-wrap: wrap;
+  row-gap: 8px;
+  gap: 10px;
+  min-height: 50px;
+  padding: 9px 12px;
+}
+
+.site-pub .cz-chip-main {
+  gap: 10px;
+}
+
+.site-pub .cz-chip .nm {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+  font-size: 13.2px;
+  line-height: 1.35;
+}
+
+.site-pub .cz-chip .price {
+  font-size: 12.5px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.site-pub .cz-chip.on .price {
+  color: #0b7d37;
+}
+
+/* --- Resultado: la tarjeta que manda --- */
+.site-pub .cz-card--result {
+  border-top: 3px solid #0e9c45;
+}
+
+.site-pub .cz-card--result .cz-card-title {
+  font-size: 15px;
+}
+
 .site-pub .cz-line {
-  padding: 6px 0;
+  padding: 7px 0;
+  font-size: 13px;
+}
+
+.site-pub .cz-line .v {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
 
 .site-pub .cz-total {
-  padding: 16px 18px;
-  border-radius: 14px;
+  padding: 18px 20px;
+  border-radius: 16px;
+  margin-top: 14px;
+}
+
+.site-pub .cz-total .lbl {
+  font-size: 11px;
+  letter-spacing: 1px;
 }
 
 .site-pub .cz-total .amt {
-  font-size: 32px;
+  font-size: 36px;
+}
+
+.site-pub .cz-total .ars {
+  font-size: 13px;
 }
 
 .site-pub .cz-cta {
   gap: 10px;
-  margin-top: 14px;
+  margin-top: 16px;
+}
+
+.site-pub .cz-cta .btn.lg {
+  min-height: 54px;
+  font-size: 15px;
 }
 
 .site-pub .cz-note {
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1.6;
+}
+
+/* --- Desplegables informativos: compactos, tipo enlace --- */
+.site-pub .cz-card--info {
+  padding: 14px 18px;
+}
+
+.site-pub .cz-card--info .cz-summary {
+  font-size: 13.5px;
+}
+
+/* --- Scroll de página + resultado fijo ---
+   Antes eran dos columnas con scroll propio: no se veía que había más abajo
+   y el total podía quedar fuera de vista. Ahora la página scrollea una sola
+   vez y el resumen acompaña pegado al costado. */
+@media (min-width: 901px) {
+  .site-pub .cz {
+    height: auto;
+    min-height: 100dvh;
+    overflow: visible;
+  }
+
+  .site-pub .cz-top {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+  }
+
+  .site-pub .cz-body {
+    align-items: start;
+  }
+
+  .site-pub .cz-col {
+    overflow: visible;
+    padding-right: 0;
+  }
+
+}
+
+/* El resumen solo se pega si hay alto suficiente: si no, se cortaría abajo
+   y no habría forma de llegar al final de la tarjeta. */
+@media (min-width: 901px) and (min-height: 820px) {
+  .site-pub .cz-col:last-child {
+    position: sticky;
+    top: 84px;
+    align-self: start;
+  }
 }
 
 /* Barra fija del celular (el display sigue en manos de index.css) */

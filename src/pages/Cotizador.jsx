@@ -265,9 +265,8 @@ export default function Cotizador() {
   return (
     <div className="cz">
       <header className="cz-top">
-        <Link to="/" className="cz-brand">
-          <span className="logo"><Icon name="bolt" size={16} /></span>
-          BERTIKA<sup style={{ fontSize: 9 }}>®</sup>
+        <Link to="/" className="cz-brand" aria-label="Bertika — inicio">
+          <img src="/img/logo-bertika.png" alt="Bertika® Acumuladores Industriales" width="460" height="82" />
         </Link>
         <span className="cz-top-title">Cotizador de visita técnica</span>
         <div className="cz-top-right">
@@ -399,7 +398,7 @@ export default function Cotizador() {
                     <button type="button" className="cz-chip-main" onClick={() => toggleExtra(e.id)} aria-pressed={Boolean(sel)}>
                       <span className="tick"><Icon name="check" size={10} /></span>
                       <span className="nm" title={e.nombre}>{e.nombre}</span>
-                      {!sel && <span className="price">{fmtUSD.format(e.precio)}{e.porEquipo ? ' ×eq' : ''}</span>}
+                      <span className="price">{fmtUSD.format(e.precio)}{e.porEquipo ? ' ×eq' : ''}</span>
                     </button>
                     {sel && (
                       <div className="cz-stepper sm">
@@ -431,7 +430,7 @@ export default function Cotizador() {
             </div>
           </section>
 
-          <details className="cz-card">
+          <details className="cz-card cz-card--info">
             <summary className="cz-summary">5 · Datos para la estimación (opcional)</summary>
             <div className="cz-two" style={{ marginTop: 10 }}>
               <div className="cz-field"><label htmlFor="cz-nombre">Nombre</label><input id="cz-nombre" className="input" value={cliente.nombre} onChange={(e) => setCliente({ ...cliente, nombre: e.target.value })} placeholder="Tu nombre" /></div>
@@ -462,7 +461,7 @@ export default function Cotizador() {
 
         {/* ---------- Resultado ---------- */}
         <div className="cz-col">
-          <section className="cz-card" style={{ display: 'flex', flexDirection: 'column', flex: '0 0 auto' }}>
+          <section className="cz-card cz-card--result" style={{ display: 'flex', flexDirection: 'column', flex: '0 0 auto' }}>
             <div className="cz-card-title">
               <Icon name="calculator" size={13} /> Estimación en vivo
               <span className="right cz-badge">{config.moneda}</span>
@@ -572,7 +571,7 @@ export default function Cotizador() {
             )}
           </section>
 
-          <details className="cz-card" style={{ flex: '0 0 auto' }}>
+          <details className="cz-card cz-card--info" style={{ flex: '0 0 auto' }}>
             <summary className="cz-summary">Cómo se arma el precio</summary>
             <div className="cz-lines" style={{ marginTop: 10 }}>
               <div className="cz-line"><span className="k">Franjas de traslado</span><span className="v">{config.zonas.map((z) => `${z.hastaKm} km`).join(' · ')}</span></div>
