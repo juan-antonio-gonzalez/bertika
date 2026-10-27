@@ -9,18 +9,6 @@ import { api } from '../store/api';
 // con Three.js. Sin marcas de agua, sin stock y sin licencias de terceros.
 const HERO_VIDEO = '/video/hero-bateria-3d.mp4';
 
-// Ficha técnica resumida de cada línea. Sale de las descripciones del catálogo
-// (siteData.js): acá solo se abrevia, no se agregan datos nuevos.
-const LINEA_DATOS = {
-  ferroviarias: { app: 'Arranque de locomotoras', spec: 'Uso severo · alto ciclado' },
-  traccion: { app: 'Autoelevadores y tracción', spec: '230 – 1750 Ah' },
-  estacionarias: { app: 'Reserva y emergencia', spec: 'Suministro continuo' },
-  solar: { app: 'Acumulación solar y eólica', spec: 'Descarga profunda' },
-  arranque: { app: 'Ignición de motores', spec: 'Alta entrega de corriente' },
-  especiales: { app: 'AGM · Gel · pilas · Ni-Cd', spec: 'Aplicaciones específicas' },
-  cargadores: { app: 'Carga y ecualización', spec: 'Control automático' },
-};
-
 export default function Landing() {
   const [stats, setStats] = useState({ clientes: 0, baterias: 0, activas: 0, entregadas: 0 });
   const [statsListo, setStatsListo] = useState(false);
@@ -62,9 +50,6 @@ export default function Landing() {
   // cuatro ceros no comunican nada.
   const hayStats = statsListo && Object.values(stats).some((n) => Number(n) > 0);
 
-  // Los títulos del catálogo están en mayúsculas; en el índice se leen mejor
-  // en caja baja (solo el índice, el catálogo conserva su estilo).
-  const enCajaBaja = (t) => t.charAt(0).toUpperCase() + t.slice(1).toLocaleLowerCase('es');
 
   const statList = [
     { n: stats.clientes, l: 'Clientes', ic: 'users' },
@@ -144,46 +129,28 @@ export default function Landing() {
       </section>
       )}
 
-      {/* Productos: matriz técnica. Densa y verificable, no un índice de tarjetas. */}
+      {/* Productos: grilla sin cajas, como la del fabricante. Foto, título en
+          mayúsculas, bajada y botón. Cada ficha abre su página de detalle. */}
       <section className="sec sec-alt">
         <div className="wrap">
           <header className="sec-head">
-            <span className="eyebrow">Catálogo</span>
-            <h2 className="sec-title">Siete líneas, siete regímenes de trabajo</h2>
-            <p className="sec-sub">
-              Cada aplicación exige una química y una construcción distinta. Esta es la referencia
-              rápida; el detalle con normas está en el catálogo.
-            </p>
+            <span className="eyebrow">Productos</span>
+            <h2 className="sec-title">Una batería para cada necesidad</h2>
           </header>
 
-          <div className="matriz">
-            <div className="matriz-head" aria-hidden="true">
-              <span />
-              <span>Línea</span>
-              <span>Aplicación</span>
-              <span>Referencia</span>
-              <span />
-            </div>
-
-            {PRODUCTOS.map((p) => {
-              const datos = LINEA_DATOS[p.id] || {};
-              return (
-                <Link key={p.id} to={`/productos/${p.id}`} className="matriz-row">
-                  <span className="matriz-thumb">
-                    <img src={p.img} alt="" loading="lazy" width="370" height="214" />
-                  </span>
-                  <span className="matriz-nombre">{enCajaBaja(p.titulo)}</span>
-                  <span className="matriz-app">{datos.app}</span>
-                  <span className="matriz-spec">{datos.spec}</span>
-                  <span className="matriz-go" aria-hidden="true">→</span>
+          <div className="lineup">
+            {PRODUCTOS.map((p) => (
+              <article key={p.id} className="lineup-item">
+                <Link to={`/productos/${p.id}`} className="lineup-foto" tabIndex={-1} aria-hidden="true">
+                  <img src={p.img} alt="" width="370" height="214" />
                 </Link>
-              );
-            })}
-          </div>
-
-          <div className="matriz-pie">
-            <span>¿No sabés qué línea te corresponde? Con el número de serie lo identificamos.</span>
-            <Link to="/productos" className="btn primary">Ver el catálogo completo</Link>
+                <h3 className="lineup-t">
+                  <Link to={`/productos/${p.id}`}>{p.titulo}</Link>
+                </h3>
+                <p className="lineup-d">{p.desc}</p>
+                <Link to={`/productos/${p.id}`} className="lineup-btn">Más info</Link>
+              </article>
+            ))}
           </div>
         </div>
       </section>
