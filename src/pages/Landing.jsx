@@ -196,7 +196,7 @@ export default function Landing() {
             <div>
               <span className="eyebrow eyebrow--light">Política ecológica</span>
               <h2 className="eco-title">Comprometidos con el medio ambiente</h2>
-              <Link to="/politica-ecologica" className="btn lg eco-btn">
+              <Link to="/politica-ecologica" className="btn primary lg eco-btn">
                 Conocé nuestra política ecológica
               </Link>
             </div>
