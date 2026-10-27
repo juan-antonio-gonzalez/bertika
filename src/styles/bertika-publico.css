@@ -823,9 +823,13 @@ body.site-pub-body {
 
 .site-pub .eco-band {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 56px;
-  align-items: end;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+  max-width: 720px;
+}
+
+.site-pub .eco-btn {
+  margin-top: 26px;
 }
 
 .site-pub .eco-title {

@@ -196,19 +196,9 @@ export default function Landing() {
             <div>
               <span className="eyebrow eyebrow--light">Política ecológica</span>
               <h2 className="eco-title">Comprometidos con el medio ambiente</h2>
-            </div>
-            <div>
-              <p className="eco-lead">
-                Los acumuladores usados son una fuente de materias primas secundarias: metales,
-                plásticos y ácidos se recolectan, clasifican y desvían de los residuos urbanos hacia
-                operaciones de reutilización autorizadas.
-              </p>
-              <ul className="eco-list">
-                <li>Reciclaje responsable</li>
-                <li>Operaciones autorizadas</li>
-                <li>Menos residuos urbanos</li>
-              </ul>
-              <Link to="/politica-ecologica" className="btn lg">Conocé nuestra política ecológica</Link>
+              <Link to="/politica-ecologica" className="btn lg eco-btn">
+                Conocé nuestra política ecológica
+              </Link>
             </div>
           </div>
         </div>
