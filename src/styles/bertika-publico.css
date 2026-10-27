@@ -834,11 +834,11 @@ body.site-pub-body {
 
 /* Títulos de tarjeta con acento de marca. */
 .site-pub .card .card-title--red {
-  color: var(--danger-fg);
+  color: #e8352f;
 }
 
 .site-pub .card .card-title--green {
-  color: var(--green-600);
+  color: #0e9c45;
 }
 
 /* Intro de la página ecológica: texto solo, sin imagen. */
@@ -3403,11 +3403,11 @@ body.site-pub-body {
 /* Palabra de acento en rojo de marca. */
 .site-pub .txt-red,
 .site-pub .sec-title .txt-red {
-  color: var(--danger-fg);
+  color: #e8352f;
 }
 
 /* Palabra de acento en verde de marca. */
 .site-pub .txt-green,
 .site-pub .sec-title .txt-green {
-  color: var(--green-600);
+  color: #0e9c45;
 }
