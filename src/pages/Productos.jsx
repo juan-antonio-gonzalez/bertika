@@ -52,12 +52,17 @@ export default function Productos() {
                   <span className="producto-kicker">{String(i + 1).padStart(2, '0')} · Línea</span>
                   <h3 className="producto-t">{p.titulo}</h3>
                   <p className="producto-d">{p.desc}</p>
-                  <Link
-                    to={`/contacto?asunto=${encodeURIComponent(p.titulo)}`}
-                    className="producto-link"
-                  >
-                    Consultar esta línea <span aria-hidden="true">→</span>
-                  </Link>
+                  <div className="producto-acciones">
+                    <Link to={`/productos/${p.id}`} className="btn primary">
+                      Ver ficha técnica
+                    </Link>
+                    <Link
+                      to={`/contacto?asunto=${encodeURIComponent(p.titulo)}`}
+                      className="producto-link"
+                    >
+                      Consultar <span aria-hidden="true">→</span>
+                    </Link>
+                  </div>
                 </div>
               </article>
             ))}

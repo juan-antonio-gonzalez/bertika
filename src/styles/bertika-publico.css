@@ -3412,3 +3412,11 @@ body.site-pub-body {
   /* El mismo verde del hero («Energía»): literal para que no lo pise el scope. */
   color: #2ee35c;
 }
+
+/* Acciones de cada línea en el catálogo. */
+.site-pub .producto-acciones {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 18px;
+}
