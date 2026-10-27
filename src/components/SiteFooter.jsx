@@ -3,13 +3,13 @@ import { Icon } from './ui';
 import { CONTACTO, OFICIAL } from '../data/siteData';
 
 const productos = [
-  { label: 'Baterías Ferroviarias', to: '/productos#ferroviarias' },
-  { label: 'Baterías de Tracción', to: '/productos#traccion' },
-  { label: 'Baterías Estacionarias', to: '/productos#estacionarias' },
-  { label: 'Baterías de uso Solar y Eólico', to: '/productos#solar' },
-  { label: 'Baterías de Arranque', to: '/productos#arranque' },
-  { label: 'Baterías Especiales', to: '/productos#especiales' },
-  { label: 'Cargadores de Baterías', to: '/productos#cargadores' },
+  { label: 'Baterías Ferroviarias', to: '/productos/ferroviarias' },
+  { label: 'Baterías de Tracción', to: '/productos/traccion' },
+  { label: 'Baterías Estacionarias', to: '/productos/estacionarias' },
+  { label: 'Baterías de uso Solar y Eólico', to: '/productos/solar' },
+  { label: 'Baterías de Arranque', to: '/productos/arranque' },
+  { label: 'Baterías Especiales', to: '/productos/especiales' },
+  { label: 'Cargadores de Baterías', to: '/productos/cargadores' },
 ];
 
 export default function SiteFooter() {

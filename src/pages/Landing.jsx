@@ -168,7 +168,7 @@ export default function Landing() {
             {PRODUCTOS.map((p) => {
               const datos = LINEA_DATOS[p.id] || {};
               return (
-                <Link key={p.id} to={`/productos#${p.id}`} className="matriz-row">
+                <Link key={p.id} to={`/productos/${p.id}`} className="matriz-row">
                   <span className="matriz-thumb">
                     <img src={p.img} alt="" loading="lazy" width="370" height="214" />
                   </span>

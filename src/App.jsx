@@ -21,6 +21,7 @@ const Cliente = lazy(() => import('./pages/Cliente'));
 const Tracker = lazy(() => import('./pages/Tracker'));
 const Settings = lazy(() => import('./pages/Settings'));
 const Productos = lazy(() => import('./pages/Productos'));
+const ProductoDetalle = lazy(() => import('./pages/ProductoDetalle'));
 const Empresa = lazy(() => import('./pages/Empresa'));
 const Servicios = lazy(() => import('./pages/Servicios'));
 const Ecologica = lazy(() => import('./pages/Ecologica'));
@@ -153,6 +154,7 @@ export default function App() {
         <Route path="/" element={<PublicLayout><Landing /></PublicLayout>} />
         <Route path="/empresa" element={<PublicLayout><Empresa /></PublicLayout>} />
         <Route path="/productos" element={<PublicLayout><Productos /></PublicLayout>} />
+        <Route path="/productos/:id" element={<PublicLayout><ProductoDetalle /></PublicLayout>} />
         <Route path="/servicios" element={<PublicLayout><Servicios /></PublicLayout>} />
         <Route path="/politica-ecologica" element={<PublicLayout><Ecologica /></PublicLayout>} />
         <Route path="/como-llegar" element={<PublicLayout><ComoLlegar /></PublicLayout>} />
