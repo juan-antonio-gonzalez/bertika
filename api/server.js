@@ -1636,10 +1636,11 @@ app.post('/api/whatsapp/envios/procesar', authRequired, permisoRequerido('sistem
 // ---------- Auth ----------
 app.post('/api/auth/login', loginLimiter, async (req, res) => {
   const { email, password } = req.body || {};
-  if (!validEmail(email) || !password || password.length > 128) {
-    return res.status(400).json({ error: 'Faltan email y password' });
+  const usuarioT = String(email || '').trim();
+  if (!usuarioT || !password || usuarioT.length > 254 || password.length > 128) {
+    return res.status(400).json({ error: 'Ingresá usuario y contraseña' });
   }
-  const u = await one('SELECT * FROM usuarios WHERE email = $1 AND activo = true', [String(email).toLowerCase().trim()]);
+  const u = await one('SELECT * FROM usuarios WHERE email = $1 AND activo = true', [usuarioT.toLowerCase()]);
   if (!u) return res.status(401).json({ error: 'Credenciales invalidas' });
 
   // Bloqueo por cuenta: frena ataques distribuidos que cambian de IP.

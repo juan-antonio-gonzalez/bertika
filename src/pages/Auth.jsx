@@ -41,7 +41,7 @@ export default function Auth() {
     setError('');
     setAviso('');
     if (!email.trim() || !password) {
-      setError('Ingresá tu email y contraseña.');
+      setError('Ingresá tu usuario y contraseña.');
       return;
     }
     setEnviando(true);
@@ -205,7 +205,7 @@ export default function Auth() {
               <>
                 <h2>Iniciar sesión</h2>
                 <p className="auth-sub">
-                  Usá el email y la contraseña que te entregó el taller para acceder
+                  Usá el usuario y la contraseña que te entregó el taller para acceder
                   a tu plataforma.
                 </p>
 
@@ -217,13 +217,12 @@ export default function Auth() {
 
                 <form onSubmit={onSubmit} noValidate>
                   <div className="field">
-                    <label>Email *</label>
+                    <label>Usuario *</label>
                     <input
                       className="input"
-                      type="email"
+                      type="text"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      placeholder="tu@email.com"
                       autoComplete="username"
                       disabled={enviando}
                       autoFocus

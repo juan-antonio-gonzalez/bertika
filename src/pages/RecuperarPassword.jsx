@@ -13,7 +13,7 @@ export default function RecuperarPassword() {
     e.preventDefault();
     setError('');
     if (!email.trim()) {
-      setError('Ingresá el email de tu cuenta.');
+      setError('Ingresá el usuario de tu cuenta.');
       return;
     }
     setEnviando(true);
@@ -47,7 +47,7 @@ export default function RecuperarPassword() {
         ) : (
           <>
             <p className="auth-sub">
-              Poné el email de tu cuenta. Te vamos a enviar un enlace de un solo uso para
+              Poné el usuario de tu cuenta. Te vamos a enviar un enlace de un solo uso para
               definir una contraseña nueva. No te vamos a enviar la contraseña por correo.
             </p>
             {error && (
@@ -57,14 +57,13 @@ export default function RecuperarPassword() {
             )}
             <form onSubmit={submit} noValidate>
               <div className="field">
-                <label>Email *</label>
+                <label>Usuario *</label>
                 <input
                   className="input"
-                  type="email"
+                  type="text"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="tu@email.com"
-                  autoComplete="email"
+                  autoComplete="username"
                   disabled={enviando}
                   autoFocus
                 />
