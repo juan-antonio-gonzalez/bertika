@@ -1,4 +1,5 @@
 import { Link, Navigate, useParams } from 'react-router-dom';
+import AmsaLink from '../components/AmsaLink';
 import { CONTACTO, PRODUCTOS } from '../data/siteData';
 import { ORDEN_LINEAS, PRODUCTO_DETALLE } from '../data/productosDetalle';
 
@@ -92,6 +93,9 @@ export default function ProductoDetalle() {
                 <Link className="btn" to="/contacto">
                   Formulario de contacto
                 </Link>
+                <AmsaLink href={producto.amsaUrl} className="btn" showIcon>
+                  Ficha en AMSA
+                </AmsaLink>
               </div>
             </div>
           </div>

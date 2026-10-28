@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { Icon } from './ui';
-import { CONTACTO, OFICIAL } from '../data/siteData';
+import AmsaLink from './AmsaLink';
+import { AMSA, CONTACTO, OFICIAL } from '../data/siteData';
 
 const productos = [
   { label: 'Baterías Ferroviarias', to: '/productos/ferroviarias' },
@@ -28,9 +29,6 @@ export default function SiteFooter() {
             </div>
             <p style={{ margin: '0 0 16px', lineHeight: 1.6, color: 'rgba(211, 226, 220, 0.72)', maxWidth: 340 }}>
               Especialistas en acumuladores eléctricos industriales. Diagnóstico, reparación, reacondicionamiento y entrega con garantía.
-            </p>
-            <p style={{ margin: '0 0 16px', color: 'var(--green)', fontWeight: 600 }}>
-              {OFICIAL}
             </p>
             <div className="footer-contact-item">
               <img src="/img/marker-footer.png" alt="" />
@@ -83,6 +81,31 @@ export default function SiteFooter() {
               </Link>
             </div>
           </div>
+        </div>
+
+        {/* Representación oficial: logo del fabricante al pie de todas las
+            páginas públicas, con link directo a su sitio. */}
+        <div className="footer-amsa-strip">
+          <AmsaLink
+            href={AMSA.url}
+            className="footer-amsa-link"
+            title="Sitio oficial de AMSA Forbat"
+          >
+            <img
+              src={AMSA.logoFooter}
+              alt="FORBAT · Acumuladores Industriales"
+              width="151"
+              height="126"
+              loading="lazy"
+            />
+            <span className="footer-amsa-txt">
+              <strong>{OFICIAL}</strong>
+              <small>Acumuladores industriales · Córdoba, Argentina</small>
+            </span>
+            <span className="footer-amsa-url">
+              bateriasamsa.com <span aria-hidden="true">↗</span>
+            </span>
+          </AmsaLink>
         </div>
 
         <div className="footer-legal">

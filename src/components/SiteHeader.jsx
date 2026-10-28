@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Icon } from './ui';
+import AmsaLink from './AmsaLink';
+import { AMSA, OFICIAL } from '../data/siteData';
 import { useStore } from '../store/store';
 
 const menuItems = [
@@ -42,19 +44,30 @@ export default function SiteHeader() {
       {/* Logo + normas */}
       <header className="site-header">
         <div className="wrap">
-          <Link to="/" className="brand" aria-label="Bertika — Acumuladores Industriales">
-            <img
-              className="brand-logo"
-              src="/img/logo-bertika.png"
-              alt="Bertika® Acumuladores Industriales"
-              width="460"
-              height="82"
-            />
+          <div className="brand">
+            <Link to="/" className="brand-logo-link" aria-label="Bertika — Inicio">
+              <img
+                className="brand-logo"
+                src="/img/logo-bertika.png"
+                alt="Bertika® Acumuladores Industriales"
+                width="460"
+                height="82"
+              />
+            </Link>
             <span className="brand-lines">
-              <span className="brand-tag">Acumuladores Industriales</span>
-              <span className="brand-amsa">Representante oficial de AMSA Forbat</span>
+              <Link to="/" className="brand-tag">Acumuladores Industriales</Link>
+              {/* El header está en todas las páginas públicas: este es el link
+                  permanente al sitio del fabricante que representamos. */}
+              <AmsaLink
+                href={AMSA.url}
+                className="brand-amsa brand-amsa--link"
+                title="Sitio oficial de AMSA Forbat"
+                showIcon
+              >
+                {OFICIAL}
+              </AmsaLink>
             </span>
-          </Link>
+          </div>
           <div className="header-right">
             <div className="normas-box">
               {[

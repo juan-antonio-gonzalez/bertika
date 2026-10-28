@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { Link, useNavigate, Navigate } from 'react-router-dom';
 import { Icon } from '../components/ui';
+import AmsaLink from '../components/AmsaLink';
 import { useStore } from '../store/store';
-import { CONTACTO } from '../data/siteData';
+import { AMSA, CONTACTO } from '../data/siteData';
 
 const IcoMarker = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -84,7 +85,12 @@ export default function Auth() {
             </ul>
           </div>
 
-          <div className="auth-amsa">Representante oficial de <b>AMSA Forbat</b></div>
+          <div className="auth-amsa">
+            Representante oficial de{' '}
+            <AmsaLink href={AMSA.url} className="link-amsa" title="Sitio oficial de AMSA Forbat">
+              <b>{AMSA.nombre}</b>
+            </AmsaLink>
+          </div>
         </div>
 
         <div className="auth-form-side">

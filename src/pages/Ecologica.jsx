@@ -1,5 +1,7 @@
 import { Link } from 'react-router-dom';
+import AmsaLink from '../components/AmsaLink';
 import SectionVideo from '../components/SectionVideo';
+import { AMSA } from '../data/siteData';
 
 export default function Ecologica() {
   return (
@@ -17,14 +19,46 @@ export default function Ecologica() {
 
       <section className="sec">
         <div className="wrap">
-          <div className="eco-intro">
-            <h2 className="sec-title">Comprometidos con el medio ambiente</h2>
-            <p>
-              A nivel de gestión de recursos, los acumuladores eléctricos usados se consideran como una
-              fuente de materias primas secundarias. Metales, plásticos y ácidos son recolectados por el
-              sistema y desviados del circuito de los residuos urbanos, y dirigidos a operaciones de
-              reutilización y eliminación definitiva.
-            </p>
+          {/* Mismo relato y misma imagen que la landing de AMSA Forbat, con
+              links directos a su política ecológica y a su sitio. */}
+          <div className="split">
+            <figure className="split-media">
+              <img
+                src="/img/img-mundo.jpg"
+                alt="Compromiso ambiental de AMSA Forbat"
+                loading="lazy"
+              />
+              <figcaption>
+                Recuperación de metales, plásticos y ácidos: economía circular en la producción
+                de acumuladores.
+              </figcaption>
+            </figure>
+
+            <div className="split-body">
+              <span className="eyebrow">El fabricante</span>
+              <h2 className="sec-title">Comprometidos con el medio ambiente</h2>
+              <p className="split-lead">
+                A nivel de gestión de recursos, los acumuladores eléctricos usados se consideran una
+                fuente de materias primas secundarias. Metales, plásticos y ácidos son recolectados
+                por el sistema y desviados del circuito de los residuos urbanos, y dirigidos a
+                operaciones de reutilización y eliminación definitiva.
+              </p>
+              <p className="split-lead">
+                La utilización de materiales reciclados para la producción de acumuladores eléctricos
+                tiene un impacto positivo: disminuye el gasto de energía, la contaminación derivada de
+                la producción y el ahorro de recursos naturales.{' '}
+                <strong>FORBAT Acumuladores Industriales S.R.L.</strong> mantiene un compromiso
+                ineludible con la protección del medio ambiente.
+              </p>
+              <div className="amsa-eco-acciones">
+                <AmsaLink href={AMSA.politicaUrl} className="btn primary" showIcon>
+                  Ver la política ecológica de AMSA
+                </AmsaLink>
+                <AmsaLink href={AMSA.url} className="btn" showIcon>
+                  Sitio oficial de AMSA Forbat
+                </AmsaLink>
+              </div>
+            </div>
           </div>
 
           <div className="grid3 mt32" style={{ gap: 20 }}>
@@ -43,6 +77,14 @@ export default function Ecologica() {
           <div className="center mt32">
             <Link to="/contacto" className="btn primary lg">Consultar sobre reciclaje</Link>
           </div>
+
+          <p className="amsa-eco-fuente">
+            Contenido y política del fabricante:{' '}
+            <AmsaLink href={AMSA.politicaUrl} className="link-amsa">
+              AMSA Forbat
+            </AmsaLink>
+            .
+          </p>
         </div>
       </section>
     </>

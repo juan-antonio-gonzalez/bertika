@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Icon } from '../components/ui';
+import AmsaLink from '../components/AmsaLink';
 import { useStore } from '../store/store';
 import { api } from '../store/api';
-import { CONTACTO, HORARIOS } from '../data/siteData';
+import { AMSA, CONTACTO, HORARIOS } from '../data/siteData';
 import { LEGAL_DOCS } from '../data/legal';
 
 const IcoMarker = () => (
@@ -167,7 +168,12 @@ export default function Contacto() {
             </ul>
           </div>
 
-          <div className="auth-amsa">Representante oficial de <b>AMSA Forbat</b></div>
+          <div className="auth-amsa">
+            Representante oficial de{' '}
+            <AmsaLink href={AMSA.url} className="link-amsa" title="Sitio oficial de AMSA Forbat">
+              <b>{AMSA.nombre}</b>
+            </AmsaLink>
+          </div>
         </div>
 
         <div className="auth-form-side">

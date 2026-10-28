@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { PRODUCTOS } from '../data/siteData';
+import { AMSA, PRODUCTOS } from '../data/siteData';
+import AmsaLink from '../components/AmsaLink';
 import SectionVideo from '../components/SectionVideo';
 
 export default function Productos() {
@@ -31,7 +32,11 @@ export default function Productos() {
             <h2 className="sec-title">Siete líneas de acumuladores industriales</h2>
             <p className="sec-sub">
               Cada línea está pensada para un régimen de trabajo distinto. Somos representantes
-              oficiales de AMSA Forbat: las mismas baterías del fabricante, con el respaldo del taller.
+              oficiales de{' '}
+              <AmsaLink href={AMSA.url} className="link-amsa" title="Sitio oficial de AMSA Forbat">
+                {AMSA.nombre}
+              </AmsaLink>
+              : las mismas baterías del fabricante, con el respaldo del taller.
             </p>
           </header>
 
@@ -62,6 +67,13 @@ export default function Productos() {
                     >
                       Consultar <span aria-hidden="true">→</span>
                     </Link>
+                    <AmsaLink
+                      href={p.amsaUrl}
+                      className="producto-link producto-link--amsa"
+                      title={`${p.titulo} en el sitio de AMSA Forbat`}
+                    >
+                      Ver en AMSA <span aria-hidden="true">↗</span>
+                    </AmsaLink>
                   </div>
                 </div>
               </article>
@@ -70,7 +82,12 @@ export default function Productos() {
 
           <div className="productos-pie">
             <p>¿No sabés qué línea te corresponde? Con el número de serie lo identificamos.</p>
-            <Link to="/contacto" className="btn primary lg">Consultar disponibilidad</Link>
+            <div className="productos-pie-acciones">
+              <AmsaLink href={AMSA.url} className="btn lg" showIcon>
+                Sitio de AMSA Forbat
+              </AmsaLink>
+              <Link to="/contacto" className="btn primary lg">Consultar disponibilidad</Link>
+            </div>
           </div>
         </div>
       </section>

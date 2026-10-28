@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Icon } from '../components/ui';
+import AmsaLink from '../components/AmsaLink';
 import SectionVideo from '../components/SectionVideo';
-import { PRODUCTOS } from '../data/siteData';
+import { AMSA, OFICIAL, PRODUCTOS } from '../data/siteData';
 import { api } from '../store/api';
 
 // Video de fondo del hero: escena 3D propia (nave de baterías) renderizada
@@ -86,7 +87,14 @@ export default function Landing() {
           <div className="hero-inner">
             <div style={{ display: 'flex', gap: 8, marginBottom: 18, flexWrap: 'wrap' }}>
               <span className="pill"><Icon name="bolt" size={13} /> Taller especializado en baterías industriales</span>
-              <span className="pill"><Icon name="shield" size={13} /> Representante oficial de AMSA Forbat</span>
+              <AmsaLink
+                href={AMSA.url}
+                className="pill pill--amsa"
+                title="Sitio oficial de AMSA Forbat"
+                showIcon
+              >
+                <Icon name="shield" size={13} /> {OFICIAL}
+              </AmsaLink>
             </div>
             <h1>
               <span className="hl-orange">Salud energética</span><br />
@@ -185,6 +193,9 @@ export default function Landing() {
                 <dd>Trazable por número de serie</dd>
               </div>
             </dl>
+            <p className="amsa-landing-line">
+              Somos <AmsaLink href={AMSA.url} className="link-amsa">representantes oficiales de {AMSA.nombre}</AmsaLink>.
+            </p>
             <Link to="/empresa" className="btn primary">Conozca más</Link>
           </div>
         </div>

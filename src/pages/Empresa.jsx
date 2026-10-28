@@ -1,6 +1,8 @@
 import { Link } from 'react-router-dom';
 import { Icon } from '../components/ui';
+import AmsaLink from '../components/AmsaLink';
 import SectionVideo from '../components/SectionVideo';
+import { AMSA, OFICIAL } from '../data/siteData';
 
 const fundadores = [
   {
@@ -89,9 +91,15 @@ export default function Empresa() {
                 nuestros clientes. Sabemos que si la energía se detiene, el negocio se paraliza. Por eso,
                 trabajamos para <strong>garantizar que tu operación nunca se frene</strong>.
               </p>
-              <div className="banner-warn" style={{ marginBottom: 0, maxWidth: 520 }}>
-                Representante oficial de AMSA Forbat
-              </div>
+              <AmsaLink
+                href={AMSA.url}
+                className="banner-warn banner-warn--amsa"
+                title="Sitio oficial de AMSA Forbat"
+                style={{ marginBottom: 0, maxWidth: 520 }}
+                showIcon
+              >
+                {OFICIAL} · Conocé el fabricante
+              </AmsaLink>
             </div>
           </div>
 

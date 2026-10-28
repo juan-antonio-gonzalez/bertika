@@ -262,6 +262,16 @@ body.site-pub-body {
   font-size: 11px;
   font-weight: 500;
   letter-spacing: 0.3px;
+  text-decoration: none;
+}
+
+.site-pub .brand-tag:hover {
+  color: var(--text);
+}
+
+.site-pub .brand-logo-link {
+  display: block;
+  line-height: 0;
 }
 
 .site-pub .brand-amsa {
@@ -269,6 +279,47 @@ body.site-pub-body {
   font-size: 10px;
   font-weight: 650;
   letter-spacing: 0.3px;
+}
+
+.site-pub .brand-amsa--link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+
+.site-pub .brand-amsa--link:hover {
+  color: #fff;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.site-pub .brand-amsa--link .amsa-ext {
+  font-size: 9px;
+}
+
+/* Enlaces al fabricante: subrayado verde que funciona tanto en fondos
+   oscuros como en las secciones claras del sitio. */
+.site-pub .link-amsa {
+  color: inherit;
+  font-weight: 650;
+  text-decoration: underline;
+  text-decoration-color: var(--green);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.site-pub .link-amsa:hover {
+  color: var(--green);
+}
+
+.site-pub .amsa-ext {
+  display: inline-block;
+  margin-left: 4px;
+  font-size: 0.85em;
+  line-height: 1;
+  opacity: 0.85;
 }
 
 /* Normas: fichas de vidrio con el check en verde. */
@@ -564,6 +615,21 @@ body.site-pub-body {
   backdrop-filter: blur(8px);
 }
 
+.site-pub .hero .pill--amsa {
+  text-decoration: none;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.site-pub .hero .pill--amsa:hover {
+  border-color: var(--brand-line);
+  background: rgba(9, 30, 27, 0.9);
+  color: #fff;
+}
+
+.site-pub .hero .pill--amsa .amsa-ext {
+  color: var(--green);
+}
+
 /* Cabeceras de las páginas internas */
 .site-pub .page-hero {
   background:
@@ -781,6 +847,13 @@ body.site-pub-body {
   color: var(--muted);
 }
 
+/* Línea de representación en la sección Empresa de la home. */
+.site-pub .amsa-landing-line {
+  margin: -6px 0 22px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
 .site-pub .datos {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -909,6 +982,21 @@ body.site-pub-body {
   font-size: 16px;
   line-height: 1.7;
   color: var(--muted);
+}
+
+/* Bloque del fabricante en Política Ecológica: mismas acciones que su landing. */
+.site-pub .amsa-eco-acciones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 24px;
+}
+
+.site-pub .amsa-eco-fuente {
+  margin: 24px 0 0;
+  text-align: center;
+  font-size: 12px;
+  color: var(--muted-2);
 }
 
 .site-pub .eco-title {
@@ -2074,6 +2162,32 @@ body.site-pub-body {
   color: var(--warn-fg);
 }
 
+.site-pub .banner-warn--amsa {
+  text-decoration: none;
+  transition: filter 0.15s ease, border-color 0.15s ease;
+}
+
+.site-pub .banner-warn--amsa:hover {
+  filter: brightness(1.05);
+  border-color: var(--green);
+}
+
+/* Acciones del catálogo: link corto al fabricante en cada ficha. */
+.site-pub .productos-pie-acciones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.site-pub .producto-link--amsa {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.site-pub .producto-link--amsa:hover {
+  color: var(--green);
+}
+
 .site-pub .banner-green {
   background: var(--green-bg);
   border: 1px solid var(--brand-line);
@@ -2201,6 +2315,71 @@ body.site-pub-body {
   border-top: 1px solid var(--line-soft);
 }
 
+/* Pie: representación oficial con el logo del fabricante. */
+.site-pub .footer-amsa-strip {
+  margin-top: 28px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.site-pub .footer-amsa-link {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.site-pub .footer-amsa-link img {
+  width: 64px;
+  height: auto;
+  flex: none;
+}
+
+.site-pub .footer-amsa-txt {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.site-pub .footer-amsa-txt strong {
+  color: var(--green);
+  font-size: 12.5px;
+  font-weight: 750;
+  letter-spacing: 0.01em;
+}
+
+.site-pub .footer-amsa-txt small {
+  color: var(--muted-2);
+  font-size: 11.5px;
+}
+
+.site-pub .footer-amsa-url {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted-2);
+  font-size: 12px;
+}
+
+.site-pub .footer-amsa-link:hover strong,
+.site-pub .footer-amsa-link:hover .footer-amsa-url {
+  color: var(--green);
+}
+
+@media (max-width: 560px) {
+  .site-pub .footer-amsa-link img {
+    width: 52px;
+  }
+
+  .site-pub .footer-amsa-url {
+    width: 100%;
+    margin-left: 0;
+  }
+}
+
 /* --------------------------------------------------------------------------
    12 · Acceso / contacto (auth-wrap)
    -------------------------------------------------------------------------- */
@@ -2262,6 +2441,10 @@ body.site-pub-body {
 .site-pub .auth-amsa {
   color: var(--muted);
   border-top: 1px solid var(--line);
+}
+
+.site-pub .auth-amsa .link-amsa {
+  color: var(--green);
 }
 
 .site-pub .auth-form-side {
