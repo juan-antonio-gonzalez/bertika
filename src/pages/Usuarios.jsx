@@ -205,6 +205,20 @@ function FormUsuariosModal({ mode, user, tecnicos, clientes, categorias, busy, o
                 </select>
               </div>
             )}
+
+            {rolFinal !== 'tecnico' && (
+              <div className="field">
+                <label>Categoría de acceso</label>
+                <input className="input" value="No aplica a este rol" readOnly />
+                <small className="ayuda">
+                  Las categorías agrupan permisos del <b>Personal interno</b>. Para asignar una,
+                  cambiá el rol a <b>Personal interno</b>.
+                  {rolFinal === 'admin'
+                    ? ' El administrador ya tiene todos los permisos.'
+                    : ' El cliente solo ve su portal.'}
+                </small>
+              </div>
+            )}
           </FormGrid>
 
           {!edicionPropia && (
@@ -378,6 +392,14 @@ export default function Usuarios() {
     }
   };
 
+  // Refresca la lista antes de abrir el formulario: si otra persona creó una
+  // categoría en otra pestaña, o la página quedó abierta, el desplegable no
+  // puede quedar con datos viejos.
+  const abrirUsuario = async (data) => {
+    await cargarCategorias();
+    setModal(data);
+  };
+
   useEffect(() => { cargar(); cargarCategorias(); }, []);
 
   const vincular = (u) => {
@@ -494,7 +516,7 @@ export default function Usuarios() {
           <p className="page-sub">Cuentas, categorías, permisos, doble factor y recuperación de contraseñas.</p>
         </div>
         {vista === 'usuarios' && puedeCrear && (
-          <button className="btn primary" onClick={() => setModal({ mode: 'crear' })}>
+          <button className="btn primary" onClick={() => abrirUsuario({ mode: 'crear' })}>
             <Icon name="plus" size={14} /> Crear usuario
           </button>
         )}
@@ -511,7 +533,7 @@ export default function Usuarios() {
           role="tab"
           aria-selected={vista === 'usuarios'}
           className={`tab${vista === 'usuarios' ? ' active' : ''}`}
-          onClick={() => setVista('usuarios')}
+          onClick={() => { setVista('usuarios'); cargarCategorias(); }}
         >
           Usuarios {lista ? `(${lista.length})` : ''}
         </button>
@@ -520,7 +542,7 @@ export default function Usuarios() {
           role="tab"
           aria-selected={vista === 'categorias'}
           className={`tab${vista === 'categorias' ? ' active' : ''}`}
-          onClick={() => setVista('categorias')}
+          onClick={() => { setVista('categorias'); cargarCategorias(); }}
         >
           Categorías {categorias ? `(${categorias.length})` : ''}
         </button>
@@ -570,7 +592,7 @@ export default function Usuarios() {
                     </div>
                     <div className="row wrap" style={{ gap: 6 }}>
                       {puedeEditar && (
-                        <button className="btn sm" onClick={() => setModal({ mode: 'editar', user: u })}>
+                        <button className="btn sm" onClick={() => abrirUsuario({ mode: 'editar', user: u })}>
                           <Icon name="gear" size={13} /> Editar
                         </button>
                       )}
