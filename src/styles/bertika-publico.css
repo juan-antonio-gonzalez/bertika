@@ -573,7 +573,7 @@ body.site-pub-body {
 }
 
 .site-pub .page-hero-bg img {
-  opacity: 0.22;
+  opacity: 1;
 }
 
 .site-pub .page-hero-kicker {
@@ -587,7 +587,7 @@ body.site-pub-body {
   color: var(--text);
   font-weight: 750;
   letter-spacing: -0.03em;
-  text-shadow: 0 3px 26px rgba(0, 0, 0, 0.5);
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.55), 0 3px 26px rgba(0, 0, 0, 0.5);
 }
 
 .site-pub .page-hero-title .hl-orange,
@@ -607,6 +607,8 @@ body.site-pub-body {
 
 .site-pub .breadcrumb {
   color: var(--muted-2);
+  /* Con la imagen del hero a plena opacidad, el breadcrumb necesita sombra. */
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.7);
 }
 
 .site-pub .breadcrumb a {
