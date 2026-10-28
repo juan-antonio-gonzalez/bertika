@@ -318,7 +318,8 @@ body.site-pub-body {
   line-height: 1.1;
 }
 
-/* Login: el botón primario del kit. */
+/* Login de clientes: discreto, solo el icono. No compite con los CTA
+   comerciales (Cotizador / Contacto) y sigue accesible por teclado. */
 .site-pub .header-login {
   background-image: var(--grad-cta);
   color: var(--green-ink) !important;
@@ -335,6 +336,40 @@ body.site-pub-body {
 }
 
 .site-pub .header-login:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 3px;
+}
+
+/* Variante icono: sin fondo ni sombra, en tono apagado hasta el hover. */
+.site-pub .header-login--icon {
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  color: var(--muted) !important;
+  box-shadow: none;
+  opacity: 0.6;
+  transition:
+    opacity 0.15s ease,
+    color 0.15s ease,
+    background-color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.site-pub .header-login--icon:hover {
+  opacity: 1;
+  color: var(--green) !important;
+  background: rgba(92, 232, 148, 0.08);
+  border-color: var(--line);
+  filter: none;
+}
+
+.site-pub .header-login--icon:focus-visible {
+  opacity: 1;
   outline: 2px solid var(--green);
   outline-offset: 3px;
 }
@@ -369,6 +404,7 @@ body.site-pub-body {
 }
 
 .site-pub .site-main-nav .nav-cta {
+  margin-left: 0;
   background-image: var(--grad-cta);
   color: var(--green-ink) !important;
   border-radius: 999px;
@@ -376,6 +412,15 @@ body.site-pub-body {
   box-shadow:
     0 12px 28px -16px rgba(20, 212, 80, 0.85),
     inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+/* Cotizador y Contacto van juntos, a la derecha, con el mismo verde. */
+.site-pub .site-main-nav .nav-cta--cotizador {
+  margin-left: auto;
+}
+
+.site-pub .site-main-nav .nav-cta + .nav-cta {
+  margin-left: 8px;
 }
 
 .site-pub .site-main-nav .nav-cta:hover {
@@ -412,7 +457,7 @@ body.site-pub-body {
   background: var(--green);
 }
 
-@media (max-width: 960px) {
+@media (max-width: 1160px) {
   .site-pub .site-main-nav {
     background: rgba(4, 16, 15, 0.98);
     border-bottom: 1px solid var(--line);
@@ -422,6 +467,11 @@ body.site-pub-body {
 
   .site-pub .site-main-nav a {
     border-top: 1px solid var(--line-soft);
+  }
+
+  /* En el menú desplegable los dos CTA se apilan con el mismo margen. */
+  .site-pub .site-main-nav .nav-cta {
+    margin: 12px 18px;
   }
 
   .site-pub .dropdown {
@@ -446,7 +496,13 @@ body.site-pub-body {
 }
 
 .site-pub .hero-bg img {
-  opacity: 0.22;
+  opacity: 1;
+}
+
+/* El video del hero se ve a plena opacidad: el degradé de abajo es el que
+   cuida la legibilidad del texto, no una capa translúcida sobre la imagen. */
+.site-pub .hero-video.is-ready {
+  opacity: 1;
 }
 
 .site-pub .hero-bg::after {
@@ -3184,6 +3240,13 @@ body.site-pub-body {
   .site-pub .header-login {
     padding: 10px 14px;
     font-size: 11.5px;
+  }
+
+  /* El login es solo un icono: conserva el círculo también en celular. */
+  .site-pub .header-login--icon {
+    width: 34px;
+    height: 34px;
+    padding: 0;
   }
 
   .site-pub .hero-inner {

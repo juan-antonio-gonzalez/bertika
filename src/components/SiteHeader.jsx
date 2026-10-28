@@ -71,9 +71,13 @@ export default function SiteHeader() {
                 </div>
               ))}
             </div>
-            <Link to={loginDest} className="header-login" title="Ingreso de clientes">
+            <Link
+              to={loginDest}
+              className="header-login header-login--icon"
+              title="Ingreso de clientes"
+              aria-label="Ingreso de clientes"
+            >
               <Icon name="user" size={16} />
-              <span>Login</span>
             </Link>
           </div>
         </div>
@@ -103,6 +107,7 @@ export default function SiteHeader() {
                 </Link>
               )
             )}
+            <Link to="/cotizador" className="nav-cta nav-cta--cotizador">COTIZADOR</Link>
             <Link to="/contacto" className="nav-cta">CONTACTO</Link>
           </div>
           <button className="nav-toggle" onClick={() => setOpen((v) => !v)} aria-label="Abrir menú" aria-expanded={open}>

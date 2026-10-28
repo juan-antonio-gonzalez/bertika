@@ -709,7 +709,9 @@ button.chip:hover { border-color: var(--brand-amber); background: var(--brand-so
 .site-main-nav a { color: #fff; font-size: 12.5px; font-weight: 700; letter-spacing: 0.5px; padding: 15px 13px; text-transform: uppercase; opacity: 0.9; white-space: nowrap; }
 .site-main-nav a:hover { background: rgba(255, 255, 255, 0.08); color: var(--amber); opacity: 1; }
 .site-main-nav a.active { color: var(--amber); opacity: 1; }
-.site-main-nav .nav-cta { margin-left: auto; background: linear-gradient(135deg, var(--amber), var(--orange)); color: #0a1740 !important; border-radius: 8px; padding: 9px 16px; }
+.site-main-nav .nav-cta { margin-left: 0; background: linear-gradient(135deg, var(--amber), var(--orange)); color: #0a1740 !important; border-radius: 8px; padding: 9px 16px; }
+.site-main-nav .nav-cta--cotizador { margin-left: auto; }
+.site-main-nav .nav-cta + .nav-cta { margin-left: 8px; }
 .site-main-nav .nav-cta:hover { filter: brightness(1.08); color: #0a1740 !important; }
 .has-dropdown { position: relative; }
 .has-dropdown > a::after { content: '▾'; font-size: 9px; margin-left: 6px; opacity: 0.7; }
@@ -721,8 +723,14 @@ button.chip:hover { border-color: var(--brand-amber); background: var(--brand-so
 .nav-toggle { display: none; background: transparent; border: none; cursor: pointer; padding: 10px 8px; flex-direction: column; gap: 5px; }
 .nav-toggle span { display: block; width: 23px; height: 2.5px; border-radius: 2px; background: var(--amber); }
 
+/* Las normas se ocultan antes que el menú: son tres insignias anchas. */
 @media (max-width: 960px) {
   .normas-box { display: none; }
+}
+
+/* El menú pasa a hamburguesa en 1160px: con Cotizador + Contacto los siete
+   ítems ya no entran en una laptop chica (a 1024px el último CTA se cortaba). */
+@media (max-width: 1160px) {
   .site-main-nav { display: none; flex-direction: column; position: absolute; top: 100%; left: 0; right: 0; background: #0d1c4a; z-index: 70; border-bottom: 1px solid rgba(255, 255, 255, 0.1); align-items: stretch; max-height: calc(100vh - 110px); overflow-y: auto; }
   .site-main-nav.open { display: flex; }
   .site-main-nav a { padding: 14px 18px; border-top: 1px solid rgba(255, 255, 255, 0.06); white-space: normal; }
