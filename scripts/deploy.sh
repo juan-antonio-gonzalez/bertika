@@ -34,9 +34,12 @@ EXCLUDE_DOCS=(--exclude '*.md' --exclude '*.pdf' --exclude 'readme*' --exclude '
 
 echo "== Deploy frontend a $SSH_HOST =="
 # --delete solo sobre el dist: nunca se tocan api/ (con su node_modules),
-# src/data ni uploads/ (que viven en el mismo directorio raiz).
+# src/data, uploads/, ni las subcarpetas del editor de tarjetas
+# (/tarjetas y /tarjetas-src), que no forman parte del dist del frontend
+# y se borrarian con --delete.
 rsync -az --delete \
-  --exclude api --exclude src --exclude uploads --exclude scripts "${EXCLUDE_DOCS[@]}" \
+  --exclude api --exclude src --exclude uploads --exclude scripts \
+  --exclude /tarjetas --exclude /tarjetas-src "${EXCLUDE_DOCS[@]}" \
   -e "ssh $SSH_ARGS" dist/ "root@$SSH_HOST:$REMOTE_DIR/"
 
 echo "== Deploy API =="
@@ -64,7 +67,15 @@ EOF
 
 echo "== Verificacion =="
 sleep 2
-for url in "https://bertika.com/" "https://bertika.com/api/public/stats" "https://srv1981179.hstgr.cloud/"; do
+for url in "https://bertika.com/" "https://bertika.com/tarjetas/" "https://bertika.com/api/public/stats" "https://srv1981179.hstgr.cloud/"; do
   code=$(curl -ks -o /dev/null -w "%{http_code}" "$url" || true)
   echo "$code  $url"
 done
+
+# El sitio de tarjetas vive en /var/www/bertika/tarjetas y no sale del dist:
+# si un deploy lo dejara en 404, hay que revisar los excludes de arriba.
+tarjetas_code=$(curl -ks -o /dev/null -w "%{http_code}" "https://bertika.com/tarjetas/" || true)
+if [ "$tarjetas_code" != "200" ]; then
+  echo "ERROR: https://bertika.com/tarjetas/ responde $tarjetas_code. Revisar /var/www/bertika/tarjetas y /tarjetas-src."
+  exit 1
+fi
