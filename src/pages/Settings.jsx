@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../store/store';
-import { api } from '../store/api';
+import { api, setToken } from '../store/api';
 import { Icon, fmtFecha } from '../components/ui';
+import { PasswordInput, PasswordPair } from '../components/PasswordFields';
+import { validarPassword } from '../data/passwordPolicy';
 
 export default function Settings() {
   const user = useStore((s) => s.user);
@@ -15,6 +17,9 @@ export default function Settings() {
   const [pass, setPass] = useState('');
   const [pass2, setPass2] = useState('');
   const [busy, setBusy] = useState(false);
+  const [twofa, setTwofa] = useState(Boolean(user?.twofa_email));
+  const [pass2fa, setPass2fa] = useState('');
+  const [busy2fa, setBusy2fa] = useState(false);
 
   const perfil = user?.rol === 'tecnico'
     ? data.tecnicos.find((t) => t.id === user.id)
@@ -25,20 +30,41 @@ export default function Settings() {
   const cambiarPass = async (e) => {
     e.preventDefault();
     if (!actual) return toastShow('Ingresá tu contraseña actual', 'warn');
-    if (pass.length < 8) return toastShow('La contraseña debe tener al menos 8 caracteres', 'warn');
+    const error = validarPassword(pass, { email: user?.email });
+    if (error) return toastShow(error, 'warn');
     if (pass !== pass2) return toastShow('Las contraseñas no coinciden', 'warn');
     setBusy(true);
     try {
-      // Endpoint de autoservicio: funciona para cualquier rol (admin/tecnico/cliente).
-      await api('/auth/password', { method: 'POST', body: { password_actual: actual, password: pass } });
+      // Endpoint de autoservicio: funciona para cualquier rol. Devuelve un token
+      // nuevo para que esta sesión siga abierta; las demás se invalidan.
+      const res = await api('/auth/password', { method: 'POST', body: { password_actual: actual, password: pass } });
+      if (res?.token) setToken(res.token);
       setActual('');
       setPass('');
       setPass2('');
-      toastShow('Contraseña actualizada', 'ok');
+      toastShow('Contraseña actualizada. Cerramos las otras sesiones.', 'ok');
     } catch (err) {
       toastShow(err.message, 'error');
     } finally {
       setBusy(false);
+    }
+  };
+
+  const cambiar2fa = async () => {
+    if (!pass2fa) return toastShow('Ingresá tu contraseña actual para confirmar', 'warn');
+    setBusy2fa(true);
+    try {
+      const res = await api('/auth/2fa', {
+        method: 'PATCH',
+        body: { activo: !twofa, password: pass2fa },
+      });
+      setTwofa(Boolean(res.twofa_email));
+      setPass2fa('');
+      toastShow(res.twofa_email ? 'Doble factor activado: te pediremos un código en cada login.' : 'Doble factor desactivado.', 'ok');
+    } catch (err) {
+      toastShow(err.message, 'error');
+    } finally {
+      setBusy2fa(false);
     }
   };
 
@@ -49,7 +75,7 @@ export default function Settings() {
         <p className="page-sub">Perfil y seguridad de tu cuenta.</p>
       </div>
 
-      <div className="grid2" style={{ maxWidth: 820 }}>
+      <div className="grid2" style={{ maxWidth: 900 }}>
         <div className="col">
           <div className="card">
             <h3 className="card-title"><Icon name="user" size={15} /> Información del perfil</h3>
@@ -78,21 +104,54 @@ export default function Settings() {
           </div>
 
           <div className="card">
+            <h3 className="card-title"><Icon name="shield" size={15} /> Doble factor por email</h3>
+            <p className="card-sub">
+              Si lo activás, además de la contraseña te vamos a pedir un código de 6 dígitos
+              enviado a <b>{user?.email}</b> cada vez que inicies sesión.
+            </p>
+            <div className="row" style={{ gap: 8, margin: '10px 0 14px' }}>
+              <span className={`badge ${twofa ? 'green' : 'gray'}`}>{twofa ? 'Activado' : 'Desactivado'}</span>
+              <span className="muted" style={{ fontSize: 12 }}>
+                {twofa ? 'Cada login pide código por correo.' : 'Recomendado para administradores.'}
+              </span>
+            </div>
+            <div className="field">
+              <PasswordInput
+                label="Contraseña actual para confirmar"
+                value={pass2fa}
+                onChange={(e) => setPass2fa(e.target.value)}
+                placeholder="Tu contraseña actual"
+                autoComplete="current-password"
+              />
+            </div>
+            <button type="button" className="btn" onClick={cambiar2fa} disabled={busy2fa || !pass2fa}>
+              <Icon name={twofa ? 'x' : 'shield'} size={14} /> {busy2fa ? 'Guardando...' : twofa ? 'Desactivar doble factor' : 'Activar doble factor'}
+            </button>
+          </div>
+
+          <div className="card">
             <h3 className="card-title"><Icon name="shield" size={15} /> Cambiar contraseña</h3>
             <form onSubmit={cambiarPass} className="col">
-              <div className="field">
-                <label>Contraseña actual</label>
-                <input className="input" type="password" value={actual} onChange={(e) => setActual(e.target.value)} placeholder="Tu contraseña actual" autoComplete="current-password" />
-              </div>
-              <div className="field">
-                <label>Nueva contraseña</label>
-                <input className="input" type="password" value={pass} onChange={(e) => setPass(e.target.value)} placeholder="Mínimo 8 caracteres" autoComplete="new-password" />
-              </div>
-              <div className="field">
-                <label>Repetir contraseña</label>
-                <input className="input" type="password" value={pass2} onChange={(e) => setPass2(e.target.value)} placeholder="Repetí la contraseña" autoComplete="new-password" />
-              </div>
-              <button className="btn primary" disabled={busy || !actual || !pass}><Icon name="check" size={14} /> {busy ? 'Guardando...' : 'Actualizar contraseña'}</button>
+              <PasswordInput
+                label="Contraseña actual"
+                value={actual}
+                onChange={(e) => setActual(e.target.value)}
+                placeholder="Tu contraseña actual"
+                autoComplete="current-password"
+              />
+              <PasswordPair
+                password={pass}
+                setPassword={setPass}
+                confirm={pass2}
+                setConfirm={setPass2}
+                label="Nueva contraseña"
+                confirmLabel="Repetir contraseña nueva"
+                help="Mínimo 12 caracteres. No podés reutilizar una de las últimas 5."
+                email={user?.email}
+              />
+              <button className="btn primary" disabled={busy || !actual || !pass}>
+                <Icon name="check" size={14} /> {busy ? 'Guardando...' : 'Actualizar contraseña'}
+              </button>
             </form>
           </div>
         </div>
@@ -110,6 +169,16 @@ export default function Settings() {
             <div className="row mt16">
               <button className="btn" onClick={() => { logout(); navigate('/'); }}><Icon name="logout" size={14} /> Salir / cambiar de usuario</button>
             </div>
+          </div>
+
+          <div className="card">
+            <h3 className="card-title"><Icon name="info" size={15} /> Seguridad de la cuenta</h3>
+            <ul className="muted" style={{ margin: 0, paddingLeft: 18, fontSize: 12.5, lineHeight: 1.7 }}>
+              <li>La contraseña se guarda cifrada con bcrypt; nadie puede leerla.</li>
+              <li>Si cambiás la contraseña, se cierran las sesiones de los demás dispositivos.</li>
+              <li>Después de 5 intentos fallidos la cuenta se bloquea 15 minutos.</li>
+              <li>El enlace de recuperación vence a los 30 minutos y sirve una sola vez.</li>
+            </ul>
           </div>
         </div>
       </div>

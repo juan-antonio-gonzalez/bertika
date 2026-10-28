@@ -2,7 +2,7 @@ import 'dotenv/config';
 import path from 'node:path';
 import { createReadStream, readdirSync, statSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { createHmac, createHash, timingSafeEqual, randomUUID } from 'node:crypto';
+import { createHmac, createHash, timingSafeEqual, randomUUID, randomBytes, randomInt } from 'node:crypto';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -28,6 +28,7 @@ import {
 } from './crm.js';
 import { generarCodigoUnico, digitar, formatearCodigo } from './codigo.js';
 import { normalizarBooleano } from './validaciones.js';
+import { validarPassword as validarPasswordFuerte } from '../src/data/passwordPolicy.js';
 import { RESPUESTAS_EJEMPLO, colorDePaleta, normalizarAtajo, fragmentoConTexto } from '../src/data/respuestas.js';
 import {
   AUTOMATIZACIONES, normalizarAutomatizaciones, debeSeguirPresupuesto, debePedirRetiro,
@@ -119,6 +120,37 @@ const loginLimiter = rateLimit({
   message: { error: 'Demasiados intentos de login. Espera unos minutos y reintenta.' },
 });
 
+// Verificación de 2FA: un poco más de margen para tipear el código, pero
+// acotado. El reenvío y la recuperación tienen límites más estrictos.
+const twofaLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'Demasiados intentos con el código. Pedí uno nuevo o esperá unos minutos.' },
+});
+const resend2faLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'Pediste demasiados códigos. Esperá unos minutos.' },
+});
+const recuperarLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'Demasiadas solicitudes de recuperación. Esperá unos minutos.' },
+});
+const resetLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'Demasiados intentos para restablecer. Esperá unos minutos.' },
+});
+
 // Endpoints publicos: evitan abuso de consultas/seguimiento.
 const publicLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -152,11 +184,10 @@ const fmtARS = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'AR
 const nowIso = () => new Date().toISOString();
 
 // ---------- validacion de entrada (hardening) ----------
-const BCRYPT_ROUNDS = 12;
+const BCRYPT_ROUNDS = 13;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const limStr = (v, max = 200) => (typeof v === 'string' ? v.trim().slice(0, max).replace(/\u0000/g, '') : '');
 const validEmail = (e) => typeof e === 'string' && e.length <= 254 && EMAIL_RE.test(e);
-const validPassword = (p) => typeof p === 'string' && p.length >= 8 && p.length <= 72;
 const arrBounded = (v, max = 50) => Array.isArray(v) && v.length <= max;
 // Numero escrito a mano ("12,4") dentro de un rango fisico, o null si no sirve.
 const numEnRango = (v, min, max) => {
@@ -396,6 +427,56 @@ async function asegurarCodigos() {
         ALTER TABLE usuarios ALTER COLUMN permisos TYPE JSONB USING NULLIF(permisos, '')::jsonb;
       END IF;
     END $$`);
+  // Categorias de acceso: nombre + mapa de permisos reutilizable. El usuario
+  // guarda su categoria y, ademas, su mapa efectivo (permite personalizar).
+  await query('ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS categoria_id TEXT');
+  await query('ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS twofa_email BOOLEAN DEFAULT FALSE');
+  await query('ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS token_version INTEGER DEFAULT 0');
+  await query('ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS ultimo_acceso TIMESTAMPTZ');
+  await query('ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS intentos_fallidos INTEGER DEFAULT 0');
+  await query('ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS bloqueado_hasta TIMESTAMPTZ');
+  await query(`CREATE TABLE IF NOT EXISTS password_history (
+    id TEXT PRIMARY KEY,
+    usuario_id TEXT NOT NULL,
+    password_hash TEXT NOT NULL,
+    creado_en TIMESTAMPTZ DEFAULT now()
+  )`);
+  await query('CREATE INDEX IF NOT EXISTS idx_password_history_usuario ON password_history (usuario_id, creado_en DESC)');
+  await query(`CREATE TABLE IF NOT EXISTS categorias_acceso (
+    id TEXT PRIMARY KEY,
+    nombre TEXT NOT NULL,
+    descripcion TEXT,
+    permisos JSONB NOT NULL DEFAULT '{}'::jsonb,
+    creado_en TIMESTAMPTZ DEFAULT now(),
+    actualizado_en TIMESTAMPTZ
+  )`);
+  await query('CREATE UNIQUE INDEX IF NOT EXISTS categorias_acceso_nombre_uniq ON categorias_acceso (lower(nombre))');
+  await query(`CREATE TABLE IF NOT EXISTS login_2fa (
+    id TEXT PRIMARY KEY,
+    usuario_id TEXT NOT NULL,
+    codigo_hash TEXT NOT NULL,
+    expira_en TIMESTAMPTZ NOT NULL,
+    intentos INTEGER NOT NULL DEFAULT 0,
+    consumido BOOLEAN NOT NULL DEFAULT FALSE,
+    creado_en TIMESTAMPTZ DEFAULT now(),
+    ip TEXT,
+    user_agent TEXT
+  )`);
+  await query('CREATE INDEX IF NOT EXISTS idx_login_2fa_usuario ON login_2fa (usuario_id, creado_en DESC)');
+  await query(`CREATE TABLE IF NOT EXISTS password_resets (
+    id TEXT PRIMARY KEY,
+    usuario_id TEXT NOT NULL,
+    token_hash TEXT NOT NULL,
+    expira_en TIMESTAMPTZ NOT NULL,
+    usado BOOLEAN NOT NULL DEFAULT FALSE,
+    creado_en TIMESTAMPTZ DEFAULT now(),
+    ip TEXT,
+    user_agent TEXT
+  )`);
+  await query('CREATE INDEX IF NOT EXISTS idx_password_resets_usuario ON password_resets (usuario_id, creado_en DESC)');
+  await query('CREATE INDEX IF NOT EXISTS idx_password_resets_hash ON password_resets (token_hash)');
+  await query("DELETE FROM login_2fa WHERE expira_en < now() - interval '7 days'");
+  await query("DELETE FROM password_resets WHERE expira_en < now() - interval '30 days'");
   await query('ALTER TABLE wa_conversaciones ADD COLUMN IF NOT EXISTS etapa TEXT');
   await query('ALTER TABLE wa_conversaciones ADD COLUMN IF NOT EXISTS monto_estimado NUMERIC');
   // Orden vinculada a la oportunidad: cierra el circulo chat -> cotizacion -> orden.
@@ -658,6 +739,234 @@ async function enviarMailContacto(d) {
 const esAdmin = (req) => req.user.rol === 'admin';
 const esTecnico = (req) => req.user.rol === 'tecnico';
 const esCliente = (req) => req.user.rol === 'cliente';
+
+/* ------------------------------------------------------------------ *
+ * Seguridad de cuentas: contraseñas, 2FA por email y reset por email
+ * ------------------------------------------------------------------ */
+const APP_URL = String(process.env.PUBLIC_URL || 'https://bertika.com').replace(/\/+$/, '');
+const MAX_INTENTOS_LOGIN = 5;
+const BLOQUEO_MINUTOS = 15;
+const RESET_MINUTOS = 30;
+const TWOFA_MINUTOS = 10;
+
+const maskEmail = (email = '') => {
+  const [local, dominio] = String(email).split('@');
+  if (!dominio) return 'tu correo';
+  return `${local.slice(0, 2)}***@${dominio}`;
+};
+
+const hashCodigo2FA = (challenge, usuarioId, code) =>
+  createHmac('sha256', SECRET).update(`2fa:${challenge}:${usuarioId}:${code}`).digest('hex');
+const hashResetToken = (token) =>
+  createHmac('sha256', SECRET).update(`reset:${token}`).digest('hex');
+const mismoTexto = (a, b) => {
+  const ba = Buffer.from(String(a));
+  const bb = Buffer.from(String(b));
+  return ba.length === bb.length && timingSafeEqual(ba, bb);
+};
+
+function layoutEmail({ titulo, intro, code, link, boton, nota }) {
+  return `<div style="margin:0;padding:24px;background:#f1f6f3;font-family:Arial,Helvetica,sans-serif">
+  <div style="max-width:540px;margin:0 auto;background:#ffffff;border:1px solid #dbe7e1;border-radius:16px;overflow:hidden">
+    <div style="background:#0a1740;color:#ffffff;padding:20px 24px;font-size:21px;font-weight:800;letter-spacing:.3px">
+      BERTIKA<span style="color:#2ee35c">®</span>
+    </div>
+    <div style="padding:26px 24px;color:#1b2b27;font-size:15px;line-height:1.65">
+      <h1 style="margin:0 0 10px;font-size:20px;color:#0a1740">${titulo}</h1>
+      <p style="margin:0 0 18px">${intro}</p>
+      ${code ? `<div style="margin:20px 0;padding:18px;border-radius:12px;background:#e9fbf0;border:1px solid #b8eccb;text-align:center;font-size:34px;font-weight:800;letter-spacing:9px;color:#0a1740">${code}</div>` : ''}
+      ${link ? `<p style="margin:22px 0"><a href="${link}" style="display:inline-block;background:#14d450;color:#04100f;text-decoration:none;font-weight:800;padding:12px 20px;border-radius:999px">${boton || 'Continuar'}</a></p>
+        <p style="margin:0 0 14px;font-size:12px;color:#60736b;word-break:break-all">Si el botón no funciona, copiá este enlace: ${link}</p>` : ''}
+      <p style="margin:18px 0 0;font-size:12px;color:#60736b">${nota || ''}</p>
+      <p style="margin:14px 0 0;font-size:12px;color:#60736b">Si no solicitaste esto, ignorá el mensaje y cambiá tu contraseña.</p>
+    </div>
+    <div style="padding:14px 24px;background:#f7faf8;border-top:1px solid #e4ede8;color:#71837b;font-size:11px">
+      Bertika® · Acumuladores Industriales · bertika.com
+    </div>
+  </div>
+</div>`;
+}
+
+async function enviarMailSeguro(to, subject, text, html) {
+  if (!mailer) {
+    const e = new Error('El envío de correo no está configurado');
+    e.status = 503;
+    throw e;
+  }
+  await mailer.sendMail({ from: MAIL_FROM, to, subject, text, html });
+}
+
+async function enviarCodigo2FA(u, code, req) {
+  const ip = req.ip || 'IP desconocida';
+  const html = layoutEmail({
+    titulo: 'Tu código de acceso',
+    intro: `Ingresaste tu contraseña correctamente. Para terminar de entrar a Bertika, usá este código:`,
+    code,
+    nota: `El código vence en ${TWOFA_MINUTOS} minutos. Solicitud desde ${esc(ip)}.`,
+  });
+  const text = `Bertika · Código de acceso\n\nTu código es: ${code}\nVence en ${TWOFA_MINUTOS} minutos.\nSolicitud desde ${ip}.\nSi no fuiste vos, cambiá tu contraseña.`;
+  await enviarMailSeguro(u.email, 'Bertika · Código de acceso', text, html);
+}
+
+async function enviarResetPassword(u, req) {
+  const token = await crearResetPassword(u, req);
+  const link = `${APP_URL}/auth/reset/${token}`;
+  const html = layoutEmail({
+    titulo: 'Restablecer contraseña',
+    intro: 'Recibimos un pedido para restablecer la contraseña de tu cuenta. El enlace es de un solo uso.',
+    link,
+    boton: 'Crear una contraseña nueva',
+    nota: `El enlace vence en ${RESET_MINUTOS} minutos. Si no pediste el cambio, no hagas nada.`,
+  });
+  const text = `Bertika · Restablecer contraseña\n\nAbrí este enlace para crear una contraseña nueva (vence en ${RESET_MINUTOS} minutos):\n${link}\n\nSi no pediste el cambio, ignorá este mensaje.`;
+  await enviarMailSeguro(u.email, 'Bertika · Restablecer contraseña', text, html);
+}
+
+async function avisarPasswordCambiada(u, req) {
+  try {
+    const html = layoutEmail({
+      titulo: 'Tu contraseña cambió',
+      intro: 'La contraseña de tu cuenta de Bertika se actualizó correctamente. Por seguridad, cerramos las sesiones anteriores.',
+      nota: `Solicitud desde ${esc(req.ip || 'IP desconocida')}.`,
+    });
+    await enviarMailSeguro(u.email, 'Bertika · Tu contraseña cambió', 'La contraseña de tu cuenta de Bertika se actualizó. Si no fuiste vos, contactá al taller de inmediato.', html);
+  } catch (e) {
+    console.error('[mail] no se pudo avisar el cambio de contraseña:', e.message);
+  }
+}
+
+async function avisar2FA(u, activo, req) {
+  try {
+    const html = layoutEmail({
+      titulo: activo ? 'Doble factor activado' : 'Doble factor desactivado',
+      intro: activo
+        ? 'A partir de ahora, al iniciar sesión te vamos a pedir un código de 6 dígitos enviado a este correo.'
+        : 'El doble factor por correo quedó desactivado. Para volver a activarlo, entrá a Mi cuenta → Seguridad.',
+      nota: `Cambio realizado desde ${esc(req.ip || 'IP desconocida')}.`,
+    });
+    await enviarMailSeguro(u.email, `Bertika · Doble factor ${activo ? 'activado' : 'desactivado'}`, `El doble factor por correo quedó ${activo ? 'activado' : 'desactivado'}.`, html);
+  } catch (e) {
+    console.error('[mail] no se pudo avisar el cambio de 2FA:', e.message);
+  }
+}
+
+function passwordError(password, u = {}) {
+  return validarPasswordFuerte(password, { email: u.email || '', nombre: '' });
+}
+
+function passwordErrorOrThrow(password, u = {}) {
+  const error = passwordError(password, u);
+  if (!error) return null;
+  const e = new Error(error);
+  e.status = 400;
+  throw e;
+}
+
+async function hashPasswordNueva(password, u = {}) {
+  passwordErrorOrThrow(password, u);
+  return bcrypt.hash(String(password), BCRYPT_ROUNDS);
+}
+
+async function guardarPassword(usuario, password) {
+  passwordErrorOrThrow(password, usuario);
+  const historial = await query(
+    'SELECT password_hash FROM password_history WHERE usuario_id = $1 ORDER BY creado_en DESC LIMIT 5',
+    [usuario.id]
+  );
+  for (const h of historial) {
+    if (await bcrypt.compare(String(password), h.password_hash)) {
+      const e = new Error('No podés reutilizar una contraseña de las últimas 5. Elegí una nueva.');
+      e.status = 400;
+      throw e;
+    }
+  }
+  const hash = await bcrypt.hash(String(password), BCRYPT_ROUNDS);
+  await query(
+    'UPDATE usuarios SET password_hash = $2, token_version = COALESCE(token_version,0) + 1, intentos_fallidos = 0, bloqueado_hasta = NULL WHERE id = $1',
+    [usuario.id, hash]
+  );
+  await query('INSERT INTO password_history (id, usuario_id, password_hash) VALUES ($1,$2,$3)', [randomUUID(), usuario.id, hash]);
+  await query(
+    `DELETE FROM password_history WHERE usuario_id = $1 AND id NOT IN (
+       SELECT id FROM password_history WHERE usuario_id = $1 ORDER BY creado_en DESC LIMIT 5
+     )`,
+    [usuario.id]
+  );
+  return hash;
+}
+
+async function registrarFalloLogin(u) {
+  const intentos = Number(u.intentos_fallidos || 0) + 1;
+  if (intentos >= MAX_INTENTOS_LOGIN) {
+    await query(
+      "UPDATE usuarios SET intentos_fallidos = 0, bloqueado_hasta = now() + make_interval(mins => $2::int) WHERE id = $1",
+      [u.id, BLOQUEO_MINUTOS]
+    );
+    return true;
+  }
+  await query('UPDATE usuarios SET intentos_fallidos = $2 WHERE id = $1', [u.id, intentos]);
+  return false;
+}
+
+async function registrarLoginOk(u) {
+  await query(
+    'UPDATE usuarios SET intentos_fallidos = 0, bloqueado_hasta = NULL, ultimo_acceso = now() WHERE id = $1',
+    [u.id]
+  );
+}
+
+async function crearChallenge2FA(u, req) {
+  if (!mailer) {
+    const e = new Error('El envío de correo no está configurado. Pedile al administrador que lo active.');
+    e.status = 503;
+    throw e;
+  }
+  const challenge = randomBytes(24).toString('hex');
+  const code = String(randomInt(0, 1000000)).padStart(6, '0');
+  const hash = hashCodigo2FA(challenge, u.id, code);
+  await query('DELETE FROM login_2fa WHERE usuario_id = $1 AND (consumido = true OR expira_en < now())', [u.id]);
+  await query(
+    `INSERT INTO login_2fa (id, usuario_id, codigo_hash, expira_en, ip, user_agent)
+     VALUES ($1,$2,$3, now() + make_interval(mins => $4::int), $5,$6)`,
+    [challenge, u.id, hash, TWOFA_MINUTOS, limStr(req.ip, 64), limStr(req.headers['user-agent'], 200)]
+  );
+  try {
+    await enviarCodigo2FA(u, code, req);
+  } catch (e) {
+    await query('DELETE FROM login_2fa WHERE id = $1', [challenge]);
+    throw e;
+  }
+  return challenge;
+}
+
+async function crearResetPassword(u, req) {
+  if (!mailer) {
+    const e = new Error('El envío de correo no está configurado');
+    e.status = 503;
+    throw e;
+  }
+  const token = randomBytes(32).toString('hex');
+  const hash = hashResetToken(token);
+  await query('DELETE FROM password_resets WHERE usuario_id = $1 AND (usado = true OR expira_en < now())', [u.id]);
+  await query(
+    `INSERT INTO password_resets (id, usuario_id, token_hash, expira_en, ip, user_agent)
+     VALUES ($1,$2,$3, now() + make_interval(mins => $4::int), $5,$6)`,
+    [randomUUID(), u.id, hash, RESET_MINUTOS, limStr(req.ip, 64), limStr(req.headers['user-agent'], 200)]
+  );
+  return token;
+}
+
+const publicUser = (u) => ({
+  id: u.id,
+  email: u.email,
+  rol: u.rol,
+  tecnico_id: u.tecnico_id,
+  cliente_id: u.cliente_id,
+  categoria_id: u.categoria_id || null,
+  twofa_email: Boolean(u.twofa_email),
+  permisos: permisosEfectivos({ rol: u.rol, permisos: u.permisos }),
+});
+
 
 function puedeLeerOrden(req, orden) {
   if (esAdmin(req)) return true;
@@ -1331,35 +1640,212 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
     return res.status(400).json({ error: 'Faltan email y password' });
   }
   const u = await one('SELECT * FROM usuarios WHERE email = $1 AND activo = true', [String(email).toLowerCase().trim()]);
-  if (!u || !(await bcrypt.compare(String(password), u.password_hash))) {
+  if (!u) return res.status(401).json({ error: 'Credenciales invalidas' });
+
+  // Bloqueo por cuenta: frena ataques distribuidos que cambian de IP.
+  if (u.bloqueado_hasta && new Date(u.bloqueado_hasta).getTime() > Date.now()) {
+    return res.status(429).json({
+      error: 'Demasiados intentos fallidos. Esperá unos minutos o restablecé tu contraseña.',
+      retryAfter: Math.ceil((new Date(u.bloqueado_hasta).getTime() - Date.now()) / 1000),
+    });
+  }
+
+  if (!(await bcrypt.compare(String(password), u.password_hash))) {
+    await registrarFalloLogin(u);
     return res.status(401).json({ error: 'Credenciales invalidas' });
   }
+
+  // La contraseña es correcta: se limpia el contador de fallos. El último
+  // acceso se registra recién cuando termina el segundo factor (si lo tiene).
+  await query('UPDATE usuarios SET intentos_fallidos = 0, bloqueado_hasta = NULL WHERE id = $1', [u.id]);
+
+  if (u.twofa_email) {
+    if (!mailer) {
+      return res.status(503).json({ error: 'El doble factor está activo pero el envío de correo no está configurado. Contactá al administrador.' });
+    }
+    try {
+      const challenge = await crearChallenge2FA(u, req);
+      return res.json({
+        twofa: true,
+        challenge,
+        email: maskEmail(u.email),
+        expiresIn: TWOFA_MINUTOS * 60,
+      });
+    } catch (e) {
+      console.error('[2fa] no se pudo enviar el código:', e.message);
+      return res.status(503).json({ error: 'No se pudo enviar el código por email. Probá de nuevo o contactá al administrador.' });
+    }
+  }
+
+  await registrarLoginOk(u);
   const token = signToken(u);
-  const user = { id: u.id, email: u.email, rol: u.rol, tecnico_id: u.tecnico_id, cliente_id: u.cliente_id, permisos: permisosEfectivos({ rol: u.rol, permisos: u.permisos }) };
-  return res.json({ token, user });
+  return res.json({ token, user: publicUser(u) });
+});
+
+// Segundo factor: canjea el challenge + código por el token definitivo.
+app.post('/api/auth/login/2fa', twofaLimiter, async (req, res) => {
+  const { challenge, code } = req.body || {};
+  if (!/^[a-f0-9]{48}$/.test(String(challenge || '')) || !/^\d{6}$/.test(String(code || ''))) {
+    return res.status(400).json({ error: 'Código inválido' });
+  }
+  const row = await one('SELECT * FROM login_2fa WHERE id = $1', [String(challenge)]);
+  if (!row || row.consumido) return res.status(401).json({ error: 'El código no es válido o ya fue usado. Pedí uno nuevo.' });
+  if (new Date(row.expira_en).getTime() < Date.now()) {
+    return res.status(401).json({ error: 'El código venció. Pedí uno nuevo.' });
+  }
+  if (Number(row.intentos) >= 5) {
+    return res.status(429).json({ error: 'Demasiados intentos con este código. Pedí uno nuevo.' });
+  }
+  const esperado = hashCodigo2FA(row.id, row.usuario_id, String(code));
+  if (!mismoTexto(esperado, row.codigo_hash)) {
+    await query('UPDATE login_2fa SET intentos = intentos + 1 WHERE id = $1', [row.id]);
+    return res.status(401).json({ error: 'Código incorrecto. Revisá el email e intentá de nuevo.' });
+  }
+
+  const u = await one('SELECT * FROM usuarios WHERE id = $1 AND activo = true', [row.usuario_id]);
+  if (!u) return res.status(401).json({ error: 'Usuario inexistente o inactivo' });
+  await query('UPDATE login_2fa SET consumido = true WHERE id = $1', [row.id]);
+  await registrarLoginOk(u);
+  const token = signToken(u);
+  return res.json({ token, user: publicUser(u) });
+});
+
+// Reenvía un código nuevo para un challenge todavía vigente.
+app.post('/api/auth/login/2fa/reenviar', resend2faLimiter, async (req, res) => {
+  const { challenge } = req.body || {};
+  if (!/^[a-f0-9]{48}$/.test(String(challenge || ''))) {
+    return res.status(400).json({ error: 'Solicitud inválida' });
+  }
+  const row = await one('SELECT * FROM login_2fa WHERE id = $1 AND consumido = false', [String(challenge)]);
+  if (!row) return res.status(401).json({ error: 'Volvé a iniciar sesión para pedir otro código.' });
+  const u = await one('SELECT * FROM usuarios WHERE id = $1 AND activo = true', [row.usuario_id]);
+  if (!u) return res.status(401).json({ error: 'Usuario inexistente o inactivo' });
+  if (!mailer) return res.status(503).json({ error: 'El envío de correo no está configurado.' });
+  const code = String(randomInt(0, 1000000)).padStart(6, '0');
+  const hash = hashCodigo2FA(row.id, u.id, code);
+  await query(
+    `UPDATE login_2fa
+        SET codigo_hash = $2, expira_en = now() + make_interval(mins => $3::int), intentos = 0
+      WHERE id = $1`,
+    [row.id, hash, TWOFA_MINUTOS]
+  );
+  try {
+    await enviarCodigo2FA(u, code, req);
+  } catch (e) {
+    console.error('[2fa] no se pudo reenviar el código:', e.message);
+    return res.status(503).json({ error: 'No se pudo enviar el código. Probá de nuevo en unos segundos.' });
+  }
+  return res.json({ ok: true, email: maskEmail(u.email), expiresIn: TWOFA_MINUTOS * 60 });
+});
+
+// Recuperación: SIEMPRE responde ok para no revelar si el email existe.
+app.post('/api/auth/recuperar', recuperarLimiter, async (req, res) => {
+  const email = String(req.body?.email || '').toLowerCase().trim();
+  if (!validEmail(email)) return res.json({ ok: true });
+  try {
+    const u = await one('SELECT * FROM usuarios WHERE email = $1 AND activo = true', [email]);
+    if (!u) return res.json({ ok: true });
+    const [ultimo] = await query('SELECT creado_en FROM password_resets WHERE usuario_id = $1 ORDER BY creado_en DESC LIMIT 1', [u.id]);
+    if (ultimo && Date.now() - new Date(ultimo.creado_en).getTime() < 60_000) {
+      return res.json({ ok: true });
+    }
+    await enviarResetPassword(u, req);
+    await auditar({ req, tabla: 'usuarios', registroId: u.id, accion: 'solicitar_reset', detalle: 'envío de enlace por email' });
+  } catch (e) {
+    // No se filtra al cliente si el correo falló o el usuario no existe.
+    console.error('[reset] no se pudo enviar el enlace:', e.message);
+  }
+  return res.json({ ok: true });
+});
+
+// Canjea el token del enlace por una contraseña nueva.
+app.post('/api/auth/reset', resetLimiter, async (req, res) => {
+  const { token, password } = req.body || {};
+  if (!/^[a-f0-9]{64}$/.test(String(token || ''))) {
+    return res.status(400).json({ error: 'El enlace no es válido o venció. Pedí uno nuevo.' });
+  }
+  const row = await one(
+    'SELECT * FROM password_resets WHERE token_hash = $1 AND usado = false AND expira_en > now()',
+    [hashResetToken(String(token))]
+  );
+  if (!row) return res.status(400).json({ error: 'El enlace no es válido o venció. Pedí uno nuevo.' });
+  const u = await one('SELECT * FROM usuarios WHERE id = $1 AND activo = true', [row.usuario_id]);
+  if (!u) return res.status(400).json({ error: 'La cuenta no está activa. Contactá al taller.' });
+  try {
+    await guardarPassword(u, password);
+  } catch (e) {
+    return res.status(e.status || 400).json({ error: e.message });
+  }
+  await query('UPDATE password_resets SET usado = true WHERE id = $1', [row.id]);
+  await query('UPDATE password_resets SET usado = true WHERE usuario_id = $1 AND id <> $2', [u.id, row.id]);
+  await auditar({ req, tabla: 'usuarios', registroId: u.id, accion: 'reset_password', detalle: 'enlace de recuperación' });
+  await avisarPasswordCambiada(u, req);
+  return res.json({ ok: true });
 });
 
 app.get('/api/auth/me', authRequired, async (req, res) => {
   const u = await one('SELECT * FROM usuarios WHERE id = $1', [req.user.sub]);
   if (!u) return res.status(401).json({ error: 'Usuario inexistente' });
-  return res.json({ id: u.id, email: u.email, rol: u.rol, tecnico_id: u.tecnico_id, cliente_id: u.cliente_id, permisos: permisosEfectivos({ rol: u.rol, permisos: u.permisos }) });
+  return res.json(publicUser(u));
 });
 
-// Cambio de contrasena de la PROPIA cuenta: cualquier rol autenticado.
-// Exige la contrasena actual; el PATCH /api/usuarios/:id sigue siendo solo admin.
+// Cambio de contraseña de la PROPIA cuenta: exige la actual y devuelve un
+// token nuevo para que esta sesión siga viva; las demás se invalidan.
 app.post('/api/auth/password', authRequired, async (req, res) => {
   const { password_actual, password } = req.body || {};
-  if (!validPassword(password)) {
-    return res.status(400).json({ error: 'La contrasena nueva debe tener entre 8 y 72 caracteres' });
-  }
   const u = await one('SELECT * FROM usuarios WHERE id = $1', [req.user.sub]);
   if (!u || !u.activo) return res.status(401).json({ error: 'Usuario inexistente o inactivo' });
   if (!password_actual || !(await bcrypt.compare(String(password_actual), u.password_hash))) {
-    return res.status(401).json({ error: 'La contrasena actual no es correcta' });
+    return res.status(401).json({ error: 'La contraseña actual no es correcta' });
   }
-  await query('UPDATE usuarios SET password_hash = $2 WHERE id = $1', [u.id, await bcrypt.hash(String(password), BCRYPT_ROUNDS)]);
-  return res.json({ ok: true });
+  const error = passwordError(password, u);
+  if (error) return res.status(400).json({ error });
+  try {
+    await guardarPassword(u, password);
+  } catch (e) {
+    return res.status(e.status || 400).json({ error: e.message });
+  }
+  const actualizado = await one('SELECT token_version FROM usuarios WHERE id = $1', [u.id]);
+  const token = signToken({ ...u, token_version: actualizado.token_version });
+  await auditar({ req, tabla: 'usuarios', registroId: u.id, accion: 'cambiar_password', detalle: 'autoservicio' });
+  await avisarPasswordCambiada(u, req);
+  return res.json({ ok: true, token });
 });
+
+// Activar/desactivar el doble factor por correo de la propia cuenta.
+app.patch('/api/auth/2fa', authRequired, async (req, res) => {
+  const activo = normalizarBooleano(req.body?.activo);
+  if (activo === null) return res.status(400).json({ error: 'Indicá si querés activar o desactivar el doble factor' });
+  const u = await one('SELECT * FROM usuarios WHERE id = $1', [req.user.sub]);
+  if (!u || !u.activo) return res.status(401).json({ error: 'Usuario inexistente o inactivo' });
+  if (!req.body?.password || !(await bcrypt.compare(String(req.body.password), u.password_hash))) {
+    return res.status(401).json({ error: 'La contraseña actual no es correcta' });
+  }
+  if (activo && !mailer) {
+    return res.status(400).json({ error: 'El envío de correo no está configurado. No se puede activar el doble factor.' });
+  }
+  if (activo) {
+    // Se manda el aviso ANTES de activar: si el correo falla, no dejamos al
+    // usuario sin poder entrar en el próximo login.
+    const html = layoutEmail({
+      titulo: 'Doble factor activado',
+      intro: 'A partir de ahora, al iniciar sesión te vamos a pedir un código de 6 dígitos enviado a este correo.',
+      nota: 'Si no fuiste vos, cambiá tu contraseña y avisá al taller.',
+    });
+    try {
+      await enviarMailSeguro(u.email, 'Bertika · Doble factor activado', 'El doble factor por correo quedó activado.', html);
+    } catch (e) {
+      console.error('[2fa] no se pudo enviar el correo de confirmación:', e.message);
+      return res.status(503).json({ error: 'No se pudo enviar el correo de confirmación. El doble factor no se activó.' });
+    }
+  }
+  await query('UPDATE usuarios SET twofa_email = $2 WHERE id = $1', [u.id, activo]);
+  if (!activo) await query('DELETE FROM login_2fa WHERE usuario_id = $1', [u.id]);
+  await auditar({ req, tabla: 'usuarios', registroId: u.id, accion: activo ? 'activar_2fa' : 'desactivar_2fa' });
+  if (!activo) await avisar2FA(u, false, req);
+  return res.json({ ok: true, twofa_email: activo });
+});
+
 
 // ---------- Estado global (para sincronizar el store) ----------
 // Se expone segun rol: admin ve todo; tecnico ve catalogos y sus ordenes
@@ -2513,9 +2999,115 @@ app.get('/api/respaldos/:archivo', authRequired, permisoRequerido('respaldos'), 
   stream.pipe(res);
 });
 
+// ---------- Categorías de acceso ----------
+// Una categoría es un nombre + un mapa de permisos reutilizable. El usuario
+// guarda su categoría y su mapa efectivo: así se puede personalizar sin perder
+// la plantilla. "aplicarUsuarios" propaga los cambios a todos sus usuarios.
+app.get('/api/categorias', authRequired, permisoRequerido('usuarios'), async (req, res) => {
+  const rows = await query(`
+    SELECT c.id, c.nombre, c.descripcion, c.permisos, c.creado_en, c.actualizado_en,
+           count(u.id)::int AS usuarios
+      FROM categorias_acceso c
+      LEFT JOIN usuarios u ON u.categoria_id = c.id AND u.rol = 'tecnico'
+     GROUP BY c.id
+     ORDER BY lower(c.nombre)
+  `);
+  return res.json(rows);
+});
+
+app.post('/api/categorias', authRequired, requireRol('admin'), async (req, res) => {
+  const nombre = limStr(req.body?.nombre, 40);
+  const descripcion = limStr(req.body?.descripcion, 160);
+  if (nombre.length < 2) return res.status(400).json({ error: 'El nombre de la categoría debe tener al menos 2 caracteres' });
+  const permisos = normalizarPermisos(req.body?.permisos, 'tecnico');
+  const id = await nextId('cat');
+  try {
+    await query(
+      'INSERT INTO categorias_acceso (id, nombre, descripcion, permisos) VALUES ($1,$2,$3,$4)',
+      [id, nombre, descripcion || null, permisos]
+    );
+  } catch (e) {
+    if (e.code === '23505') return res.status(400).json({ error: 'Ya existe una categoría con ese nombre' });
+    throw e;
+  }
+  await auditar({ req, tabla: 'categorias_acceso', registroId: id, accion: 'crear', despues: { nombre, descripcion, permisos } });
+  return res.status(201).json({ id });
+});
+
+app.patch('/api/categorias/:id', authRequired, requireRol('admin'), async (req, res) => {
+  const antes = await one('SELECT * FROM categorias_acceso WHERE id = $1', [req.params.id]);
+  if (!antes) return res.status(404).json({ error: 'Categoría no encontrada' });
+
+  const sets = [];
+  const params = [];
+  if (req.body?.nombre !== undefined) {
+    const nombre = limStr(req.body.nombre, 40);
+    if (nombre.length < 2) return res.status(400).json({ error: 'El nombre de la categoría debe tener al menos 2 caracteres' });
+    params.push(nombre); sets.push(`nombre = $${params.length}`);
+  }
+  if (req.body?.descripcion !== undefined) {
+    params.push(limStr(req.body.descripcion, 160) || null); sets.push(`descripcion = $${params.length}`);
+  }
+  let permisosNuevos = null;
+  if (req.body?.permisos !== undefined) {
+    permisosNuevos = normalizarPermisos(req.body.permisos, 'tecnico');
+    params.push(permisosNuevos); sets.push(`permisos = $${params.length}`);
+  }
+  const aplicarUsuarios = normalizarBooleano(req.body?.aplicarUsuarios) === true;
+  if (!sets.length && !aplicarUsuarios) return res.status(400).json({ error: 'Sin campos para actualizar' });
+
+  params.push(new Date()); sets.push(`actualizado_en = $${params.length}`);
+  params.push(req.params.id);
+  let despues;
+  try {
+    despues = await one(
+      `UPDATE categorias_acceso SET ${sets.join(', ')} WHERE id = $${params.length} RETURNING *`,
+      params
+    );
+  } catch (e) {
+    if (e.code === '23505') return res.status(400).json({ error: 'Ya existe una categoría con ese nombre' });
+    throw e;
+  }
+
+  let aplicados = 0;
+  if (aplicarUsuarios) {
+    const permisos = permisosNuevos || despues.permisos;
+    const r = await query(
+      "UPDATE usuarios SET permisos = $1 WHERE categoria_id = $2 AND rol = 'tecnico'",
+      [permisos, req.params.id]
+    );
+    aplicados = r.rowCount || 0;
+  }
+  await auditar({
+    req, tabla: 'categorias_acceso', registroId: req.params.id, accion: 'editar',
+    antes, despues, detalle: aplicarUsuarios ? `aplicado a ${aplicados} usuario(s)` : null,
+  });
+  return res.json({ ok: true, aplicados });
+});
+
+app.delete('/api/categorias/:id', authRequired, requireRol('admin'), async (req, res) => {
+  const antes = await one('SELECT * FROM categorias_acceso WHERE id = $1', [req.params.id]);
+  if (!antes) return res.status(404).json({ error: 'Categoría no encontrada' });
+  const [uso] = await query('SELECT count(*)::int AS n FROM usuarios WHERE categoria_id = $1', [req.params.id]);
+  if (uso.n > 0) {
+    return res.status(400).json({ error: `La categoría tiene ${uso.n} usuario(s). Reasignalos antes de eliminarla.` });
+  }
+  await query('DELETE FROM categorias_acceso WHERE id = $1', [req.params.id]);
+  await auditar({ req, tabla: 'categorias_acceso', registroId: req.params.id, accion: 'borrar', antes });
+  return res.json({ ok: true });
+});
+
 // ---------- Usuarios (admin) ----------
 app.get('/api/usuarios', authRequired, permisoRequerido('usuarios'), async (req, res) => {
-  const rows = await query('SELECT id, email, rol, tecnico_id, cliente_id, activo, creado_en, permisos FROM usuarios ORDER BY email');
+  const rows = await query(`
+    SELECT u.id, u.email, u.rol, u.tecnico_id, u.cliente_id, u.activo, u.creado_en,
+           u.permisos, u.categoria_id, u.twofa_email, u.ultimo_acceso,
+           u.intentos_fallidos, u.bloqueado_hasta,
+           c.nombre AS categoria_nombre
+      FROM usuarios u
+      LEFT JOIN categorias_acceso c ON c.id = u.categoria_id
+     ORDER BY u.email
+  `);
   return res.json(rows);
 });
 
@@ -2531,81 +3123,220 @@ app.get('/api/permisos/catalogo', authRequired, permisoRequerido('usuarios'), as
 });
 
 app.post('/api/usuarios', authRequired, permisoRequerido('crear_usuarios'), async (req, res) => {
-  const { email, password, rol, tecnico_id, cliente_id, permisos } = req.body || {};
+  const { email, password, rol, tecnico_id, cliente_id, permisos, categoria_id, twofa_email } = req.body || {};
   const emailT = String(email || '').trim();
-  if (!validEmail(emailT) || !validPassword(password) || !['admin', 'tecnico', 'cliente'].includes(rol)) {
-    return res.status(400).json({ error: 'Email, password (min 8 caracteres) y rol valido son obligatorios' });
+  if (!validEmail(emailT) || !['admin', 'tecnico', 'cliente'].includes(rol)) {
+    return res.status(400).json({ error: 'Email y rol válido son obligatorios' });
   }
+  const errorPass = passwordError(password, { email: emailT });
+  if (errorPass) return res.status(400).json({ error: errorPass });
+
+  const twofa = twofa_email === undefined ? false : normalizarBooleano(twofa_email);
+  if (twofa === null) return res.status(400).json({ error: 'El doble factor tiene que ser true o false' });
+  if (twofa && !mailer) return res.status(400).json({ error: 'El envío de correo no está configurado: no se puede activar el doble factor' });
+
+  // Un usuario con "crear usuarios" pero sin ser admin no puede crear
+  // administradores ni repartir permisos/categorías. Solo un admin.
+  if (!esAdmin(req) && (rol === 'admin' || permisos !== undefined || categoria_id !== undefined || twofa === true)) {
+    return res.status(403).json({ error: 'Solo un administrador puede crear administradores o asignar permisos, categorías o doble factor.' });
+  }
+
+  let categoria = null;
+  if (categoria_id) {
+    if (rol !== 'tecnico') return res.status(400).json({ error: 'Las categorías de acceso son para personal interno.' });
+    categoria = await one('SELECT * FROM categorias_acceso WHERE id = $1', [categoria_id]);
+    if (!categoria) return res.status(400).json({ error: 'La categoría seleccionada no existe' });
+  }
+
   const id = await nextId('usr');
-  // Los permisos que manda el panel son los de la matriz de casillas. Si no
-  // vienen, queda NULL: se usan los de la plantilla del rol.
   const permisosT = permisos === undefined || permisos === null
-    ? null
+    ? (categoria ? categoria.permisos : null)
     : normalizarPermisos(permisos, rol);
+  const hash = await hashPasswordNueva(password, { email: emailT });
   await query(
-    'INSERT INTO usuarios (id, email, password_hash, rol, tecnico_id, cliente_id, activo, permisos) VALUES ($1,$2,$3,$4,$5,$6,true,$7)',
-    [id, emailT, await bcrypt.hash(String(password), BCRYPT_ROUNDS), rol, tecnico_id ? limStr(tecnico_id, 32) : null, cliente_id ? limStr(cliente_id, 32) : null, permisosT]
+    `INSERT INTO usuarios
+       (id, email, password_hash, rol, tecnico_id, cliente_id, activo, permisos, categoria_id, twofa_email)
+     VALUES ($1,$2,$3,$4,$5,$6,true,$7,$8,$9)`,
+    [
+      id, emailT, hash, rol,
+      tecnico_id ? limStr(tecnico_id, 32) : null,
+      cliente_id ? limStr(cliente_id, 32) : null,
+      permisosT, categoria ? categoria.id : null, twofa,
+    ]
   );
-  await auditar({ req, tabla: 'usuarios', registroId: id, accion: 'crear', despues: { email: emailT, rol, tecnico_id, cliente_id, permisos: permisosT } });
+  await query('INSERT INTO password_history (id, usuario_id, password_hash) VALUES ($1,$2,$3)', [randomUUID(), id, hash]);
+  await auditar({
+    req, tabla: 'usuarios', registroId: id, accion: 'crear',
+    despues: { email: emailT, rol, tecnico_id, cliente_id, permisos: permisosT, categoria_id: categoria ? categoria.id : null, twofa_email: twofa },
+  });
   return res.status(201).json({ id });
 });
 
 app.patch('/api/usuarios/:id', authRequired, permisoRequerido('editar_usuarios'), async (req, res) => {
-  const { email, password, rol, tecnico_id, cliente_id, activo, permisos } = req.body || {};
+  const {
+    email, password, rol, tecnico_id, cliente_id, activo, permisos, categoria_id, twofa_email,
+  } = req.body || {};
   const isSelf = req.params.id === req.user.sub;
   const antes = await one('SELECT * FROM usuarios WHERE id = $1', [req.params.id]);
   if (!antes) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+  // Rol, email, contraseña, permisos, categoría y doble factor son decisiones
+  // de administración. Evita que alguien con "editar usuarios" se auto-eleve o
+  // cambie la clave de un administrador.
+  if (!esAdmin(req) && (
+    email !== undefined || rol !== undefined || permisos !== undefined ||
+    categoria_id !== undefined || twofa_email !== undefined || password !== undefined
+  )) {
+    return res.status(403).json({ error: 'Solo un administrador puede cambiar email, rol, contraseña, permisos, categorías o doble factor.' });
+  }
+
   const sets = [];
   const params = [];
+  const set = (columna, valor) => {
+    params.push(valor);
+    sets.push(`${columna} = $${params.length}`);
+  };
+
   if (email !== undefined) {
     const e = String(email).trim();
-    if (!validEmail(e)) return res.status(400).json({ error: 'Email invalido' });
-    params.push(e); sets.push(`email = $${params.length}`);
+    if (!validEmail(e)) return res.status(400).json({ error: 'Email inválido' });
+    set('email', e);
   }
+
+  let rolFinal = antes.rol;
   if (rol !== undefined) {
-    if (!['admin', 'tecnico', 'cliente'].includes(rol)) return res.status(400).json({ error: 'Rol invalido' });
-    if (isSelf) return res.status(403).json({ error: 'No podes cambiarte el rol a vos mismo' });
-    params.push(rol); sets.push(`rol = $${params.length}`);
+    if (!['admin', 'tecnico', 'cliente'].includes(rol)) return res.status(400).json({ error: 'Rol inválido' });
+    if (isSelf) return res.status(403).json({ error: 'No podés cambiarte el rol a vos mismo' });
+    rolFinal = rol;
+    set('rol', rol);
   }
-  if (tecnico_id !== undefined) { params.push(tecnico_id ? limStr(tecnico_id, 32) : null); sets.push(`tecnico_id = $${params.length}`); }
-  if (cliente_id !== undefined) { params.push(cliente_id ? limStr(cliente_id, 32) : null); sets.push(`cliente_id = $${params.length}`); }
+
+  if (tecnico_id !== undefined) set('tecnico_id', tecnico_id ? limStr(tecnico_id, 32) : null);
+  if (cliente_id !== undefined) set('cliente_id', cliente_id ? limStr(cliente_id, 32) : null);
+
   if (activo !== undefined) {
-    if (isSelf) return res.status(403).json({ error: 'No podes desactivarte a vos mismo' });
-    // Ojo: antes era Boolean(activo), y el texto "false" dejaba al usuario
-    // ACTIVO. Ahora se valida y un valor raro se rechaza.
+    if (isSelf) return res.status(403).json({ error: 'No podés desactivarte a vos mismo' });
     const activoBool = normalizarBooleano(activo);
     if (activoBool === null) return res.status(400).json({ error: 'El campo activo tiene que ser true o false' });
-    params.push(activoBool); sets.push(`activo = $${params.length}`);
+    set('activo', activoBool);
+    if (!activoBool) {
+      set('intentos_fallidos', 0);
+      set('bloqueado_hasta', null);
+    }
   }
-  if (password !== undefined && password !== null && password !== '') {
-    if (!validPassword(password)) return res.status(400).json({ error: 'Password invalido (min 8 caracteres)' });
-    params.push(await bcrypt.hash(String(password), BCRYPT_ROUNDS)); sets.push(`password_hash = $${params.length}`);
+
+  // Categoría: solo para personal interno. Si no mandan permisos explícitos,
+  // se usa la plantilla de la categoría.
+  let categoria = null;
+  if (categoria_id !== undefined) {
+    if (categoria_id) {
+      if (rolFinal !== 'tecnico') return res.status(400).json({ error: 'Las categorías de acceso son para personal interno' });
+      categoria = await one('SELECT * FROM categorias_acceso WHERE id = $1', [categoria_id]);
+      if (!categoria) return res.status(400).json({ error: 'La categoría seleccionada no existe' });
+      set('categoria_id', categoria.id);
+    } else {
+      set('categoria_id', null);
+    }
   }
+
+  // Permisos: si viene la matriz, manda la matriz. Si no, usa la categoría (si
+  // hay) o limpia el mapa para que rija la plantilla del rol.
+  let permisosFinal;
+  let tocarPermisos = false;
   if (permisos !== undefined) {
-    // Solo un administrador reparte permisos: evita que alguien con "editar
-    // usuarios" se auto-eleve o se deje sin poder administrar.
-    if (!esAdmin(req)) return res.status(403).json({ error: 'Solo un administrador puede cambiar los permisos' });
-    const rolFinal = rol !== undefined ? rol : (await one('SELECT rol FROM usuarios WHERE id = $1', [req.params.id]))?.rol;
-    params.push(normalizarPermisos(permisos, rolFinal));
-    sets.push(`permisos = $${params.length}`);
+    permisosFinal = normalizarPermisos(permisos, rolFinal);
+    tocarPermisos = true;
+  } else if (categoria) {
+    permisosFinal = normalizarPermisos(categoria.permisos, rolFinal);
+    tocarPermisos = true;
+  } else if (rol !== undefined && rolFinal !== 'tecnico') {
+    permisosFinal = null;
+    tocarPermisos = true;
   }
-  // Nunca dejar el sistema sin ningun administrador activo.
+  if (tocarPermisos) {
+    set('permisos', permisosFinal);
+    if (rolFinal !== 'tecnico') set('categoria_id', null);
+  }
+
+  let twofa = null;
+  if (twofa_email !== undefined) {
+    twofa = normalizarBooleano(twofa_email);
+    if (twofa === null) return res.status(400).json({ error: 'El doble factor tiene que ser true o false' });
+    if (twofa && !mailer) return res.status(400).json({ error: 'El envío de correo no está configurado: no se puede activar el doble factor' });
+    set('twofa_email', twofa);
+  }
+
+  // Nunca dejar el sistema sin ningún administrador activo. Se valida ANTES
+  // de tocar la contraseña, para no dejarla cambiada si esta validación falla.
   if ((rol !== undefined && rol !== 'admin') || activo === false) {
-    const objetivo = await one('SELECT rol, activo FROM usuarios WHERE id = $1', [req.params.id]);
-    if (objetivo?.rol === 'admin' && objetivo.activo === true) {
-      const [resto] = await query("SELECT count(*)::int AS n FROM usuarios WHERE rol = 'admin' AND activo = true AND id <> $1", [req.params.id]);
+    if (antes.rol === 'admin' && antes.activo === true) {
+      const [resto] = await query(
+        "SELECT count(*)::int AS n FROM usuarios WHERE rol = 'admin' AND activo = true AND id <> $1",
+        [antes.id]
+      );
       if (resto.n === 0) {
         return res.status(400).json({ error: 'Es el único administrador activo: no se le puede cambiar el rol ni dar de baja' });
       }
     }
   }
-  if (!sets.length) return res.status(400).json({ error: 'Sin campos para actualizar' });
-  params.push(req.params.id);
-  const despues = await one(`UPDATE usuarios SET ${sets.join(', ')} WHERE id = $${params.length} RETURNING *`, params);
+
+  let passwordCambiada = false;
+  if (password !== undefined && password !== null && password !== '') {
+    try {
+      await guardarPassword(antes, password);
+      passwordCambiada = true;
+    } catch (e) {
+      return res.status(e.status || 400).json({ error: e.message });
+    }
+  }
+
+  if (!sets.length && !passwordCambiada) return res.status(400).json({ error: 'Sin campos para actualizar' });
+
+  let despues;
+  if (sets.length) {
+    params.push(req.params.id);
+    despues = await one(`UPDATE usuarios SET ${sets.join(', ')} WHERE id = $${params.length} RETURNING *`, params);
+  } else {
+    despues = await one('SELECT * FROM usuarios WHERE id = $1', [req.params.id]);
+  }
+  if (twofa === false) await query('DELETE FROM login_2fa WHERE usuario_id = $1', [antes.id]);
+
+  const sinHash = (u) => {
+    const copia = { ...u };
+    delete copia.password_hash;
+    return copia;
+  };
   await auditar({
-    req, tabla: 'usuarios', registroId: antes.id, accion: 'editar', antes, despues,
-    detalle: password ? 'incluye cambio de contraseña' : null,
+    req, tabla: 'usuarios', registroId: antes.id, accion: 'editar',
+    antes: sinHash(antes), despues: sinHash(despues),
+    detalle: passwordCambiada ? 'incluye cambio de contraseña' : null,
   });
+  if (passwordCambiada) await avisarPasswordCambiada(antes, req);
+  return res.json({ ok: true });
+});
+
+// Envía un enlace de restablecimiento a un usuario existente. El admin no ve
+// la contraseña: el usuario define una nueva desde el enlace.
+app.post('/api/usuarios/:id/reset', authRequired, requireRol('admin'), async (req, res) => {
+  const u = await one('SELECT * FROM usuarios WHERE id = $1', [req.params.id]);
+  if (!u) return res.status(404).json({ error: 'Usuario no encontrado' });
+  if (!u.activo) return res.status(400).json({ error: 'El usuario está inactivo: reactivalo antes de enviarle el enlace' });
+  try {
+    await enviarResetPassword(u, req);
+  } catch (e) {
+    console.error('[reset] no se pudo enviar el enlace:', e.message);
+    return res.status(503).json({ error: 'No se pudo enviar el correo de restablecimiento. Revisá la configuración de correo.' });
+  }
+  await auditar({ req, tabla: 'usuarios', registroId: u.id, accion: 'enviar_reset', detalle: `enlace enviado a ${maskEmail(u.email)}` });
+  return res.json({ ok: true, email: maskEmail(u.email) });
+});
+
+// Desbloqueo manual de una cuenta bloqueada por intentos fallidos.
+app.post('/api/usuarios/:id/desbloquear', authRequired, requireRol('admin'), async (req, res) => {
+  const u = await one('SELECT * FROM usuarios WHERE id = $1', [req.params.id]);
+  if (!u) return res.status(404).json({ error: 'Usuario no encontrado' });
+  await query('UPDATE usuarios SET intentos_fallidos = 0, bloqueado_hasta = NULL WHERE id = $1', [u.id]);
+  await auditar({ req, tabla: 'usuarios', registroId: u.id, accion: 'desbloquear' });
   return res.json({ ok: true });
 });
 
@@ -2614,10 +3345,29 @@ app.delete('/api/usuarios/:id', authRequired, permisoRequerido('borrar_usuarios'
   const u = await one('SELECT * FROM usuarios WHERE id = $1', [req.params.id]);
   if (!u) return res.status(404).json({ error: 'Usuario no encontrado' });
   if (!u.activo) return res.status(400).json({ error: 'El usuario ya estaba dado de baja' });
+  // Un editor no-admin no puede dar de baja a un administrador, y nunca se
+  // puede dejar el sistema sin ningún administrador activo.
+  if (u.rol === 'admin' && !esAdmin(req)) {
+    return res.status(403).json({ error: 'Solo un administrador puede dar de baja a otro administrador' });
+  }
+  if (u.rol === 'admin') {
+    const [resto] = await query(
+      "SELECT count(*)::int AS n FROM usuarios WHERE rol = 'admin' AND activo = true AND id <> $1",
+      [u.id]
+    );
+    if (resto.n === 0) {
+      return res.status(400).json({ error: 'Es el único administrador activo: no se le puede dar de baja' });
+    }
+  }
   // Baja logica: se conserva la ficha (y el rastro de quien tenia acceso) y se
   // puede reactivar. Ademas el middleware rechaza el token de un usuario inactivo.
   await query('UPDATE usuarios SET activo = false WHERE id = $1', [u.id]);
-  await auditar({ req, tabla: 'usuarios', registroId: u.id, accion: 'dar_de_baja', antes: u, despues: { ...u, activo: false } });
+  const sinHash = (u) => {
+    const copia = { ...u };
+    delete copia.password_hash;
+    return copia;
+  };
+  await auditar({ req, tabla: 'usuarios', registroId: u.id, accion: 'dar_de_baja', antes: sinHash(u), despues: sinHash({ ...u, activo: false }) });
   return res.json({ ok: true, baja: true });
 });
 

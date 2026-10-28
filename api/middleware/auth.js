@@ -24,7 +24,14 @@ if (!ENV_SECRET) {
 
 export function signToken(user) {
   return jwt.sign(
-    { sub: user.id, email: user.email, rol: user.rol, tecnico_id: user.tecnico_id, cliente_id: user.cliente_id },
+    {
+      sub: user.id,
+      email: user.email,
+      rol: user.rol,
+      tecnico_id: user.tecnico_id,
+      cliente_id: user.cliente_id,
+      ver: Number(user.token_version) || 0,
+    },
     SECRET,
     { expiresIn: '12h', issuer: 'bertika-api', audience: 'bertika-web', algorithm: 'HS256' }
   );
@@ -43,9 +50,14 @@ export async function authRequired(req, res, next) {
   // El token por si solo no alcanza: se relee el usuario para que una baja o un
   // cambio de permisos tenga efecto en el acto (y no 12 h despues).
   try {
-    const u = await one('SELECT activo, rol, permisos, tecnico_id, cliente_id FROM usuarios WHERE id = $1', [payload.sub]);
+    const u = await one('SELECT activo, rol, permisos, tecnico_id, cliente_id, token_version FROM usuarios WHERE id = $1', [payload.sub]);
     if (!u || u.activo !== true) {
       return res.status(401).json({ error: 'Tu acceso fue desactivado. Pedile al administrador que lo reactive.' });
+    }
+    // Cambiar o restablecer la contraseña incrementa token_version: los tokens
+    // viejos dejan de servir al instante en todos los dispositivos.
+    if ((Number(payload.ver) || 0) !== (Number(u.token_version) || 0)) {
+      return res.status(401).json({ error: 'Tu sesión venció por un cambio de contraseña. Volvé a iniciar sesión.' });
     }
     // Se resuelven los permisos EFECTIVOS (plantilla del rol + lo que el
     // administrador haya marcado) en cada request: asi un cambio de permisos

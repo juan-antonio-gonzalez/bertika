@@ -21,7 +21,11 @@ const fmtARS = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'AR
 function normalizarUser(apiUser, data) {
   // permisos: los que el administrador marco en la tabla de casillas (o null =
   // los del rol). El panel los usa para mostrar solo las secciones habilitadas.
-  const ref = { id: 'admin', uid: apiUser.id, rol: apiUser.rol, email: apiUser.email, nombre: 'Administrador', permisos: apiUser.permisos || null };
+  const ref = {
+    id: 'admin', uid: apiUser.id, rol: apiUser.rol, email: apiUser.email,
+    nombre: 'Administrador', permisos: apiUser.permisos || null,
+    twofa_email: Boolean(apiUser.twofa_email), categoria_id: apiUser.categoria_id || null,
+  };
   if (apiUser.rol === 'tecnico') {
     ref.id = apiUser.tecnico_id;
     ref.tecnico_id = apiUser.tecnico_id;
@@ -60,11 +64,26 @@ export const useStore = create()((set, get) => ({
   },
 
   async login(email, password) {
-    const { token, user } = await api('/auth/login', { method: 'POST', body: { email, password } });
+    const res = await api('/auth/login', { method: 'POST', body: { email, password } });
+    // Con 2FA por email el primer paso NO devuelve token: hay que canjear el
+    // código en verificar2fa().
+    if (res?.twofa) return res;
+    setToken(res.token);
+    const estado = await api('/estado');
+    set({ user: normalizarUser(res.user, estado), data: estado, lastSync: new Date().toISOString() });
+    return get().user;
+  },
+
+  async verificar2fa(challenge, code) {
+    const { token, user } = await api('/auth/login/2fa', { method: 'POST', body: { challenge, code } });
     setToken(token);
     const estado = await api('/estado');
     set({ user: normalizarUser(user, estado), data: estado, lastSync: new Date().toISOString() });
     return get().user;
+  },
+
+  async reenviar2fa(challenge) {
+    return api('/auth/login/2fa/reenviar', { method: 'POST', body: { challenge } });
   },
 
   async logout() {

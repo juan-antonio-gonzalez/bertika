@@ -14,6 +14,8 @@ import { useStore } from './store/store';
 // hacen falta para ver el sitio publico).
 import Landing from './pages/Landing';
 const Auth = lazy(() => import('./pages/Auth'));
+const RecuperarPassword = lazy(() => import('./pages/RecuperarPassword'));
+const ResetPassword = lazy(() => import('./pages/ResetPassword'));
 const Home = lazy(() => import('./pages/Home'));
 const Hub = lazy(() => import('./pages/Hub'));
 const Tecnico = lazy(() => import('./pages/Tecnico'));
@@ -174,6 +176,8 @@ export default function App() {
 
         {/* Acceso */}
         <Route path="/auth" element={<PublicLayout><Auth /></PublicLayout>} />
+        <Route path="/auth/recuperar" element={<PublicLayout><RecuperarPassword /></PublicLayout>} />
+        <Route path="/auth/reset/:token" element={<PublicLayout><ResetPassword /></PublicLayout>} />
 
         {/* Plataforma (cada seccion es una sub-ruta real: /hub/dashboard, etc.) */}
         <Route path="/home" element={<AppLayout><Protected><Home /></Protected></AppLayout>} />

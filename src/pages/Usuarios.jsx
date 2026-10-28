@@ -1,68 +1,98 @@
 import { useEffect, useState } from 'react';
-import { Icon, Modal, ConfirmDialog, FormGrid } from '../components/ui';
+import { Icon, Modal, ConfirmDialog, FormGrid, fmtFecha } from '../components/ui';
 import { api } from '../store/api';
 import { useStore, usePermiso } from '../store/store';
-import { Fragment } from 'react';
+import MatrizPermisos from '../components/MatrizPermisos';
+import { PasswordPair } from '../components/PasswordFields';
+import { validarPassword, PASSWORD_MIN } from '../data/passwordPolicy';
 import {
-  COLUMNAS, PERMISOS, CLAVES, agruparPermisos, permisosPorDefecto, normalizarPermisos, resumenPermisos,
+  CLAVES, PERMISOS, permisosPorDefecto, normalizarPermisos, resumenPermisos,
 } from '../data/permisos';
 
-// El catalogo es estatico: se agrupa una sola vez.
-const GRUPOS_PERMISOS = agruparPermisos();
 const MAPA_VACIO = Object.fromEntries(CLAVES.map((k) => [k, false]));
+const ROL_LABEL = { admin: 'Administrador', tecnico: 'Personal interno', cliente: 'Cliente' };
 
-const ROL_LABEL = { admin: 'Administrador', tecnico: 'Técnico', cliente: 'Cliente' };
+const fechaCorta = (iso) => (iso ? fmtFecha(iso) : 'Nunca');
 
-function FormUsuariosModal({ mode, user, tecnicos, clientes, busy, onGuardar, onClose }) {
+function FormUsuariosModal({ mode, user, tecnicos, clientes, categorias, busy, onGuardar, onClose }) {
+  const soyAdmin = useStore((s) => s.user?.rol === 'admin');
   const uid = useStore((s) => s.user?.uid);
   const toastShow = useStore((s) => s.toastShow);
   const esEdicion = mode === 'editar';
   const edicionPropia = esEdicion && user.id === uid;
   const [email, setEmail] = useState(esEdicion ? user.email : '');
   const [password, setPassword] = useState('');
-  const [rol, setRol] = useState(esEdicion ? user.rol : 'cliente');
+  const [password2, setPassword2] = useState('');
+  const [rol, setRol] = useState(esEdicion ? user.rol : 'tecnico');
   const [tecnicoId, setTecnicoId] = useState(esEdicion ? user.tecnico_id || '' : '');
   const [clienteId, setClienteId] = useState(esEdicion ? user.cliente_id || '' : '');
-  // Permisos: arrancan con los del rol del usuario (o los suyos si ya los tiene).
-  const [permisos, setPermisos] = useState(() => normalizarPermisos(esEdicion ? user.permisos : null, esEdicion ? user.rol : 'cliente'));
+  const [categoriaId, setCategoriaId] = useState(esEdicion ? user.categoria_id || '' : '');
+  const [twofaEmail, setTwofaEmail] = useState(Boolean(esEdicion && user.twofa_email));
+  const [permisos, setPermisos] = useState(() => (
+    esEdicion ? normalizarPermisos(user.permisos, user.rol) : { ...MAPA_VACIO }
+  ));
   const rolFinal = edicionPropia ? user.rol : rol;
 
-  const alternar = (clave) => setPermisos((p) => ({ ...p, [clave]: !p[clave] }));
-  const marcarGrupo = (items, valor) => setPermisos((p) => {
-    const nuevo = { ...p };
-    for (const it of items) nuevo[it.clave] = valor;
-    return nuevo;
-  });
-  // Tilde por columna: si ya estaba todo marcado, lo apaga.
-  const marcarColumna = (op) => setPermisos((p) => {
-    const items = PERMISOS.filter((x) => x.op === op);
-    const todos = items.every((x) => p[x.clave]);
-    const nuevo = { ...p };
-    for (const it of items) nuevo[it.clave] = !todos;
-    return nuevo;
-  });
-  const cambiarRol = (nuevo) => { setRol(nuevo); setPermisos(permisosPorDefecto(nuevo)); };
-  const criticos = PERMISOS.filter((x) => x.critica && permisos[x.clave]);
+  const categoria = categorias.find((c) => c.id === categoriaId) || null;
+  const personalizado = Boolean(categoria) && CLAVES.some((k) => Boolean(permisos[k]) !== Boolean(categoria.permisos[k]));
+
+  const cambiarRol = (nuevo) => {
+    setRol(nuevo);
+    setCategoriaId('');
+    // Un usuario nuevo arranca sin permisos: el admin elige categoría o
+    // plantilla. Nunca se regala el paquete completo por defecto.
+    setPermisos(nuevo === 'tecnico' ? { ...MAPA_VACIO } : permisosPorDefecto(nuevo));
+  };
+
+  const cambiarCategoria = (id) => {
+    setCategoriaId(id);
+    const cat = categorias.find((c) => c.id === id);
+    if (cat) setPermisos(normalizarPermisos(cat.permisos, 'tecnico'));
+  };
+
+  const volverACategoria = () => {
+    if (categoria) setPermisos(normalizarPermisos(categoria.permisos, 'tecnico'));
+  };
 
   const submit = (e) => {
     e.preventDefault();
-    if (!esEdicion && (!email.trim() || password.length < 8)) {
-      toastShow('Email y contraseña (mínimo 8 caracteres) son obligatorios.', 'warn');
+    const emailT = email.trim();
+    if (!emailT) {
+      toastShow('El email es obligatorio.', 'warn');
       return;
     }
-    if (password && password.length < 8) {
-      toastShow('La contraseña debe tener al menos 8 caracteres.', 'warn');
+    if (!esEdicion && !password) {
+      toastShow('La contraseña es obligatoria para crear el usuario.', 'warn');
       return;
     }
-    const body = { email: email.trim() };
+    if (password || password2) {
+      if (password !== password2) {
+        toastShow('Las contraseñas no coinciden.', 'warn');
+        return;
+      }
+      const error = validarPassword(password, { email: emailT });
+      if (error) {
+        toastShow(error, 'warn');
+        return;
+      }
+    }
+    if (rolFinal === 'admin' && !soyAdmin) {
+      toastShow('Solo un administrador puede crear otro administrador.', 'warn');
+      return;
+    }
+    const body = {};
+    if (!esEdicion || soyAdmin) body.email = emailT;
     if (password) body.password = password;
-    if (!edicionPropia) {
-      body.rol = rol;
+    if (!esEdicion || soyAdmin) {
+      if (!edicionPropia) body.rol = rol;
       if (rol === 'tecnico') body.tecnico_id = tecnicoId || null;
       if (rol === 'cliente') body.cliente_id = clienteId || null;
     }
-    // La tabla de casillas viaja tal cual al servidor.
-    body.permisos = permisos;
+    if (soyAdmin) {
+      body.permisos = permisos;
+      body.twofa_email = Boolean(twofaEmail);
+      body.categoria_id = rolFinal === 'tecnico' ? (categoriaId || null) : null;
+    }
     onGuardar(body);
   };
 
@@ -70,7 +100,7 @@ function FormUsuariosModal({ mode, user, tecnicos, clientes, busy, onGuardar, on
     <Modal
       size="xl"
       title={esEdicion ? `Editar ${user.email}` : 'Crear usuario'}
-      sub={esEdicion ? 'Cambiá email, contraseña, rol y permisos.' : 'Nueva cuenta de acceso a la plataforma.'}
+      sub={esEdicion ? 'Cuenta, categoría, contraseña y permisos.' : 'Nueva cuenta de acceso a la plataforma.'}
       onClose={onClose}
       closeOnBackdrop={false}
       footer={(
@@ -91,23 +121,68 @@ function FormUsuariosModal({ mode, user, tecnicos, clientes, busy, onGuardar, on
           <FormGrid cols={2}>
             <div className="field">
               <label>Email *</label>
-              <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} disabled={esEdicion} data-autofocus />
-              {esEdicion && <small className="ayuda">El email no se cambia desde acá.</small>}
-            </div>
-            <div className="field">
-              <label>{esEdicion ? 'Nueva contraseña' : 'Contraseña *'}</label>
-              <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Mínimo 8 caracteres" autoComplete="new-password" />
-              <small className="ayuda">{esEdicion ? 'Dejalo vacío para conservar la contraseña actual.' : 'Mínimo 8 caracteres.'}</small>
+              <input
+                className="input"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                disabled={esEdicion && !soyAdmin}
+                data-autofocus
+              />
+              <small className="ayuda">
+                {soyAdmin ? 'Es el usuario para entrar y donde llegan el reset y el 2FA.' : 'Solo un administrador puede cambiarlo.'}
+              </small>
             </div>
             <div className="field">
               <label>Rol</label>
-              <select className="input" value={rolFinal} onChange={(e) => cambiarRol(e.target.value)} disabled={edicionPropia}>
+              <select className="input" value={rolFinal} onChange={(e) => cambiarRol(e.target.value)} disabled={edicionPropia || !soyAdmin}>
                 <option value="admin">Administrador</option>
-                <option value="tecnico">Técnico</option>
+                <option value="tecnico">Personal interno</option>
                 <option value="cliente">Cliente</option>
               </select>
               {edicionPropia && <small className="ayuda">No podés cambiarte el rol a vos mismo.</small>}
+              {!edicionPropia && rolFinal === 'tecnico' && <small className="ayuda">Incluye técnicos y administrativos. Elegí una categoría o plantilla abajo.</small>}
             </div>
+
+            {!edicionPropia && (!esEdicion || soyAdmin) && (
+              <PasswordPair
+                password={password}
+                setPassword={setPassword}
+                confirm={password2}
+                setConfirm={setPassword2}
+                label={esEdicion ? 'Nueva contraseña' : 'Contraseña *'}
+                help={esEdicion
+                  ? `Dejalo vacío para conservar la actual. Mínimo ${PASSWORD_MIN} caracteres.`
+                  : `Mínimo ${PASSWORD_MIN} caracteres, sin datos personales ni claves comunes.`}
+                required={!esEdicion}
+                email={email}
+                confirmLabel={esEdicion ? 'Repetir nueva contraseña' : 'Repetir contraseña'}
+              />
+            )}
+
+            {esEdicion && !soyAdmin && (
+              <div className="banner-info" style={{ marginTop: 10 }}>
+                <Icon name="shield" size={15} />
+                <span>Solo un administrador puede cambiar la contraseña de otra cuenta. Usá “Enviar reset” o pedile al administrador.</span>
+              </div>
+            )}
+
+            {rolFinal === 'tecnico' && (
+              <div className="field">
+                <label>Categoría de acceso</label>
+                <select className="input" value={categoriaId} onChange={(e) => cambiarCategoria(e.target.value)} disabled={!soyAdmin}>
+                  <option value="">Personalizada (sin categoría)</option>
+                  {categorias.map((c) => (
+                    <option key={c.id} value={c.id}>{c.nombre} · {c.usuarios} usuario(s)</option>
+                  ))}
+                </select>
+                <small className="ayuda">
+                  La categoría precarga la matriz. Después podés personalizar los permisos de esta persona.
+                  {categorias.length === 0 && ' Creá categorías en la pestaña Categorías.'}
+                </small>
+              </div>
+            )}
+
             {rolFinal === 'tecnico' && (
               <div className="field">
                 <label>Vincular a técnico</label>
@@ -131,6 +206,21 @@ function FormUsuariosModal({ mode, user, tecnicos, clientes, busy, onGuardar, on
               </div>
             )}
           </FormGrid>
+
+          {!edicionPropia && (
+            <div className="field" style={{ marginTop: 14 }}>
+              <label className="check-line" style={{ textTransform: 'none', letterSpacing: 0 }}>
+                <input
+                  type="checkbox"
+                  checked={twofaEmail}
+                  onChange={(e) => setTwofaEmail(e.target.checked)}
+                  disabled={!soyAdmin}
+                />
+                <span>Pedir un código por email al iniciar sesión (doble factor)</span>
+              </label>
+              <small className="ayuda">Se envía a {email || 'el email de la cuenta'}. Si el correo falla, la persona no podrá entrar hasta que un admin lo desactive.</small>
+            </div>
+          )}
         </div>
 
         <div className="col" style={{ marginTop: rolFinal === 'tecnico' ? 0 : 18 }}>
@@ -138,6 +228,12 @@ function FormUsuariosModal({ mode, user, tecnicos, clientes, busy, onGuardar, on
             <h4>Permisos</h4>
             <p>Qué ve y qué puede hacer. Rigen al instante: no hace falta que vuelva a entrar.</p>
           </div>
+          {!soyAdmin && (
+            <div className="banner-info" style={{ marginBottom: 10 }}>
+              <Icon name="shield" size={15} />
+              <span>Solo un administrador puede cambiar la matriz de permisos, las categorías o el doble factor. Podés editar los datos de la cuenta.</span>
+            </div>
+          )}
           {rolFinal === 'admin' ? (
             <div className="banner-info">
               <Icon name="shield" size={15} />
@@ -149,77 +245,24 @@ function FormUsuariosModal({ mode, user, tecnicos, clientes, busy, onGuardar, on
               <span>Un cliente ve solo su portal (sus baterías, cotizaciones, historial y garantías) y no puede recibir permisos internos del taller.</span>
             </div>
           ) : (
-            <div className="permisos">
-              <div className="row between wrap" style={{ gap: 8, marginBottom: 8 }}>
-                <div>
-                  <b style={{ fontSize: 13 }}>Qué ve y qué puede hacer</b>
-                  <div className="muted" style={{ fontSize: 11.5 }}>
-                    Los permisos rigen al instante: no hace falta que el usuario vuelva a entrar.
-                  </div>
+            <>
+              {personalizado && (
+                <div className="banner-info" style={{ marginBottom: 10 }}>
+                  <Icon name="info" size={15} />
+                  <span>
+                    Esta persona tiene permisos personalizados respecto de la categoría <b>{categoria?.nombre}</b>.
+                  </span>
+                  <button type="button" className="chip" onClick={volverACategoria} style={{ marginLeft: 'auto' }}>
+                    Volver a la categoría
+                  </button>
                 </div>
-                <div className="row wrap" style={{ gap: 6, alignItems: 'center' }}>
-                  <span className="muted" style={{ fontSize: 11.5 }}>Aplicar plantilla:</span>
-                  <button type="button" className="chip" onClick={() => setPermisos(permisosPorDefecto('tecnico'))}>Técnico</button>
-                  <button type="button" className="chip" onClick={() => setPermisos(permisosPorDefecto('admin'))}>Todo</button>
-                  <button type="button" className="chip" onClick={() => setPermisos({ ...MAPA_VACIO })}>Nada</button>
-                </div>
-              </div>
-              <div className="permisos-tabla-wrap">
-                <table className="permisos-tabla">
-                  <thead>
-                    <tr>
-                      <th>Permiso</th>
-                      {COLUMNAS.map((c) => (
-                        <th key={c.op}>
-                          <button type="button" className="permisos-col-todos" onClick={() => marcarColumna(c.op)}>
-                            {c.label}
-                          </button>
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {GRUPOS_PERMISOS.map((g) => (
-                      <Fragment key={g.grupo}>
-                        <tr className="permisos-fila-grupo">
-                          <td colSpan={COLUMNAS.length + 1}>
-                            <span className="permisos-grupo-nombre">{g.grupo}</span>
-                            <button type="button" className="chip" onClick={() => marcarGrupo(g.items, true)}>todos</button>
-                            <button type="button" className="chip" onClick={() => marcarGrupo(g.items, false)}>ninguno</button>
-                          </td>
-                        </tr>
-                        {g.items.map((it) => (
-                          <tr key={it.clave} className={it.critica ? 'permisos-critica' : ''}>
-                            <td>
-                              <b>{it.etiqueta}</b>
-                              <small>{it.detalle}</small>
-                            </td>
-                            {COLUMNAS.map((c) => (
-                              <td key={c.op} className="permisos-celda">
-                                {it.op === c.op ? (
-                                  <input
-                                    type="checkbox"
-                                    checked={Boolean(permisos[it.clave])}
-                                    onChange={() => alternar(it.clave)}
-                                    aria-label={it.etiqueta}
-                                  />
-                                ) : null}
-                              </td>
-                            ))}
-                          </tr>
-                        ))}
-                      </Fragment>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {criticos.length > 0 && (
-                <p className="muted" style={{ fontSize: 11.5, marginTop: 8 }}>
-                  <span className="badge amber" style={{ marginRight: 6 }}>Atención</span>
-                  Con estos permisos este usuario puede {criticos.map((c) => c.etiqueta.toLowerCase()).join(', ')}.
-                </p>
               )}
-            </div>
+              <MatrizPermisos
+                permisos={permisos}
+                setPermisos={setPermisos}
+                disabled={!soyAdmin || busy}
+              />
+            </>
           )}
         </div>
       </form>
@@ -227,18 +270,97 @@ function FormUsuariosModal({ mode, user, tecnicos, clientes, busy, onGuardar, on
   );
 }
 
+function FormCategoriaModal({ mode, categoria, busy, onGuardar, onClose }) {
+  const toastShow = useStore((s) => s.toastShow);
+  const [nombre, setNombre] = useState(categoria?.nombre || '');
+  const [descripcion, setDescripcion] = useState(categoria?.descripcion || '');
+  const [permisos, setPermisos] = useState(() => (
+    categoria ? normalizarPermisos(categoria.permisos, 'tecnico') : { ...MAPA_VACIO }
+  ));
+  const [aplicarUsuarios, setAplicarUsuarios] = useState(false);
+
+  const submit = (e) => {
+    e.preventDefault();
+    if (nombre.trim().length < 2) {
+      toastShow('Poné un nombre de al menos 2 caracteres.', 'warn');
+      return;
+    }
+    onGuardar({
+      nombre: nombre.trim(),
+      descripcion: descripcion.trim(),
+      permisos,
+      aplicarUsuarios: Boolean(aplicarUsuarios && mode === 'editar'),
+    });
+  };
+
+  const usuarios = categoria?.usuarios || 0;
+
+  return (
+    <Modal
+      size="xl"
+      title={mode === 'editar' ? `Editar categoría: ${categoria.nombre}` : 'Nueva categoría de acceso'}
+      sub="Agrupá permisos con un nombre y asigná usuarios a esa categoría."
+      onClose={onClose}
+      closeOnBackdrop={false}
+      footer={(
+        <>
+          <button type="button" className="btn izq" onClick={onClose} disabled={busy}>Cancelar</button>
+          <button type="submit" form="form-categoria" className="btn primary" disabled={busy}>
+            <Icon name="check" size={14} /> {busy ? 'Guardando...' : mode === 'editar' ? 'Guardar categoría' : 'Crear categoría'}
+          </button>
+        </>
+      )}
+    >
+      <form id="form-categoria" onSubmit={submit}>
+        <FormGrid cols={2}>
+          <div className="field">
+            <label>Nombre *</label>
+            <input className="input" value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Ej.: Depósito, Ventas, Administración" data-autofocus />
+          </div>
+          <div className="field">
+            <label>Descripción</label>
+            <input className="input" value={descripcion} onChange={(e) => setDescripcion(e.target.value)} placeholder="Para qué sirve esta categoría" />
+          </div>
+        </FormGrid>
+
+        <div className="fsec-head" style={{ marginTop: 18 }}>
+          <h4>Permisos de la categoría</h4>
+          <p>Es una plantilla. Al asignar la categoría a un usuario, su matriz se precarga con esto; después se puede personalizar.</p>
+        </div>
+        <MatrizPermisos permisos={permisos} setPermisos={setPermisos} disabled={busy} />
+
+        {mode === 'editar' && usuarios > 0 && (
+          <label className="check-line" style={{ marginTop: 14, textTransform: 'none', letterSpacing: 0 }}>
+            <input type="checkbox" checked={aplicarUsuarios} onChange={(e) => setAplicarUsuarios(e.target.checked)} />
+            <span>Aplicar estos permisos ahora a los {usuarios} usuario(s) de esta categoría (sobrescribe personalizaciones).</span>
+          </label>
+        )}
+      </form>
+    </Modal>
+  );
+}
+
 export default function Usuarios() {
   const currentUid = useStore((s) => s.user?.uid);
-  // Los botones de alta/baja solo aparecen si el usuario puede hacerlo.
+  const soyAdmin = useStore((s) => s.user?.rol === 'admin');
   const puedeBorrar = usePermiso('borrar_usuarios');
   const puedeCrear = usePermiso('crear_usuarios');
+  const puedeEditar = usePermiso('editar_usuarios');
   const tecnicos = useStore((s) => s.data.tecnicos);
   const clientes = useStore((s) => s.data.clientes);
   const toastShow = useStore((s) => s.toastShow);
+
+  const [vista, setVista] = useState('usuarios');
   const [lista, setLista] = useState(null);
-  const [modal, setModal] = useState(null); // { mode: 'crear' } | { mode: 'editar', user }
+  const [categorias, setCategorias] = useState(null);
+  const [modal, setModal] = useState(null);
+  const [catModal, setCatModal] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [catBusy, setCatBusy] = useState(false);
   const [aBaja, setABaja] = useState(null);
+  const [aReset, setAReset] = useState(null);
+  const [catABorrar, setCatABorrar] = useState(null);
+  const [filtroCat, setFiltroCat] = useState('');
 
   const cargar = async () => {
     try {
@@ -248,7 +370,15 @@ export default function Usuarios() {
     }
   };
 
-  useEffect(() => { cargar(); }, []);
+  const cargarCategorias = async () => {
+    try {
+      setCategorias(await api('/categorias'));
+    } catch {
+      setCategorias([]);
+    }
+  };
+
+  useEffect(() => { cargar(); cargarCategorias(); }, []);
 
   const vincular = (u) => {
     if (u.rol === 'tecnico' && u.tecnico_id) {
@@ -273,7 +403,7 @@ export default function Usuarios() {
         toastShow('Cambios guardados', 'ok');
       }
       setModal(null);
-      await cargar();
+      await Promise.all([cargar(), cargarCategorias()]);
     } catch (e) {
       toastShow(e.message, 'error');
     } finally {
@@ -281,7 +411,36 @@ export default function Usuarios() {
     }
   };
 
-  // La baja es logica (activo = false): la ficha se conserva y se puede reactivar.
+  const guardarCategoria = async (payload) => {
+    setCatBusy(true);
+    try {
+      if (catModal.mode === 'crear') {
+        await api('/categorias', { method: 'POST', body: payload });
+        toastShow('Categoría creada', 'ok');
+      } else {
+        const res = await api(`/categorias/${catModal.categoria.id}`, { method: 'PATCH', body: payload });
+        toastShow(res.aplicados ? `Categoría actualizada y aplicada a ${res.aplicados} usuario(s)` : 'Categoría actualizada', 'ok');
+      }
+      setCatModal(null);
+      await Promise.all([cargarCategorias(), cargar()]);
+    } catch (e) {
+      toastShow(e.message, 'error');
+    } finally {
+      setCatBusy(false);
+    }
+  };
+
+  const borrarCategoria = async (c) => {
+    try {
+      await api(`/categorias/${c.id}`, { method: 'DELETE' });
+      setCatABorrar(null);
+      await cargarCategorias();
+      toastShow(`Categoría ${c.nombre} eliminada`, 'warn');
+    } catch (e) {
+      toastShow(e.message, 'error');
+    }
+  };
+
   const reactivar = async (u) => {
     if (u.id === currentUid) return;
     try {
@@ -304,61 +463,197 @@ export default function Usuarios() {
     }
   };
 
+  const enviarReset = async (u) => {
+    try {
+      const res = await api(`/usuarios/${u.id}/reset`, { method: 'POST' });
+      setAReset(null);
+      toastShow(`Enlace de restablecimiento enviado a ${res.email}`, 'ok');
+    } catch (e) {
+      toastShow(e.message, 'error');
+    }
+  };
+
+  const desbloquear = async (u) => {
+    try {
+      await api(`/usuarios/${u.id}/desbloquear`, { method: 'POST' });
+      await cargar();
+      toastShow(`${u.email}: cuenta desbloqueada`, 'ok');
+    } catch (e) {
+      toastShow(e.message, 'error');
+    }
+  };
+
+  const listaFiltrada = (lista || []).filter((u) => !filtroCat || u.categoria_id === filtroCat);
+  const bloqueado = (u) => u.bloqueado_hasta && new Date(u.bloqueado_hasta).getTime() > Date.now();
+
   return (
     <div className="wrap page">
-      <div className="row between wrap mb24">
+      <div className="row between wrap mb16">
         <div>
           <h1 className="page-title">Usuarios y accesos</h1>
-          <p className="page-sub">Cuentas de la plataforma y permisos por usuario. Solo el administrador (o quien tenga el permiso) edita esto.</p>
+          <p className="page-sub">Cuentas, categorías, permisos, doble factor y recuperación de contraseñas.</p>
         </div>
-        {puedeCrear && (
+        {vista === 'usuarios' && puedeCrear && (
           <button className="btn primary" onClick={() => setModal({ mode: 'crear' })}>
             <Icon name="plus" size={14} /> Crear usuario
           </button>
         )}
+        {vista === 'categorias' && soyAdmin && (
+          <button className="btn primary" onClick={() => setCatModal({ mode: 'crear' })}>
+            <Icon name="plus" size={14} /> Nueva categoría
+          </button>
+        )}
       </div>
 
-      <div className="col" style={{ maxWidth: 860 }}>
-        {!lista ? (
-          <p className="muted">Cargando usuarios...</p>
-        ) : lista.length === 0 ? (
-          <div className="card"><p className="muted">Todavía no hay usuarios. Creá el primero.</p></div>
-        ) : (
-          lista.map((u) => (
-            <div key={u.id} className="card" style={{ opacity: u.activo ? 1 : 0.6 }}>
-              <div className="row between wrap">
-                <div className="row" style={{ gap: 12, minWidth: 240 }}>
-                  <span className="avatar">{u.email?.[0]?.toUpperCase()}</span>
-                  <div>
-                    <b>{u.email}</b>
-                    <div className="row" style={{ gap: 8, marginTop: 2 }}>
-                      <span className={`badge ${u.rol === 'admin' ? 'amber' : u.rol === 'tecnico' ? 'blue' : 'green'}`}>{ROL_LABEL[u.rol] || u.rol}</span>
-                      <span className="badge gray">{resumenPermisos(u)}</span>
-                      {!u.activo && <span className="badge gray">Inactivo</span>}
-                      {u.id === currentUid && <span className="badge gray">Vos</span>}
+      <div className="tabs mb16" role="tablist">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={vista === 'usuarios'}
+          className={`tab${vista === 'usuarios' ? ' active' : ''}`}
+          onClick={() => setVista('usuarios')}
+        >
+          Usuarios {lista ? `(${lista.length})` : ''}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={vista === 'categorias'}
+          className={`tab${vista === 'categorias' ? ' active' : ''}`}
+          onClick={() => setVista('categorias')}
+        >
+          Categorías {categorias ? `(${categorias.length})` : ''}
+        </button>
+      </div>
+
+      {vista === 'usuarios' && (
+        <>
+          <div className="row between wrap mb16" style={{ gap: 10 }}>
+            <div className="row" style={{ gap: 8 }}>
+              <span className="muted" style={{ fontSize: 12 }}>Categoría:</span>
+              <select className="input" style={{ width: 260 }} value={filtroCat} onChange={(e) => setFiltroCat(e.target.value)}>
+                <option value="">Todas las categorías</option>
+                {(categorias || []).map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+              </select>
+            </div>
+            <span className="muted" style={{ fontSize: 12 }}>{listaFiltrada.length} usuario(s)</span>
+          </div>
+
+          <div className="col" style={{ gap: 10 }}>
+            {!lista ? (
+              <p className="muted">Cargando usuarios...</p>
+            ) : listaFiltrada.length === 0 ? (
+              <div className="card"><p className="muted">No hay usuarios con ese filtro. Creá el primero o cambiá la categoría.</p></div>
+            ) : (
+              listaFiltrada.map((u) => (
+                <div key={u.id} className="card" style={{ opacity: u.activo ? 1 : 0.62 }}>
+                  <div className="row between wrap" style={{ gap: 12 }}>
+                    <div className="row" style={{ gap: 12, minWidth: 260 }}>
+                      <span className="avatar">{(u.email?.[0] || '?').toUpperCase()}</span>
+                      <div>
+                        <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+                          <b>{u.email}</b>
+                          {u.id === currentUid && <span className="badge gray">Vos</span>}
+                          {!u.activo && <span className="badge gray">Inactivo</span>}
+                        </div>
+                        <div className="row" style={{ gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
+                          <span className={`badge ${u.rol === 'admin' ? 'amber' : u.rol === 'tecnico' ? 'blue' : 'green'}`}>{ROL_LABEL[u.rol] || u.rol}</span>
+                          {u.categoria_nombre && <span className="badge blue">{u.categoria_nombre}</span>}
+                          <span className="badge gray">{resumenPermisos(u)}</span>
+                          {u.twofa_email && <span className="badge green">2FA email</span>}
+                          {bloqueado(u) && <span className="badge red">Bloqueado</span>}
+                        </div>
+                        <div className="muted" style={{ fontSize: 11.5, marginTop: 3 }}>
+                          Último acceso: {fechaCorta(u.ultimo_acceso)} · {vincular(u) ? `Vinculado a: ${vincular(u)}` : 'Sin vínculo'}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="row wrap" style={{ gap: 6 }}>
+                      {puedeEditar && (
+                        <button className="btn sm" onClick={() => setModal({ mode: 'editar', user: u })}>
+                          <Icon name="gear" size={13} /> Editar
+                        </button>
+                      )}
+                      {soyAdmin && u.activo && (
+                        <button className="btn sm" onClick={() => setAReset(u)} title="Enviar un enlace para que defina su contraseña">
+                          <Icon name="mail" size={13} /> Enviar reset
+                        </button>
+                      )}
+                      {soyAdmin && bloqueado(u) && (
+                        <button className="btn sm" onClick={() => desbloquear(u)}>
+                          <Icon name="refresh" size={13} /> Desbloquear
+                        </button>
+                      )}
+                      {u.activo && puedeBorrar ? (
+                        <button className="btn sm danger" onClick={() => setABaja(u)} disabled={u.id === currentUid}>
+                          <Icon name="x" size={13} /> Dar de baja
+                        </button>
+                      ) : !u.activo && (
+                        <button className="btn sm" onClick={() => reactivar(u)}>
+                          <Icon name="check" size={13} /> Reactivar
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
-                <div className="muted" style={{ fontSize: 12.5, alignSelf: 'center' }}>
-                  {vincular(u) ? `Vinculado a: ${vincular(u)}` : 'Sin vínculo'}
-                </div>
-                <div className="row" style={{ gap: 8 }}>
-                  <button className="btn sm" onClick={() => setModal({ mode: 'editar', user: u })}><Icon name="gear" size={13} /> Editar</button>
-                  {u.activo && puedeBorrar ? (
-                    <button className="btn sm danger" onClick={() => setABaja(u)} disabled={u.id === currentUid}>
-                      <Icon name="x" size={13} /> Dar de baja
-                    </button>
-                  ) : (
-                    <button className="btn sm" onClick={() => reactivar(u)}>
-                      <Icon name="check" size={13} /> Reactivar
-                    </button>
-                  )}
-                </div>
-              </div>
+              ))
+            )}
+          </div>
+        </>
+      )}
+
+      {vista === 'categorias' && (
+        <>
+          {!categorias ? (
+            <p className="muted">Cargando categorías...</p>
+          ) : categorias.length === 0 ? (
+            <div className="card">
+              <h3 className="card-title"><Icon name="users" size={15} /> Todavía no hay categorías</h3>
+              <p className="muted">Creá una categoría como “Depósito”, “Ventas” o “Administración” y marcale qué áreas puede ver y usar. Después asignala a cada usuario.</p>
+              {soyAdmin && (
+                <button className="btn primary" onClick={() => setCatModal({ mode: 'crear' })}>
+                  <Icon name="plus" size={14} /> Crear la primera categoría
+                </button>
+              )}
             </div>
-          ))
-        )}
-      </div>
+          ) : (
+            <div className="cat-grid">
+              {categorias.map((c) => {
+                const habilitados = CLAVES.filter((k) => c.permisos?.[k]).length;
+                const criticos = PERMISOS.filter((p) => p.critica && c.permisos?.[p.clave]).length;
+                return (
+                  <div key={c.id} className="card cat-card">
+                    <div className="row between wrap" style={{ gap: 8 }}>
+                      <div>
+                        <h3 className="card-title" style={{ margin: 0 }}>{c.nombre}</h3>
+                        <p className="muted" style={{ margin: '4px 0 0', fontSize: 12.5 }}>
+                          {c.descripcion || 'Sin descripción'}
+                        </p>
+                      </div>
+                      <span className="badge blue">{c.usuarios} usuario(s)</span>
+                    </div>
+                    <div className="row wrap" style={{ gap: 6, marginTop: 12 }}>
+                      <span className="badge gray">{habilitados} de {CLAVES.length} permisos</span>
+                      {criticos > 0 && <span className="badge amber">{criticos} crítico(s)</span>}
+                      {c.actualizado_en && <span className="badge gray">Actualizada {fechaCorta(c.actualizado_en)}</span>}
+                    </div>
+                    {soyAdmin && (
+                      <div className="row" style={{ gap: 8, marginTop: 14 }}>
+                        <button className="btn sm" onClick={() => setCatModal({ mode: 'editar', categoria: c })}>
+                          <Icon name="gear" size={13} /> Editar
+                        </button>
+                        <button className="btn sm danger" onClick={() => setCatABorrar(c)} disabled={c.usuarios > 0} title={c.usuarios > 0 ? 'Reasigná los usuarios antes de eliminarla' : 'Eliminar'}>
+                          <Icon name="x" size={13} /> Eliminar
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
 
       {aBaja && (
         <ConfirmDialog
@@ -383,15 +678,56 @@ export default function Usuarios() {
         </ConfirmDialog>
       )}
 
+      {aReset && (
+        <ConfirmDialog
+          title="Enviar enlace de restablecimiento"
+          sub={aReset.email}
+          confirmLabel="Enviar enlace"
+          onCancel={() => setAReset(null)}
+          onConfirm={() => enviarReset(aReset)}
+        >
+          <p className="muted" style={{ margin: 0 }}>
+            Le vamos a enviar un correo con un enlace de un solo uso para que defina una contraseña nueva.
+            El enlace vence en 30 minutos. No se envía ninguna contraseña por correo.
+          </p>
+        </ConfirmDialog>
+      )}
+
+      {catABorrar && (
+        <ConfirmDialog
+          title="Eliminar categoría"
+          sub={catABorrar.nombre}
+          confirmLabel="Eliminar"
+          onCancel={() => setCatABorrar(null)}
+          onConfirm={() => borrarCategoria(catABorrar)}
+        >
+          <p className="muted" style={{ margin: 0 }}>
+            La categoría se elimina del catálogo. Los usuarios que la tengan asignada deben reasignarse antes
+            (por eso el botón se desactiva si tiene usuarios).
+          </p>
+        </ConfirmDialog>
+      )}
+
       {modal && (
         <FormUsuariosModal
           mode={modal.mode}
           user={modal.user}
           tecnicos={tecnicos}
           clientes={clientes}
+          categorias={categorias || []}
           busy={busy}
           onGuardar={guardar}
           onClose={() => setModal(null)}
+        />
+      )}
+
+      {catModal && (
+        <FormCategoriaModal
+          mode={catModal.mode}
+          categoria={catModal.categoria}
+          busy={catBusy}
+          onGuardar={guardarCategoria}
+          onClose={() => setCatModal(null)}
         />
       )}
     </div>

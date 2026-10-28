@@ -9,8 +9,63 @@ CREATE TABLE IF NOT EXISTS usuarios (
   tecnico_id TEXT,
   cliente_id TEXT,
   activo BOOLEAN DEFAULT TRUE,
+  creado_en TIMESTAMPTZ DEFAULT now(),
+  permisos JSONB,
+  categoria_id TEXT,
+  twofa_email BOOLEAN DEFAULT FALSE,
+  token_version INTEGER DEFAULT 0,
+  ultimo_acceso TIMESTAMPTZ,
+  intentos_fallidos INTEGER DEFAULT 0,
+  bloqueado_hasta TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS categorias_acceso (
+  id TEXT PRIMARY KEY,
+  nombre TEXT NOT NULL,
+  descripcion TEXT,
+  permisos JSONB NOT NULL DEFAULT '{}'::jsonb,
+  creado_en TIMESTAMPTZ DEFAULT now(),
+  actualizado_en TIMESTAMPTZ
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS categorias_acceso_nombre_uniq ON categorias_acceso (lower(nombre));
+
+CREATE TABLE IF NOT EXISTS login_2fa (
+  id TEXT PRIMARY KEY,
+  usuario_id TEXT NOT NULL,
+  codigo_hash TEXT NOT NULL,
+  expira_en TIMESTAMPTZ NOT NULL,
+  intentos INTEGER NOT NULL DEFAULT 0,
+  consumido BOOLEAN NOT NULL DEFAULT FALSE,
+  creado_en TIMESTAMPTZ DEFAULT now(),
+  ip TEXT,
+  user_agent TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_login_2fa_usuario ON login_2fa (usuario_id, creado_en DESC);
+
+CREATE TABLE IF NOT EXISTS password_resets (
+  id TEXT PRIMARY KEY,
+  usuario_id TEXT NOT NULL,
+  token_hash TEXT NOT NULL,
+  expira_en TIMESTAMPTZ NOT NULL,
+  usado BOOLEAN NOT NULL DEFAULT FALSE,
+  creado_en TIMESTAMPTZ DEFAULT now(),
+  ip TEXT,
+  user_agent TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_password_resets_usuario ON password_resets (usuario_id, creado_en DESC);
+CREATE INDEX IF NOT EXISTS idx_password_resets_hash ON password_resets (token_hash);
+
+CREATE TABLE IF NOT EXISTS password_history (
+  id TEXT PRIMARY KEY,
+  usuario_id TEXT NOT NULL,
+  password_hash TEXT NOT NULL,
   creado_en TIMESTAMPTZ DEFAULT now()
 );
+
+CREATE INDEX IF NOT EXISTS idx_password_history_usuario ON password_history (usuario_id, creado_en DESC);
 
 CREATE TABLE IF NOT EXISTS tecnicos (
   id TEXT PRIMARY KEY,

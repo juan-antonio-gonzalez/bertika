@@ -22,28 +22,86 @@ export default function Auth() {
   const navigate = useNavigate();
   const user = useStore((s) => s.user);
   const login = useStore((s) => s.login);
+  const verificar2fa = useStore((s) => s.verificar2fa);
+  const reenviar2fa = useStore((s) => s.reenviar2fa);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [ver, setVer] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState('');
+  const [fase, setFase] = useState('login');
+  const [challenge, setChallenge] = useState('');
+  const [emailMask, setEmailMask] = useState('');
+  const [code, setCode] = useState('');
+  const [aviso, setAviso] = useState('');
+  const [reenviando, setReenviando] = useState(false);
 
   const onSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    setAviso('');
     if (!email.trim() || !password) {
       setError('Ingresá tu email y contraseña.');
       return;
     }
     setEnviando(true);
     try {
-      await login(email.trim(), password);
+      const res = await login(email.trim(), password);
+      if (res?.twofa) {
+        setFase('2fa');
+        setChallenge(res.challenge);
+        setEmailMask(res.email);
+        setCode('');
+        return;
+      }
       navigate('/home');
     } catch (err) {
       setError(err.message || 'No se pudo iniciar sesión. Verificá tus credenciales.');
     } finally {
       setEnviando(false);
     }
+  };
+
+  const verificarCodigo = async (e) => {
+    e.preventDefault();
+    setError('');
+    setAviso('');
+    if (!/^\d{6}$/.test(code)) {
+      setError('Ingresá el código de 6 dígitos.');
+      return;
+    }
+    setEnviando(true);
+    try {
+      await verificar2fa(challenge, code);
+      navigate('/home');
+    } catch (err) {
+      setError(err.message || 'El código no es correcto.');
+    } finally {
+      setEnviando(false);
+    }
+  };
+
+  const reenviarCodigo = async () => {
+    setError('');
+    setAviso('');
+    setReenviando(true);
+    try {
+      const res = await reenviar2fa(challenge);
+      setAviso(`Código reenviado a ${res.email || emailMask}. Revisá también el spam.`);
+    } catch (err) {
+      setError(err.message || 'No se pudo reenviar el código.');
+    } finally {
+      setReenviando(false);
+    }
+  };
+
+  const volverAlLogin = () => {
+    setFase('login');
+    setChallenge('');
+    setCode('');
+    setPassword('');
+    setError('');
+    setAviso('');
   };
 
   return (
@@ -95,59 +153,110 @@ export default function Auth() {
 
         <div className="auth-form-side">
           <div className="auth-card auth-card-wide">
-            <h2>Iniciar sesión</h2>
-            <p className="auth-sub">
-              Usá el email y la contraseña que te entregó el taller para acceder
-              a tu plataforma.
-            </p>
+            {fase === '2fa' ? (
+              <>
+                <h2>Verificación en dos pasos</h2>
+                <p className="auth-sub">
+                  Enviamos un código de 6 dígitos a <b>{emailMask}</b>. Vence en 10 minutos.
+                  Revisá también la carpeta de spam.
+                </p>
 
-            {error && (
-              <div className="banner-red" style={{ marginBottom: 16 }}>
-                <div><Icon name="x" size={15} /> {error}</div>
-              </div>
-            )}
+                {error && (
+                  <div className="banner-red" style={{ marginBottom: 16 }}>
+                    <div><Icon name="x" size={15} /> {error}</div>
+                  </div>
+                )}
+                {aviso && (
+                  <div className="banner-info" style={{ marginBottom: 16 }}>
+                    <div><Icon name="mail" size={15} /> {aviso}</div>
+                  </div>
+                )}
 
-            <form onSubmit={onSubmit} noValidate>
-              <div className="field">
-                <label>Email *</label>
-                <input
-                  className="input"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="tu@email.com"
-                  autoComplete="username"
-                  disabled={enviando}
-                />
-              </div>
-              <div className="field">
-                <label>Contraseña *</label>
-                <div className="pass-wrap">
-                  <input
-                    className="input"
-                    type={ver ? 'text' : 'password'}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Tu contraseña"
-                    autoComplete="current-password"
-                    disabled={enviando}
-                  />
-                  <button type="button" className="pass-eye" onClick={() => setVer((v) => !v)} title={ver ? 'Ocultar contraseña' : 'Mostrar contraseña'}>
-                    <Icon name={ver ? 'eye-off' : 'eye'} size={16} />
+                <form onSubmit={verificarCodigo} noValidate>
+                  <div className="field">
+                    <label>Código de 6 dígitos *</label>
+                    <input
+                      className="input code-input"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      maxLength={6}
+                      autoComplete="one-time-code"
+                      value={code}
+                      onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      placeholder="000000"
+                      disabled={enviando}
+                      autoFocus
+                    />
+                  </div>
+                  <button className="btn primary lg block auth-submit" disabled={enviando || code.length !== 6}>
+                    <Icon name="shield" size={16} /> {enviando ? 'Verificando...' : 'Verificar código'}
                   </button>
-                </div>
-              </div>
-              <button className="btn primary lg block auth-submit" disabled={enviando}>
-                <Icon name="check" size={16} /> {enviando ? 'Ingresando...' : 'Ingresar a la plataforma'}
-              </button>
-            </form>
+                  <div className="row between wrap" style={{ marginTop: 12, gap: 8 }}>
+                    <button type="button" className="btn sm" onClick={reenviarCodigo} disabled={reenviando || enviando}>
+                      <Icon name="refresh" size={13} /> {reenviando ? 'Reenviando...' : 'Reenviar código'}
+                    </button>
+                    <button type="button" className="btn sm ghost" onClick={volverAlLogin} disabled={enviando}>
+                      Volver al login
+                    </button>
+                  </div>
+                </form>
+              </>
+            ) : (
+              <>
+                <h2>Iniciar sesión</h2>
+                <p className="auth-sub">
+                  Usá el email y la contraseña que te entregó el taller para acceder
+                  a tu plataforma.
+                </p>
+
+                {error && (
+                  <div className="banner-red" style={{ marginBottom: 16 }}>
+                    <div><Icon name="x" size={15} /> {error}</div>
+                  </div>
+                )}
+
+                <form onSubmit={onSubmit} noValidate>
+                  <div className="field">
+                    <label>Email *</label>
+                    <input
+                      className="input"
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="tu@email.com"
+                      autoComplete="username"
+                      disabled={enviando}
+                      autoFocus
+                    />
+                  </div>
+                  <div className="field">
+                    <label>Contraseña *</label>
+                    <div className="pass-wrap">
+                      <input
+                        className="input"
+                        type={ver ? 'text' : 'password'}
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        placeholder="Tu contraseña"
+                        autoComplete="current-password"
+                        disabled={enviando}
+                      />
+                      <button type="button" className="pass-eye" onClick={() => setVer((v) => !v)} title={ver ? 'Ocultar contraseña' : 'Mostrar contraseña'} aria-label={ver ? 'Ocultar contraseña' : 'Mostrar contraseña'}>
+                        <Icon name={ver ? 'eye-off' : 'eye'} size={16} />
+                      </button>
+                    </div>
+                  </div>
+                  <button className="btn primary lg block auth-submit" disabled={enviando}>
+                    <Icon name="check" size={16} /> {enviando ? 'Ingresando...' : 'Ingresar a la plataforma'}
+                  </button>
+                </form>
+              </>
+            )}
 
             <div className="auth-foot">
               <Link to="/" className="auth-back"><Icon name="home" size={13} /> Volver al sitio</Link>
               <Link to="/seguimiento" className="auth-back"><Icon name="search" size={13} /> Hacer seguimiento</Link>
-              <a className="auth-back" href={`mailto:${CONTACTO.emailSoporte}?subject=${encodeURIComponent('No puedo ingresar a la plataforma')}`}>
-                <Icon name="mail" size={13} /> ¿Olvidaste la contraseña?
-              </a>
+              <Link to="/auth/recuperar" className="auth-back"><Icon name="mail" size={13} /> ¿Olvidaste tu contraseña?</Link>
             </div>
           </div>
         </div>
