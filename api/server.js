@@ -3300,6 +3300,8 @@ app.patch('/api/usuarios/:id', authRequired, permisoRequerido('editar_usuarios')
     despues = await one('SELECT * FROM usuarios WHERE id = $1', [req.params.id]);
   }
   if (twofa === false) await query('DELETE FROM login_2fa WHERE usuario_id = $1', [antes.id]);
+  if (twofa === true && !antes.twofa_email) await avisar2FA(despues || antes, true, req);
+  if (twofa === false && antes.twofa_email) await avisar2FA(antes, false, req);
 
   const sinHash = (u) => {
     const copia = { ...u };
