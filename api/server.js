@@ -672,6 +672,14 @@ async function asegurarCodigos() {
     config JSONB,
     usuario JSONB
   )`);
+  // Reparacion de contadores: si la fila 'cfg' falta (o quedo atras) pero ya
+  // hay historial cfg_100..., el siguiente nextId volvia a generar cfg_100 y
+  // fallaba con duplicate key. Se alinea el contador con el historial real.
+  await query(`INSERT INTO contadores (nombre, valor)
+    SELECT 'cfg', COALESCE(MAX(SUBSTRING(id FROM 5)::int), 99)
+    FROM cotizador_config_historial
+    WHERE id ~ '^cfg_[0-9]+$'
+    ON CONFLICT (nombre) DO UPDATE SET valor = GREATEST(contadores.valor, EXCLUDED.valor)`);
   const faltantes = await query("SELECT id FROM ordenes WHERE codigo_seguimiento IS NULL OR codigo_seguimiento = ''");
   for (const o of faltantes) {
     const c = await generarCodigoUnico(async (cod) => {
@@ -3431,7 +3439,9 @@ app.put('/api/cotizador', authRequired, permisoRequerido('config_cotizador'), as
        ON CONFLICT (id) DO UPDATE SET config = EXCLUDED.config, actualizado_en = now(), actualizado_por = EXCLUDED.actualizado_por`,
       [JSON.stringify(config), req.user.email]
     );
-    const cfgId = await nextId('cfg', client);
+    // El historial no necesita IDs secuenciales: un UUID evita para siempre
+    // colisiones con contadores viejos o restaurados.
+    const cfgId = `cfg_${randomUUID()}`;
     await client.query(
       'INSERT INTO cotizador_config_historial (id, config, usuario) VALUES ($1, $2::jsonb, $3::jsonb)',
       [cfgId, JSON.stringify(config), JSON.stringify(actorDe(req))]
