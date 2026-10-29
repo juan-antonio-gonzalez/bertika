@@ -1,16 +1,18 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Icon, ConfirmDialog } from '../components/ui';
 import PageHeader from '../components/layout/PageHeader';
 import { api } from '../store/api';
 import { useStore } from '../store/store';
 import { valorVisible } from '../data/listas';
+import { filasCsv, valorDesdeCsv } from '../data/csv';
 import RegistroModal from '../components/listas/RegistroModal';
 import CampoModal from '../components/listas/CampoModal';
 import ListaConfigModal from '../components/listas/ListaConfigModal';
 import ConvertirModal from '../components/listas/ConvertirModal';
 import {
-  FiltrosModal, ColumnasModal, NuevaVistaModal, NuevaListaModal,
+  FiltrosModal, ColumnasModal, NuevaVistaModal, NuevaListaModal, ImportarModal, DuplicarListaModal,
+  PapeleraListasModal, PapeleraRegistrosModal,
 } from '../components/listas/ModalesLista';
 
 const texto = (v) => String(v ?? '').toLowerCase();
@@ -82,6 +84,9 @@ function TarjetaLista({ lista, areaSlug }) {
 }
 
 function AreasHome({ areas, cargando }) {
+  const esAdmin = useStore((s) => s.user?.rol === 'admin');
+  const cargarAreas = useStore((s) => s.cargarAreas);
+  const [papelera, setPapelera] = useState(false);
   if (cargando) return <div className="wrap page"><p className="muted">Cargando áreas...</p></div>;
   return (
     <div className="wrap page">
@@ -89,7 +94,18 @@ function AreasHome({ areas, cargando }) {
         group="Listas"
         title="Listas"
         sub="Tablas y vistas flexibles por área. Cada equipo ve solo los espacios que tiene habilitados."
+        actions={esAdmin ? (
+          <button type="button" className="btn sm" onClick={() => setPapelera(true)}>
+            <Icon name="recycl" size={13} /> Papelera
+          </button>
+        ) : null}
       />
+      {papelera && (
+        <PapeleraListasModal
+          onRestaurada={cargarAreas}
+          onClose={() => setPapelera(false)}
+        />
+      )}
       {areas.length === 0 ? (
         <div className="card">
           <h3 className="card-title"><Icon name="clipboard" size={15} /> Todavía no hay áreas visibles</h3>
@@ -194,6 +210,7 @@ function ListaDetalle({ listaId, area }) {
   const [columnas, setColumnas] = useState([]);
   const [orden, setOrden] = useState(null);
   const [filtros, setFiltros] = useState([]);
+  const [agrupar, setAgrupar] = useState(null);
   const [modal, setModal] = useState(null);
   const [confirmar, setConfirmar] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -222,6 +239,7 @@ function ListaDetalle({ listaId, area }) {
     columnas,
     filtros,
     orden,
+    agrupar,
     q: busqueda,
   });
 
@@ -234,6 +252,7 @@ function ListaDetalle({ listaId, area }) {
     setColumnas(elegida?.config?.columnas || []);
     setOrden(elegida?.config?.orden || null);
     setFiltros(elegida?.config?.filtros || []);
+    setAgrupar(elegida?.config?.agrupar || null);
     setBusqueda(elegida?.config?.q || '');
     if (data.puede?.ver_registros) {
       const r = await api(`/listas/${data.id}/registros`);
@@ -256,6 +275,7 @@ function ListaDetalle({ listaId, area }) {
     setColumnas([]);
     setOrden(null);
     setFiltros([]);
+    setAgrupar(null);
     setBusqueda('');
     cargarDetalle({ resetVista: true })
       .catch((e) => { if (vivo) setError(e.message || 'No se pudo abrir la lista.'); })
@@ -276,6 +296,7 @@ function ListaDetalle({ listaId, area }) {
     setColumnas(v.config?.columnas || []);
     setOrden(v.config?.orden || null);
     setFiltros(v.config?.filtros || []);
+    setAgrupar(v.config?.agrupar || null);
     setBusqueda(v.config?.q || '');
   };
 
@@ -289,6 +310,65 @@ function ListaDetalle({ listaId, area }) {
       });
       toastShow('Vista guardada', 'ok');
       await cargarDetalle({ resetVista: false });
+    } catch (e) {
+      toastShow(e.message, 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const exportarCsv = () => {
+    try {
+      const filas = [
+        ['ID', ...visibles.map((c) => c.nombre)],
+        ...filtrados.map((r) => [r.id, ...visibles.map((c) => valorVisible(c, r.datos?.[c.id]))]),
+      ];
+      const csv = filasCsv(filas, { separador: ';' });
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${String(lista.nombre || 'lista').replace(/[^\w-]+/g, '-').toLowerCase()}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toastShow(`${filtrados.length} registro(s) exportados`, 'ok');
+    } catch {
+      toastShow('No se pudo exportar el CSV', 'error');
+    }
+  };
+
+  const importarCsv = async ({ headers, filas, mapa }) => {
+    setBusy(true);
+    let ok = 0;
+    let fail = 0;
+    try {
+      const indice = new Map(headers.map((h, i) => [h, i]));
+      for (const fila of filas.slice(0, 500)) {
+        const datos = {};
+        for (const [head, campoId] of Object.entries(mapa)) {
+          if (!campoId) continue;
+          const campo = campos.find((c) => c.id === campoId);
+          const i = indice.get(head);
+          if (!campo || i === undefined) continue;
+          datos[campoId] = valorDesdeCsv(campo, fila[i]);
+        }
+        try {
+          await api(`/listas/${lista.id}/registros`, { method: 'POST', body: { datos } });
+          ok += 1;
+        } catch {
+          fail += 1;
+        }
+      }
+      setModal(null);
+      await recargarRegistros();
+      toastShow(
+        fail
+          ? `Importados ${ok} registro(s); ${fail} fila(s) con error. Revisá obligatorios y tipos.`
+          : `Importados ${ok} registro(s)`,
+        fail ? 'warn' : 'ok'
+      );
     } catch (e) {
       toastShow(e.message, 'error');
     } finally {
@@ -345,6 +425,21 @@ function ListaDetalle({ listaId, area }) {
       await recargarRegistros();
       setModal(null);
       toastShow(`Cliente creado y orden ${res.orden_id} ingresada al taller`, 'ok');
+    } catch (e) {
+      toastShow(e.message, 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const duplicarLista = async ({ nombre }) => {
+    setBusy(true);
+    try {
+      const res = await api(`/listas/${lista.id}/duplicar`, { method: 'POST', body: { nombre } });
+      await cargarAreas();
+      setModal(null);
+      toastShow('Lista duplicada con sus campos y vistas', 'ok');
+      navigate(`/listas/${lista.area_slug}/${res.id}`);
     } catch (e) {
       toastShow(e.message, 'error');
     } finally {
@@ -455,6 +550,24 @@ function ListaDetalle({ listaId, area }) {
     return ordenarRegistros(out, campos, orden);
   }, [registros, campos, busqueda, filtros, orden, vistaActiva, usuario]);
 
+  const grupos = useMemo(() => {
+    if (!agrupar) return [{ key: '__todos', label: null, rows: filtrados }];
+    const campo = campos.find((c) => c.id === agrupar);
+    if (!campo) return [{ key: '__todos', label: null, rows: filtrados }];
+    const mapa = new Map();
+    for (const registro of filtrados) {
+      const valor = registro.datos?.[campo.id];
+      const key = vacio(valor) ? '__vacio' : String(valor);
+      if (!mapa.has(key)) mapa.set(key, []);
+      mapa.get(key).push(registro);
+    }
+    return [...mapa.entries()].map(([key, rows]) => ({
+      key,
+      label: key === '__vacio' ? 'Sin valor' : valorVisible(campo, rows[0].datos?.[campo.id]),
+      rows,
+    }));
+  }, [filtrados, campos, agrupar]);
+
   const cambiarOrden = (campo) => {
     setOrden((prev) => (
       prev?.campo === campo.id
@@ -558,6 +671,20 @@ function ListaDetalle({ listaId, area }) {
               )}
             </div>
             <div className="listas-tools">
+              {vistaActiva?.tipo !== 'kanban' && (
+                <select
+                  className="input"
+                  style={{ width: 155 }}
+                  value={agrupar || ''}
+                  onChange={(e) => setAgrupar(e.target.value || null)}
+                  aria-label="Agrupar por"
+                >
+                  <option value="">Sin agrupar</option>
+                  {campos.filter((c) => ['seleccion', 'persona', 'checkbox'].includes(c.tipo)).map((c) => (
+                    <option key={c.id} value={c.id}>Agrupar: {c.nombre}</option>
+                  ))}
+                </select>
+              )}
               <div className="listas-search">
                 <Icon name="search" size={14} />
                 <input
@@ -574,6 +701,16 @@ function ListaDetalle({ listaId, area }) {
               {vistaActiva?.tipo !== 'kanban' && (
                 <button type="button" className="btn sm" onClick={() => setModal({ tipo: 'columnas' })}>
                   <Icon name="grid" size={13} /> Columnas
+                </button>
+              )}
+              {puede.ver_registros && (
+                <button type="button" className="btn sm" onClick={exportarCsv} title="Exportar los registros visibles a CSV">
+                  <Icon name="download" size={13} /> Exportar
+                </button>
+              )}
+              {puede.crear_registros && (
+                <button type="button" className="btn sm" onClick={() => setModal({ tipo: 'importar' })} title="Importar registros desde CSV">
+                  <Icon name="upload" size={13} /> Importar
                 </button>
               )}
               {puede.administrar_vistas && vistaId && (
@@ -693,7 +830,17 @@ function ListaDetalle({ listaId, area }) {
                             </div>
                           </td>
                         </tr>
-                      ) : filtrados.map((registro) => (
+                      ) : grupos.map((grupo) => (
+                        <Fragment key={grupo.key}>
+                          {agrupar && (
+                            <tr className="listas-group-row">
+                              <td colSpan={visibles.length + 1}>
+                                <b>{grupo.label}</b>
+                                <span className="badge gray" style={{ marginLeft: 6 }}>{grupo.rows.length}</span>
+                              </td>
+                            </tr>
+                          )}
+                          {grupo.rows.map((registro) => (
                         <tr
                           key={registro.id}
                           className={puede.editar_registros ? 'listas-row-click' : ''}
@@ -705,7 +852,17 @@ function ListaDetalle({ listaId, area }) {
                             const valor = registro.datos?.[campo.id];
                             return (
                               <td key={campo.id}>
-                                {campo.tipo === 'checkbox'
+                                {campo.tipo === 'adjunto' && valor?.url ? (
+                                  <a
+                                    className="listas-cell"
+                                    href={valor.url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <Icon name="folder" size={12} /> {valor.nombre || 'Adjunto'}
+                                  </a>
+                                ) : campo.tipo === 'checkbox'
                                   ? <span className={`badge ${valor ? 'green' : 'gray'}`}>{valor ? 'Sí' : 'No'}</span>
                                   : (vacio(valor) ? <span className="muted">—</span> : (
                                     <span className="listas-cell" title={String(valor)}>
@@ -730,6 +887,8 @@ function ListaDetalle({ listaId, area }) {
                             </div>
                           </td>
                         </tr>
+                          ))}
+                        </Fragment>
                       ))}
                     </tbody>
                   </table>
@@ -764,6 +923,23 @@ function ListaDetalle({ listaId, area }) {
         />
       )}
 
+      {modal?.tipo === 'papeleraRegistros' && (
+        <PapeleraRegistrosModal
+          lista={lista}
+          campos={campos}
+          onRestaurada={recargarRegistros}
+          onClose={() => setModal(null)}
+        />
+      )}
+
+      {modal?.tipo === 'duplicar' && (
+        <DuplicarListaModal lista={lista} busy={busy} onGuardar={duplicarLista} onClose={() => setModal(null)} />
+      )}
+
+      {modal?.tipo === 'importar' && (
+        <ImportarModal campos={campos} busy={busy} onImportar={importarCsv} onClose={() => setModal(null)} />
+      )}
+
       {modal?.tipo === 'convertir' && (
         <ConvertirModal
           lista={lista}
@@ -783,6 +959,8 @@ function ListaDetalle({ listaId, area }) {
           onEditarCampo={(campo) => setModal({ tipo: 'campo', campo })}
           onEliminarCampo={confirmarQuitarCampo}
           onArchivarLista={puede.borrar_listas ? archivarLista : null}
+          onDuplicar={puede.crear_listas ? () => setModal({ tipo: 'duplicar' }) : null}
+          onPapelera={puede.borrar_registros ? () => setModal({ tipo: 'papeleraRegistros' }) : null}
           onClose={() => setModal(null)}
         />
       )}
@@ -790,6 +968,8 @@ function ListaDetalle({ listaId, area }) {
       {modal?.tipo === 'campo' && (
         <CampoModal
           campo={modal.campo}
+          listas={area?.listas || []}
+          listaActual={lista}
           busy={busy}
           onGuardar={guardarCampo}
           onClose={() => setModal({ tipo: 'config' })}

@@ -60,6 +60,8 @@ export const TIPOS_CAMPO = [
   { tipo: 'telefono', etiqueta: 'Teléfono' },
   { tipo: 'url', etiqueta: 'Enlace' },
   { tipo: 'persona', etiqueta: 'Persona' },
+  { tipo: 'adjunto', etiqueta: 'Adjunto' },
+  { tipo: 'relacion', etiqueta: 'Relación con otra lista' },
 ];
 
 export const TIPOS = TIPOS_CAMPO.map((t) => t.tipo);
@@ -224,6 +226,26 @@ export function validarRegistro(campos, datos, { parcial = false } = {}) {
       salida[id] = texto;
       continue;
     }
+    if (tipo === 'adjunto') {
+      if (!esObjeto(valor) || !valor.url) return { ok: false, error: `“${campo.nombre}”: subí un archivo válido.` };
+      const url = String(valor.url).slice(0, 1000);
+      if (!/^(https?:\/\/|\/uploads\/)/.test(url)) return { ok: false, error: `“${campo.nombre}”: el archivo no es válido.` };
+      salida[id] = {
+        url,
+        nombre: String(valor.nombre || 'Adjunto').slice(0, 160),
+        mime: String(valor.mime || '').slice(0, 100),
+        size: Number(valor.size) || 0,
+      };
+      continue;
+    }
+    if (tipo === 'relacion') {
+      if (!esObjeto(valor) || !valor.id) return { ok: false, error: `“${campo.nombre}”: elegí un registro válido.` };
+      salida[id] = {
+        id: String(valor.id).slice(0, 80),
+        etiqueta: String(valor.etiqueta || valor.id).slice(0, 200),
+      };
+      continue;
+    }
     salida[id] = null;
   }
   return { ok: true, datos: salida };
@@ -244,5 +266,7 @@ export function valorVisible(campo, valor) {
     const d = new Date(`${String(valor).slice(0, 10)}T00:00:00`);
     return Number.isNaN(d.getTime()) ? String(valor) : d.toLocaleDateString('es-AR');
   }
+  if (campo?.tipo === 'adjunto') return String(valor?.nombre || 'Adjunto');
+  if (campo?.tipo === 'relacion') return String(valor?.etiqueta || valor?.id || '');
   return String(valor);
 }

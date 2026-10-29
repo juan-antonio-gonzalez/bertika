@@ -80,6 +80,21 @@ async function vistasDe(listaId) {
   `, [listaId]);
 }
 
+async function validarRelaciones(campos, datos) {
+  for (const campo of campos) {
+    if (campo.tipo !== 'relacion') continue;
+    const rel = datos[campo.id];
+    if (!rel?.id) continue;
+    const objetivo = await one(`
+      SELECT r.id FROM lista_registros r
+        JOIN listas l ON l.id = r.lista_id
+       WHERE r.id = $1 AND r.lista_id = $2 AND r.archivado = false AND l.archivada = false
+    `, [rel.id, campo.config?.lista_id]);
+    if (!objetivo) return `“${campo.nombre}”: el registro relacionado no existe o no está disponible.`;
+  }
+  return null;
+}
+
 async function conflictoUnico(listaId, campos, datos, excluirId = null) {
   for (const campo of campos) {
     if (!campo.unico) continue;
@@ -104,6 +119,7 @@ function normalizarConfigCampo(tipo, config) {
     if (entrada.min !== undefined && entrada.min !== null && entrada.min !== '') salida.min = Number(entrada.min);
     if (entrada.max !== undefined && entrada.max !== null && entrada.max !== '') salida.max = Number(entrada.max);
   }
+  if (tipo === 'relacion' && entrada.lista_id) salida.lista_id = limStr(entrada.lista_id, 80);
   if (entrada.defecto !== undefined && entrada.defecto !== null && entrada.defecto !== '') {
     salida.defecto = entrada.defecto;
   }
@@ -145,6 +161,44 @@ listasRouter.get('/listas/nav', authRequired, async (req, res) => {
 });
 
 // ---------- Listas ----------
+// Papelera de listas (antes de /listas/:id para que no la capture el comodín).
+listasRouter.get('/listas/archivadas', authRequired, async (req, res) => {
+  const where = [];
+  const params = [];
+  if (req.user.rol !== 'admin') {
+    const areas = Object.entries(req.user.areas || {}).filter(([, caps]) => caps?.borrar_listas).map(([id]) => id);
+    if (!areas.length) return res.json([]);
+    params.push(areas);
+    where.push(`l.area_id = ANY($${params.length})`);
+  }
+  const filas = await query(`
+    SELECT l.id, l.area_id, l.nombre, l.descripcion, l.icono, l.archivada_en, l.archivada_por,
+           a.nombre AS area_nombre
+      FROM listas l JOIN areas a ON a.id = l.area_id
+     WHERE l.archivada = true ${where.length ? `AND ${where.join(' AND ')}` : ''}
+     ORDER BY l.archivada_en DESC NULLS LAST
+     LIMIT 200
+  `, params);
+  return res.json(filas);
+});
+
+listasRouter.patch('/listas/:id/restaurar', authRequired, async (req, res) => {
+  const lista = await one(`
+    SELECT l.*, a.slug AS area_slug FROM listas l JOIN areas a ON a.id = l.area_id
+     WHERE l.id = $1 AND l.archivada = true
+  `, [req.params.id]);
+  if (!lista) return res.status(404).json({ error: 'Lista archivada no encontrada' });
+  if (!capacidades(req, lista.area_id).borrar_listas) return sinPermiso(res);
+  try {
+    await query('UPDATE listas SET archivada = false, archivada_en = NULL, archivada_por = NULL, actualizado_en = now() WHERE id = $1', [lista.id]);
+  } catch (e) {
+    if (e.code === '23505') return res.status(409).json({ error: 'Ya hay una lista activa con ese nombre en el área.' });
+    throw e;
+  }
+  await auditar({ req, tabla: 'listas', registroId: lista.id, accion: 'restaurar' });
+  return res.json({ ok: true });
+});
+
 listasRouter.get('/listas/:id', authRequired, async (req, res) => {
   const lista = await listaConArea(req.params.id);
   if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
@@ -215,6 +269,70 @@ listasRouter.patch('/listas/:id', authRequired, async (req, res) => {
   return res.json({ ok: true });
 });
 
+// Duplicar una lista copia SU ESTRUCTURA (campos y vistas), no los registros.
+// Sirve como plantilla: Materiales, Herramientas, Insumos, etc.
+listasRouter.post('/listas/:id/duplicar', authRequired, async (req, res) => {
+  const origen = await listaConArea(req.params.id);
+  if (!origen) return res.status(404).json({ error: 'Lista no encontrada' });
+  if (!capacidades(req, origen.area_id).crear_listas) return sinPermiso(res, 'No tenés permiso para crear listas en esta área.');
+  const nombre = limStr(req.body?.nombre, 80);
+  if (nombre.length < 2) return res.status(400).json({ error: 'Poné un nombre de al menos 2 caracteres.' });
+  const nuevoId = idNuevo('lst');
+  try {
+    await tx(async (client) => {
+      await client.query(
+        `INSERT INTO listas (id, area_id, nombre, descripcion, icono, creada_por)
+         VALUES ($1,$2,$3,$4,$5,$6)`,
+        [nuevoId, origen.area_id, nombre, origen.descripcion, origen.icono, req.user.email]
+      );
+      const campos = await client.query(
+        'SELECT * FROM lista_campos WHERE lista_id = $1 AND activo = true ORDER BY orden, lower(nombre)',
+        [origen.id]
+      );
+      const mapa = new Map();
+      for (const c of campos.rows) {
+        const nuevo = idNuevo('cam');
+        mapa.set(c.id, nuevo);
+        await client.query(
+          `INSERT INTO lista_campos (id, lista_id, nombre, tipo, config, requerido, unico, orden)
+           VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8)`,
+          [nuevo, nuevoId, c.nombre, c.tipo, c.config || {}, c.requerido, c.unico, c.orden]
+        );
+      }
+      const vistas = await client.query('SELECT * FROM lista_vistas WHERE lista_id = $1 ORDER BY creado_en', [origen.id]);
+      let primera = true;
+      for (const v of vistas.rows) {
+        let config = v.config || {};
+        if (config.kanban && mapa.has(config.kanban)) config = { ...config, kanban: mapa.get(config.kanban) };
+        if (config.titulo && mapa.has(config.titulo)) config = { ...config, titulo: mapa.get(config.titulo) };
+        if (config.responsable && mapa.has(config.responsable)) config = { ...config, responsable: mapa.get(config.responsable) };
+        if (Array.isArray(config.columnas)) config = { ...config, columnas: config.columnas.map((x) => mapa.get(x) || x) };
+        if (Array.isArray(config.filtros)) config = { ...config, filtros: config.filtros.map((f) => ({ ...f, campo: mapa.get(f.campo) || f.campo })) };
+        if (config.orden?.campo && mapa.has(config.orden.campo)) config = { ...config, orden: { ...config.orden, campo: mapa.get(config.orden.campo) } };
+        if (config.agrupar && mapa.has(config.agrupar)) config = { ...config, agrupar: mapa.get(config.agrupar) };
+        await client.query(
+          `INSERT INTO lista_vistas (id, lista_id, nombre, tipo, config, visibilidad, creada_por, predeterminada)
+           VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8)`,
+          [idNuevo('vis'), nuevoId, v.nombre, v.tipo, config, v.visibilidad, req.user.email, primera ? true : false]
+        );
+        primera = false;
+      }
+      if (primera) {
+        await client.query(
+          `INSERT INTO lista_vistas (id, lista_id, nombre, tipo, config, visibilidad, creada_por, predeterminada)
+           VALUES ($1,$2,'Vista principal','grid','{}'::jsonb,'compartida',$3,true)`,
+          [idNuevo('vis'), nuevoId, req.user.email]
+        );
+      }
+    });
+  } catch (e) {
+    if (e.code === '23505') return res.status(400).json({ error: 'Ya existe una lista con ese nombre en esta área.' });
+    throw e;
+  }
+  await auditar({ req, tabla: 'listas', registroId: nuevoId, accion: 'duplicar', detalle: `origen ${origen.id}` });
+  return res.status(201).json({ id: nuevoId });
+});
+
 listasRouter.delete('/listas/:id', authRequired, async (req, res) => {
   const lista = await listaConArea(req.params.id);
   if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
@@ -239,6 +357,12 @@ listasRouter.post('/listas/:id/campos', authRequired, async (req, res) => {
   const config = normalizarConfigCampo(tipo, req.body?.config);
   if ((tipo === 'seleccion' || tipo === 'multiseleccion') && !config.opciones.length) {
     return res.status(400).json({ error: 'Agregá al menos una opción para este campo.' });
+  }
+  if (tipo === 'relacion') {
+    if (!config.lista_id) return res.status(400).json({ error: 'Elegí la lista con la que se relaciona este campo.' });
+    const objetivo = await one('SELECT id, area_id FROM listas WHERE id = $1 AND archivada = false', [config.lista_id]);
+    if (!objetivo) return res.status(400).json({ error: 'La lista relacionada no existe.' });
+    if (objetivo.area_id !== lista.area_id) return res.status(400).json({ error: 'La lista relacionada tiene que ser del mismo área.' });
   }
   const requerido = normalizarBooleano(req.body?.requerido) === true;
   const unico = normalizarBooleano(req.body?.unico) === true;
@@ -290,6 +414,13 @@ listasRouter.patch('/lista-campos/:id', authRequired, async (req, res) => {
     params.push(Math.max(0, Number(req.body.orden) || 0)); sets.push(`orden = $${params.length}`);
   }
   if (!sets.length) return res.status(400).json({ error: 'Sin campos para actualizar' });
+  if ((req.body?.tipo || campo.tipo) === 'relacion') {
+    const objetivoId = req.body?.config?.lista_id ?? campo.config?.lista_id;
+    if (!objetivoId) return res.status(400).json({ error: 'Elegí la lista con la que se relaciona este campo.' });
+    const objetivo = await one('SELECT id, area_id FROM listas WHERE id = $1 AND archivada = false', [objetivoId]);
+    if (!objetivo) return res.status(400).json({ error: 'La lista relacionada no existe.' });
+    if (objetivo.area_id !== lista.area_id) return res.status(400).json({ error: 'La lista relacionada tiene que ser del mismo área.' });
+  }
   params.push(new Date()); sets.push(`actualizado_en = $${params.length}`);
   params.push(campo.id);
   try {
@@ -410,6 +541,8 @@ listasRouter.post('/listas/:id/registros', authRequired, async (req, res) => {
   const campos = await camposDe(lista.id);
   const validado = validarRegistro(campos, req.body?.datos);
   if (!validado.ok) return res.status(400).json({ error: validado.error });
+  const relError = await validarRelaciones(campos, validado.datos);
+  if (relError) return res.status(400).json({ error: relError });
   const conflicto = await conflictoUnico(lista.id, campos, validado.datos);
   if (conflicto) return res.status(400).json({ error: conflicto });
   const id = idNuevo('reg');
@@ -432,6 +565,8 @@ listasRouter.patch('/lista-registros/:id', authRequired, async (req, res) => {
   const combinados = { ...(esObjeto(registro.datos) ? registro.datos : {}), ...(esObjeto(req.body?.datos) ? req.body.datos : {}) };
   const validado = validarRegistro(campos, combinados);
   if (!validado.ok) return res.status(400).json({ error: validado.error });
+  const relError = await validarRelaciones(campos, validado.datos);
+  if (relError) return res.status(400).json({ error: relError });
   const conflicto = await conflictoUnico(lista.id, campos, validado.datos, registro.id);
   if (conflicto) return res.status(400).json({ error: conflicto });
   await query(
@@ -439,6 +574,33 @@ listasRouter.patch('/lista-registros/:id', authRequired, async (req, res) => {
     [registro.id, validado.datos, req.user.email]
   );
   await auditar({ req, tabla: 'lista_registros', registroId: registro.id, accion: 'editar', antes: registro.datos, despues: validado.datos });
+  return res.json({ ok: true });
+});
+
+listasRouter.get('/listas/:id/registros-archivados', authRequired, async (req, res) => {
+  const lista = await listaConArea(req.params.id);
+  if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
+  if (!capacidades(req, lista.area_id).borrar_registros && !capacidades(req, lista.area_id).editar_registros) {
+    return sinPermiso(res);
+  }
+  const filas = await query(`
+    SELECT id, lista_id, datos, creado_por, actualizado_por, creado_en, actualizado_en, archivado_en, archivado_por
+      FROM lista_registros
+     WHERE lista_id = $1 AND archivado = true
+     ORDER BY archivado_en DESC NULLS LAST
+     LIMIT 200
+  `, [lista.id]);
+  return res.json(filas);
+});
+
+listasRouter.patch('/lista-registros/:id/restaurar', authRequired, async (req, res) => {
+  const registro = await one('SELECT * FROM lista_registros WHERE id = $1 AND archivado = true', [req.params.id]);
+  if (!registro) return res.status(404).json({ error: 'Registro archivado no encontrado' });
+  const lista = await listaConArea(registro.lista_id);
+  if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
+  if (!capacidades(req, lista.area_id).borrar_registros) return sinPermiso(res);
+  await query('UPDATE lista_registros SET archivado = false, archivado_en = NULL, archivado_por = NULL, actualizado_por = $2, actualizado_en = now() WHERE id = $1', [registro.id, req.user.email]);
+  await auditar({ req, tabla: 'lista_registros', registroId: registro.id, accion: 'restaurar' });
   return res.json({ ok: true });
 });
 

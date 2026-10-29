@@ -1,8 +1,110 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Icon, Modal, FormGrid } from '../ui';
-import { validarRegistro, etiquetaTipo } from '../../data/listas';
+import { api } from '../../store/api';
+import { validarRegistro, etiquetaTipo, valorVisible } from '../../data/listas';
 
-function CampoInput({ campo, value, onChange }) {
+function RelacionInput({ campo, value, onChange }) {
+  const [opciones, setOpciones] = useState([]);
+  const [error, setError] = useState('');
+  const [cargando, setCargando] = useState(false);
+  const targetId = campo.config?.lista_id;
+
+  useEffect(() => {
+    if (!targetId) {
+      setError('Este campo no tiene una lista relacionada configurada.');
+      return undefined;
+    }
+    let vivo = true;
+    setCargando(true);
+    setError('');
+    Promise.all([api(`/listas/${targetId}`), api(`/listas/${targetId}/registros`)])
+      .then(([detalle, listado]) => {
+        if (!vivo) return;
+        const campos = detalle.campos || [];
+        const etiqueta = campos.find((c) => /nombre|t[ií]tulo|material|herramienta|insumo|prospecto|cliente/i.test(c.nombre))
+          || campos.find((c) => c.tipo === 'texto')
+          || campos[0];
+        setOpciones((listado.registros || []).map((r) => ({
+          id: r.id,
+          etiqueta: etiqueta ? valorVisible(etiqueta, r.datos?.[etiqueta.id]) : r.id,
+        })));
+      })
+      .catch((e) => { if (vivo) setError(e.message || 'No se pudo cargar la lista relacionada.'); })
+      .finally(() => { if (vivo) setCargando(false); });
+    return () => { vivo = false; };
+  }, [targetId]);
+
+  const listaOpciones = value?.id && !opciones.some((o) => o.id === value.id)
+    ? [...opciones, { id: value.id, etiqueta: value.etiqueta || value.id }]
+    : opciones;
+
+  return (
+    <div className="col" style={{ gap: 4 }}>
+      <select
+        className="input"
+        value={value?.id || ''}
+        onChange={(e) => {
+          const op = listaOpciones.find((o) => o.id === e.target.value);
+          onChange(op ? { id: op.id, etiqueta: op.etiqueta } : null);
+        }}
+        disabled={cargando || Boolean(error)}
+      >
+        <option value="">{cargando ? 'Cargando...' : 'Elegir...'}</option>
+        {listaOpciones.map((o) => <option key={o.id} value={o.id}>{o.etiqueta}</option>)}
+      </select>
+      {error && <small className="pass-error">{error}</small>}
+    </div>
+  );
+}
+
+function AdjuntoInput({ listaId, value, onChange }) {
+  const [subiendo, setSubiendo] = useState(false);
+  const [error, setError] = useState('');
+
+  const subir = async (file) => {
+    if (!file) return;
+    setError('');
+    setSubiendo(true);
+    try {
+      const form = new FormData();
+      form.append('archivo', file);
+      const subido = await api(`/listas/${listaId}/adjuntos`, { method: 'POST', form });
+      onChange(subido);
+    } catch (e) {
+      setError(e.message || 'No se pudo subir el archivo.');
+    } finally {
+      setSubiendo(false);
+    }
+  };
+
+  return (
+    <div className="col" style={{ gap: 5 }}>
+      {value?.url ? (
+        <div className="lista-adjunto">
+          <a href={value.url} target="_blank" rel="noreferrer">
+            <Icon name="folder" size={14} /> {value.nombre || 'Ver adjunto'}
+          </a>
+          <button type="button" className="btn icon sm danger" onClick={() => onChange(null)} title="Quitar adjunto">
+            <Icon name="x" size={12} />
+          </button>
+        </div>
+      ) : (
+        <input
+          className="input"
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/gif,application/pdf"
+          onChange={(e) => subir(e.target.files?.[0])}
+          disabled={subiendo}
+        />
+      )}
+      {subiendo && <small className="muted">Subiendo...</small>}
+      {error && <small className="pass-error">{error}</small>}
+      <small className="ayuda">Imagen o PDF, hasta 8 MB.</small>
+    </div>
+  );
+}
+
+function CampoInput({ campo, value, onChange, listaId }) {
   const opciones = Array.isArray(campo.config?.opciones) ? campo.config.opciones : [];
   const ayuda = campo.config?.ayuda;
   const placeholder = campo.config?.placeholder || '';
@@ -54,6 +156,10 @@ function CampoInput({ campo, value, onChange }) {
         <span>{placeholder || 'Sí'}</span>
       </label>
     );
+  } else if (tipo === 'adjunto') {
+    control = <AdjuntoInput listaId={listaId} value={value} onChange={onChange} />;
+  } else if (tipo === 'relacion') {
+    control = <RelacionInput campo={campo} value={value} onChange={onChange} />;
   } else {
     const inputType = tipo === 'numero' || tipo === 'moneda' ? 'number'
       : tipo === 'fecha' ? 'date'
@@ -166,6 +272,7 @@ export default function RegistroModal({ lista, registro, puedeBorrar, puedeConve
                 campo={campo}
                 value={datos[campo.id]}
                 onChange={(valor) => setCampo(campo.id, valor)}
+                listaId={lista.id}
               />
             ))}
           </FormGrid>

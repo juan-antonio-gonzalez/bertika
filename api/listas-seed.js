@@ -66,20 +66,83 @@ const ACTIVIDADES = {
   ],
 };
 
-const LISTAS = [PROSPECTOS, OPORTUNIDADES, ACTIVIDADES];
+const LISTAS_VENTAS = [PROSPECTOS, OPORTUNIDADES, ACTIVIDADES];
 
-export async function sembrarListasVentas() {
-  const [uso] = await query("SELECT count(*)::int AS n FROM listas WHERE area_id = 'area_ventas'");
+const MATERIALES = {
+  nombre: 'Materiales',
+  descripcion: 'Materiales y repuestos del taller, con stock y ubicación.',
+  icono: 'box',
+  campos: [
+    { nombre: 'Material', tipo: 'texto', requerido: true },
+    { nombre: 'Categoría', tipo: 'seleccion', config: { opciones: ['Eléctrico', 'Mecánico', 'Químico', 'Ferretería', 'Otro'] } },
+    { nombre: 'Stock', tipo: 'numero', config: { min: 0 } },
+    { nombre: 'Stock mínimo', tipo: 'numero', config: { min: 0 } },
+    { nombre: 'Unidad', tipo: 'seleccion', config: { opciones: ['Unidad', 'Metro', 'Kilo', 'Litro', 'Caja'] } },
+    { nombre: 'Ubicación', tipo: 'texto' },
+    { nombre: 'Proveedor', tipo: 'texto' },
+    { nombre: 'Última compra', tipo: 'fecha' },
+    { nombre: 'Notas', tipo: 'texto_largo' },
+  ],
+  vistas: [
+    { nombre: 'Todos', tipo: 'grid', predeterminada: true, config: {} },
+    { nombre: 'Sin stock', tipo: 'grid', config: ({ Stock }) => ({ filtros: [{ campo: Stock, op: 'igual', valor: '0' }] }) },
+  ],
+};
+
+const HERRAMIENTAS = {
+  nombre: 'Herramientas',
+  descripcion: 'Herramientas del taller, responsables y estado de uso.',
+  icono: 'tools',
+  campos: [
+    { nombre: 'Herramienta', tipo: 'texto', requerido: true },
+    { nombre: 'Código', tipo: 'texto', unico: true },
+    { nombre: 'Estado', tipo: 'seleccion', config: { opciones: ['Disponible', 'En uso', 'En reparación', 'Perdida'] } },
+    { nombre: 'Responsable', tipo: 'persona' },
+    { nombre: 'Ubicación', tipo: 'texto' },
+    { nombre: 'Último mantenimiento', tipo: 'fecha' },
+    { nombre: 'Notas', tipo: 'texto_largo' },
+  ],
+  vistas: [
+    { nombre: 'Todas', tipo: 'grid', predeterminada: true, config: {} },
+    { nombre: 'En uso', tipo: 'grid', config: ({ Estado }) => ({ filtros: [{ campo: Estado, op: 'igual', valor: 'En uso' }] }) },
+    { nombre: 'Para reparar', tipo: 'grid', config: ({ Estado }) => ({ filtros: [{ campo: Estado, op: 'igual', valor: 'En reparación' }] }) },
+  ],
+};
+
+const INSUMOS = {
+  nombre: 'Insumos',
+  descripcion: 'Insumos consumibles, precios y puntos de reposición.',
+  icono: 'droplet',
+  campos: [
+    { nombre: 'Insumo', tipo: 'texto', requerido: true },
+    { nombre: 'Tipo', tipo: 'seleccion', config: { opciones: ['Químico', 'Eléctrico', 'Lubricante', 'Seguridad', 'Otro'] } },
+    { nombre: 'Stock', tipo: 'numero', config: { min: 0 } },
+    { nombre: 'Stock mínimo', tipo: 'numero', config: { min: 0 } },
+    { nombre: 'Unidad', tipo: 'seleccion', config: { opciones: ['Unidad', 'Litro', 'Kilo', 'Metro', 'Caja'] } },
+    { nombre: 'Proveedor', tipo: 'texto' },
+    { nombre: 'Precio', tipo: 'moneda', config: { min: 0 } },
+    { nombre: 'Notas', tipo: 'texto_largo' },
+  ],
+  vistas: [
+    { nombre: 'Todos', tipo: 'grid', predeterminada: true, config: {} },
+    { nombre: 'Sin stock', tipo: 'grid', config: ({ Stock }) => ({ filtros: [{ campo: Stock, op: 'igual', valor: '0' }] }) },
+  ],
+};
+
+const LISTAS_TALLER = [MATERIALES, HERRAMIENTAS, INSUMOS];
+
+async function sembrarArea(areaId, defs) {
+  const [uso] = await query('SELECT count(*)::int AS n FROM listas WHERE area_id = $1', [areaId]);
   if (Number(uso?.n) > 0) return { creadas: 0 };
 
   let creadas = 0;
   await tx(async (client) => {
-    for (const def of LISTAS) {
+    for (const def of defs) {
       const listaId = id('lst');
       await client.query(
         `INSERT INTO listas (id, area_id, nombre, descripcion, icono, orden, creada_por)
-         VALUES ($1,'area_ventas',$2,$3,$4,$5,'sistema')`,
-        [listaId, def.nombre, def.descripcion, def.icono, (creadas + 1) * 10]
+         VALUES ($1,$2,$3,$4,$5,$6,'sistema')`,
+        [listaId, areaId, def.nombre, def.descripcion, def.icono, (creadas + 1) * 10]
       );
       const campos = {};
       let orden = 0;
@@ -88,9 +151,9 @@ export async function sembrarListasVentas() {
         const campoId = id('cam');
         campos[campo.nombre] = campoId;
         await client.query(
-          `INSERT INTO lista_campos (id, lista_id, nombre, tipo, config, requerido, orden)
-           VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7)`,
-          [campoId, listaId, campo.nombre, campo.tipo, campo.config || {}, campo.requerido === true, orden]
+          `INSERT INTO lista_campos (id, lista_id, nombre, tipo, config, requerido, unico, orden)
+           VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8)`,
+          [campoId, listaId, campo.nombre, campo.tipo, campo.config || {}, campo.requerido === true, campo.unico === true, orden]
         );
       }
       let primera = true;
@@ -108,4 +171,12 @@ export async function sembrarListasVentas() {
     }
   });
   return { creadas };
+}
+
+export async function sembrarListasVentas() {
+  return sembrarArea('area_ventas', LISTAS_VENTAS);
+}
+
+export async function sembrarListasTaller() {
+  return sembrarArea('area_taller', LISTAS_TALLER);
 }

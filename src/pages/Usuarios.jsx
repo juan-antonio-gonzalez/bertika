@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Icon, Modal, ConfirmDialog, FormGrid, fmtFecha } from '../components/ui';
+import PageHeader from '../components/layout/PageHeader';
 import { api } from '../store/api';
 import { useStore, usePermiso } from '../store/store';
 import MatrizPermisos from '../components/MatrizPermisos';
@@ -521,22 +522,25 @@ export default function Usuarios() {
 
   return (
     <div className="wrap page">
-      <div className="row between wrap mb16">
-        <div>
-          <h1 className="page-title">Usuarios y accesos</h1>
-          <p className="page-sub">Cuentas, categorías, permisos, doble factor y recuperación de contraseñas.</p>
-        </div>
-        {vista === 'usuarios' && puedeCrear && (
-          <button className="btn primary" onClick={() => abrirUsuario({ mode: 'crear' })}>
-            <Icon name="plus" size={14} /> Crear usuario
-          </button>
+      <PageHeader
+        group="Sistema"
+        title="Usuarios y accesos"
+        sub="Cuentas, categorías, permisos, doble factor y recuperación de contraseñas."
+        actions={(
+          <>
+            {vista === 'usuarios' && puedeCrear && (
+              <button className="btn primary sm" onClick={() => abrirUsuario({ mode: 'crear' })}>
+                <Icon name="plus" size={14} /> Crear usuario
+              </button>
+            )}
+            {vista === 'categorias' && soyAdmin && (
+              <button className="btn primary sm" onClick={() => setCatModal({ mode: 'crear' })}>
+                <Icon name="plus" size={14} /> Nueva categoría
+              </button>
+            )}
+          </>
         )}
-        {vista === 'categorias' && soyAdmin && (
-          <button className="btn primary" onClick={() => setCatModal({ mode: 'crear' })}>
-            <Icon name="plus" size={14} /> Nueva categoría
-          </button>
-        )}
-      </div>
+      />
 
       <div className="tabs mb16" role="tablist">
         <button

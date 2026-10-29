@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Icon, Modal, FormGrid } from '../ui';
 import { TIPOS_CAMPO, normalizarOpciones } from '../../data/listas';
 
-export default function CampoModal({ campo, busy, onGuardar, onClose }) {
+export default function CampoModal({ campo, listas = [], listaActual, busy, onGuardar, onClose }) {
   const [nombre, setNombre] = useState(campo?.nombre || '');
   const [tipo, setTipo] = useState(campo?.tipo || 'texto');
   const [opciones, setOpciones] = useState(() => (campo?.config?.opciones || []).join('\n'));
@@ -11,9 +11,12 @@ export default function CampoModal({ campo, busy, onGuardar, onClose }) {
   const [min, setMin] = useState(campo?.config?.min ?? '');
   const [max, setMax] = useState(campo?.config?.max ?? '');
   const [ayuda, setAyuda] = useState(campo?.config?.ayuda || '');
+  const [relacionId, setRelacionId] = useState(campo?.config?.lista_id || '');
   const [error, setError] = useState('');
   const esSeleccion = tipo === 'seleccion' || tipo === 'multiseleccion';
   const esNumero = tipo === 'numero' || tipo === 'moneda';
+  const esRelacion = tipo === 'relacion';
+  const otrasListas = (listas || []).filter((l) => l.id !== listaActual?.id);
 
   const submit = (e) => {
     e.preventDefault();
@@ -27,8 +30,13 @@ export default function CampoModal({ campo, busy, onGuardar, onClose }) {
       setError('Agregá al menos una opción.');
       return;
     }
+    if (esRelacion && !relacionId) {
+      setError('Elegí la lista con la que se relaciona este campo.');
+      return;
+    }
     const config = {};
     if (esSeleccion) config.opciones = ops;
+    if (esRelacion) config.lista_id = relacionId;
     if (esNumero) {
       if (min !== '') config.min = Number(min);
       if (max !== '') config.max = Number(max);
@@ -76,6 +84,24 @@ export default function CampoModal({ campo, busy, onGuardar, onClose }) {
               {TIPOS_CAMPO.map((t) => <option key={t.tipo} value={t.tipo}>{t.etiqueta}</option>)}
             </select>
           </div>
+
+          {esRelacion && (
+            <div className="field" style={{ gridColumn: '1 / -1' }}>
+              <label>Lista relacionada *</label>
+              {otrasListas.length === 0 ? (
+                <div className="banner-info">
+                  <Icon name="info" size={15} />
+                  <span>Necesitás otra lista en esta área para crear una relación.</span>
+                </div>
+              ) : (
+                <select className="input" value={relacionId} onChange={(e) => setRelacionId(e.target.value)}>
+                  <option value="">Elegir lista...</option>
+                  {otrasListas.map((l) => <option key={l.id} value={l.id}>{l.nombre}</option>)}
+                </select>
+              )}
+              <small className="ayuda">El registro guarda el vínculo con la otra lista; la API valida que exista.</small>
+            </div>
+          )}
 
           {esSeleccion && (
             <div className="field" style={{ gridColumn: '1 / -1' }}>

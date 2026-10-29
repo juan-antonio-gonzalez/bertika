@@ -3,7 +3,7 @@ import { Icon, Modal, FormGrid } from '../ui';
 import { etiquetaTipo } from '../../data/listas';
 
 export default function ListaConfigModal({
-  lista, busy, onGuardarLista, onNuevoCampo, onEditarCampo, onEliminarCampo, onArchivarLista, onClose,
+  lista, busy, onGuardarLista, onNuevoCampo, onEditarCampo, onEliminarCampo, onArchivarLista, onDuplicar, onPapelera, onClose,
 }) {
   const [nombre, setNombre] = useState(lista.nombre || '');
   const [descripcion, setDescripcion] = useState(lista.descripcion || '');
@@ -80,11 +80,23 @@ export default function ListaConfigModal({
         <button type="button" className="btn primary sm" onClick={onNuevoCampo}>
           <Icon name="plus" size={13} /> Agregar campo
         </button>
-        {onArchivarLista && (
-          <button type="button" className="btn sm danger" onClick={onArchivarLista}>
-            <Icon name="x" size={13} /> Archivar lista
-          </button>
-        )}
+        <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+          {onPapelera && (
+            <button type="button" className="btn sm" onClick={onPapelera}>
+              <Icon name="recycl" size={13} /> Papelera de registros
+            </button>
+          )}
+          {onDuplicar && (
+            <button type="button" className="btn sm" onClick={onDuplicar}>
+              <Icon name="grid" size={13} /> Duplicar como plantilla
+            </button>
+          )}
+          {onArchivarLista && (
+            <button type="button" className="btn sm danger" onClick={onArchivarLista}>
+              <Icon name="x" size={13} /> Archivar lista
+            </button>
+          )}
+        </div>
       </div>
     </Modal>
   );

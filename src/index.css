@@ -1408,3 +1408,16 @@ details[open] > .cz-summary::after { content: ' –'; }
 .kanban-meta span:last-child { color: var(--text); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .kanban-empty { border: 1px dashed var(--line); border-radius: 8px; padding: 12px 8px; text-align: center; font-size: 11px; color: var(--muted); }
 .kanban-col-sin { background: rgba(10, 23, 64, 0.025); }
+
+/* ---------- Importación CSV ---------- */
+.lista-import-row { display: grid; grid-template-columns: minmax(140px, 1fr) auto minmax(180px, 1.2fr); gap: 8px; align-items: center; }
+.lista-import-head { font-size: 12.5px; font-weight: 700; color: var(--navy); overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 620px) {
+  .lista-import-row { grid-template-columns: 1fr; }
+  .lista-import-row > span:first-child { padding-top: 4px; }
+}
+
+.lista-adjunto { display: flex; align-items: center; justify-content: space-between; gap: 8px; border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; background: var(--bg-3); }
+.lista-adjunto a { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; color: var(--amber-d); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.listas-group-row td { background: var(--bg-3); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 7px 12px; font-size: 11.5px; }

@@ -1,6 +1,6 @@
 // Tests del export CSV (frontend y API). Sin base de datos:  npm test
 import assert from 'node:assert/strict';
-import { celdaCsv, filasCsv } from '../src/data/csv.js';
+import { celdaCsv, filasCsv, parseCsv, valorDesdeCsv } from '../src/data/csv.js';
 
 let pasaron = 0;
 const test = (nombre, fn) => {
@@ -47,6 +47,24 @@ test('arma el archivo con BOM, separador y filas', () => {
 test('una fila con celdas peligrosas no puede inyectar columnas', () => {
   const salida = filasCsv([['x', "=cmd|' /C calc'!A0"]]);
   assert.equal(salida, '\uFEFF"x","\'=cmd|\' /C calc\'!A0"');
+});
+
+
+test('lee CSV con comillas, separadores y saltos internos', () => {
+  const filas = parseCsv('\uFEFFnombre;monto;nota\r\nAna;1500;"hola; mundo"\r\n"Beto ""el jefe""";0;"linea 1\nlinea 2"');
+  assert.equal(filas.length, 3);
+  assert.deepEqual(filas[0], ['nombre', 'monto', 'nota']);
+  assert.equal(filas[1][2], 'hola; mundo');
+  assert.equal(filas[2][0], 'Beto "el jefe"');
+  assert.equal(filas[2][2], 'linea 1\nlinea 2');
+});
+
+test('convierte celdas CSV a los tipos de la lista', () => {
+  assert.equal(valorDesdeCsv({ tipo: 'numero' }, '1.500,25'), 1500.25);
+  assert.equal(valorDesdeCsv({ tipo: 'checkbox' }, 'sí'), true);
+  assert.deepEqual(valorDesdeCsv({ tipo: 'multiseleccion' }, 'A; B'), ['A', 'B']);
+  assert.equal(valorDesdeCsv({ tipo: 'fecha' }, '29/10/2026'), '2026-10-29');
+  assert.equal(valorDesdeCsv({ tipo: 'fecha' }, '2026-10-29'), '2026-10-29');
 });
 
 if (!process.exitCode) console.log(`\n${pasaron} pruebas de CSV OK`);

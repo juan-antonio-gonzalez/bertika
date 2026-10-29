@@ -15,7 +15,7 @@ import { nextId } from './ids.js';
 import { signToken, authRequired, requireRol, permisoRequerido, SECRET } from './middleware/auth.js';
 import { PERMISOS, COLUMNAS, agruparPermisos, permisosPorDefecto, normalizarPermisos, permisosEfectivos, puedeVer, tienePermiso } from './permisos.js';
 import { listasRouter, areasVisibles } from './listas-routes.js';
-import { sembrarListasVentas } from './listas-seed.js';
+import { sembrarListasVentas, sembrarListasTaller } from './listas-seed.js';
 import { normalizarAreas, permisosArea } from './listas.js';
 import { canTransition, ORDEN_ESTADOS, ESTADO_LABEL, MIN_CAPACIDAD_PCT, esEstadoCerrado , puedeTrabajarEnOrden } from './reglas.js';
 import { obtenerDolar } from './dolar.js';
@@ -537,6 +537,7 @@ async function asegurarCodigos() {
   await query('CREATE INDEX IF NOT EXISTS idx_lista_vistas_lista ON lista_vistas (lista_id, creado_en)');
   // Siembra inicial del área Ventas (solo si todavía no tiene listas).
   await sembrarListasVentas();
+  await sembrarListasTaller();
   await query(`CREATE TABLE IF NOT EXISTS login_2fa (
     id TEXT PRIMARY KEY,
     usuario_id TEXT NOT NULL,
@@ -5445,6 +5446,37 @@ const upload = multer({
     if (/^image\/(jpeg|png|webp|gif)$/.test(file.mimetype)) return cb(null, true);
     cb(new Error('Solo se permiten imagenes (jpg, png, webp, gif)'));
   },
+});
+
+// Adjuntos de una lista: imágenes o PDF, validados por contenido real.
+const uploadAdjunto = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 8 * 1024 * 1024, files: 1 },
+  fileFilter: (req, file, cb) => {
+    if (/^(image\/(jpeg|png|webp|gif)|application\/pdf)$/.test(file.mimetype)) return cb(null, true);
+    cb(new Error('Solo se permiten imágenes (jpg, png, webp, gif) o PDF'));
+  },
+});
+
+app.post('/api/listas/:id/adjuntos', authRequired, uploadAdjunto.single('archivo'), async (req, res) => {
+  const lista = await one('SELECT * FROM listas WHERE id = $1 AND archivada = false', [req.params.id]);
+  if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
+  const caps = esAdmin(req) ? { crear_registros: true, editar_registros: true } : permisosArea(req.user.areas, lista.area_id);
+  if (!caps.crear_registros && !caps.editar_registros) {
+    return res.status(403).json({ error: 'No tenés permiso para adjuntar archivos en esta lista.' });
+  }
+  if (!req.file?.buffer?.length) return res.status(400).json({ error: 'No se recibió ningún archivo.' });
+  const ext = detectImg(req.file.buffer) || (req.file.buffer.subarray(0, 4).toString('latin1') === '%PDF' ? '.pdf' : null);
+  if (!ext) return res.status(400).json({ error: 'El archivo no es una imagen o PDF válido.' });
+  const nombre = `lista-${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
+  writeFileSync(path.join(UPLOAD_DIR, nombre), req.file.buffer);
+  await auditar({ req, tabla: 'lista_campos', registroId: lista.id, accion: 'adjuntar', detalle: nombre });
+  return res.status(201).json({
+    url: `${PUBLIC_URL}/uploads/${nombre}`,
+    nombre: limStr(req.file.originalname, 160) || `archivo${ext}`,
+    mime: req.file.mimetype,
+    size: req.file.size,
+  });
 });
 
 app.post('/api/diagnostico/:orden_id/fotos', authRequired, upload.array('fotos', 6), async (req, res) => {
