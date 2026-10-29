@@ -134,6 +134,8 @@ CREATE TABLE IF NOT EXISTS ordenes (
   prueba_final JSONB DEFAULT '{"estado":"pending"}',
   diagnostico JSONB,
   consentimiento_id TEXT,
+  origen TEXT,
+  oportunidad_id TEXT,
   eventos JSONB DEFAULT '[]'
 );
 

@@ -132,7 +132,11 @@ function normalizarVistaConfig(valor) {
     : null;
   const agrupar = c.agrupar ? String(c.agrupar).trim() : null;
   const q = c.q ? String(c.q).slice(0, 120) : '';
-  return { columnas, filtros, orden, agrupar, q };
+  const kanban = c.kanban ? String(c.kanban).trim() : null;
+  const titulo = c.titulo ? String(c.titulo).trim() : null;
+  const mis = ['creado_por', 'responsable'].includes(c.mis) ? c.mis : null;
+  const responsable = c.responsable ? String(c.responsable).trim() : null;
+  return { columnas, filtros, orden, agrupar, q, kanban, titulo, mis, responsable };
 }
 
 // ---------- Navegación visible ----------
@@ -316,7 +320,7 @@ listasRouter.post('/listas/:id/vistas', authRequired, async (req, res) => {
   if (!capacidades(req, lista.area_id).administrar_vistas) return sinPermiso(res);
   const nombre = limStr(req.body?.nombre, 80);
   if (!nombre) return res.status(400).json({ error: 'La vista necesita un nombre.' });
-  const tipo = req.body?.tipo === 'form' ? 'form' : 'grid';
+  const tipo = ['grid', 'kanban', 'form'].includes(req.body?.tipo) ? req.body.tipo : 'grid';
   const visibilidad = req.body?.visibilidad === 'personal' ? 'personal' : 'compartida';
   const config = normalizarVistaConfig(req.body?.config);
   const predeterminada = normalizarBooleano(req.body?.predeterminada) === true;
@@ -347,7 +351,7 @@ listasRouter.patch('/lista-vistas/:id', authRequired, async (req, res) => {
     params.push(nombre); sets.push(`nombre = $${params.length}`);
   }
   if (req.body?.tipo !== undefined) {
-    params.push(req.body.tipo === 'form' ? 'form' : 'grid'); sets.push(`tipo = $${params.length}`);
+    params.push(['grid', 'kanban', 'form'].includes(req.body.tipo) ? req.body.tipo : 'grid'); sets.push(`tipo = $${params.length}`);
   }
   if (req.body?.config !== undefined) {
     params.push(normalizarVistaConfig(req.body.config)); sets.push(`config = $${params.length}::jsonb`);

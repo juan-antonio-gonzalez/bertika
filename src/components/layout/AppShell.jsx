@@ -351,7 +351,9 @@ export default function AppShell({ children }) {
             <span className="shell-crumb-g">{grupo}</span>
             <h1 className="shell-title">{label}</h1>
           </div>
+          <div id="shell-page-head" className="shell-page-head" />
           <div className="shell-acciones">
+            <div id="shell-page-actions" className="shell-page-actions" />
             {esAdmin && (
               <>
                 <button className="btn primary sm" onClick={() => setNueva(true)}><Icon name="plus" size={14} /> Nueva orden</button>

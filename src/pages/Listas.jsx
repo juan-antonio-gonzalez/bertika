@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Icon, ConfirmDialog } from '../components/ui';
+import PageHeader from '../components/layout/PageHeader';
 import { api } from '../store/api';
 import { useStore } from '../store/store';
 import { valorVisible } from '../data/listas';
 import RegistroModal from '../components/listas/RegistroModal';
 import CampoModal from '../components/listas/CampoModal';
 import ListaConfigModal from '../components/listas/ListaConfigModal';
+import ConvertirModal from '../components/listas/ConvertirModal';
 import {
   FiltrosModal, ColumnasModal, NuevaVistaModal, NuevaListaModal,
 } from '../components/listas/ModalesLista';
@@ -83,12 +85,11 @@ function AreasHome({ areas, cargando }) {
   if (cargando) return <div className="wrap page"><p className="muted">Cargando áreas...</p></div>;
   return (
     <div className="wrap page">
-      <div className="row between wrap mb16">
-        <div>
-          <h1 className="page-title">Listas</h1>
-          <p className="page-sub">Tablas y vistas flexibles por área. Cada equipo ve solo los espacios que tiene habilitados.</p>
-        </div>
-      </div>
+      <PageHeader
+        group="Listas"
+        title="Listas"
+        sub="Tablas y vistas flexibles por área. Cada equipo ve solo los espacios que tiene habilitados."
+      />
       {areas.length === 0 ? (
         <div className="card">
           <h3 className="card-title"><Icon name="clipboard" size={15} /> Todavía no hay áreas visibles</h3>
@@ -139,18 +140,16 @@ function AreaDetalle({ area }) {
 
   return (
     <div className="wrap page">
-      <div className="row between wrap mb16">
-        <div>
-          <div className="muted" style={{ fontSize: 11.5, textTransform: 'uppercase', letterSpacing: 1 }}>Área</div>
-          <h1 className="page-title">{area.nombre}</h1>
-          <p className="page-sub">{area.descripcion || 'Listas y tablas del área.'}</p>
-        </div>
-        {area.puede?.crear_listas && (
-          <button type="button" className="btn primary" onClick={() => setNueva(true)}>
+      <PageHeader
+        group="Listas"
+        title={area.nombre}
+        sub={area.descripcion || 'Listas y tablas del área.'}
+        actions={area.puede?.crear_listas ? (
+          <button type="button" className="btn primary sm" onClick={() => setNueva(true)}>
             <Icon name="plus" size={14} /> Nueva lista
           </button>
-        )}
-      </div>
+        ) : null}
+      />
 
       {area.listas?.length ? (
         <div className="cat-grid">
@@ -183,6 +182,8 @@ function ListaDetalle({ listaId, area }) {
   const navigate = useNavigate();
   const cargarAreas = useStore((s) => s.cargarAreas);
   const toastShow = useStore((s) => s.toastShow);
+  const usuario = useStore((s) => s.user);
+  const sync = useStore((s) => s.sync);
   const [lista, setLista] = useState(null);
   const [registros, setRegistros] = useState([]);
   const [total, setTotal] = useState(0);
@@ -200,9 +201,29 @@ function ListaDetalle({ listaId, area }) {
   const campos = lista?.campos || [];
   const vistas = lista?.vistas || [];
   const puede = lista?.puede || {};
+  const puedeConvertir = Boolean(puede.convertir_prospecto) && lista?.area_slug === 'ventas';
   const vistaActiva = vistas.find((v) => v.id === vistaId) || null;
   const columnasVisibles = columnasDeVista(vistaActiva, campos);
   const visibles = columnasVisibles.length ? columnasVisibles : campos;
+  const kanbanCampo = vistaActiva?.tipo === 'kanban'
+    ? campos.find((c) => c.id === vistaActiva.config?.kanban)
+    : null;
+  const kanbanTitulo = campos.find((c) => c.id === vistaActiva?.config?.titulo)
+    || campos.find((c) => c.tipo === 'texto')
+    || campos[0]
+    || null;
+  const kanbanOpciones = Array.isArray(kanbanCampo?.config?.opciones) ? kanbanCampo.config.opciones : [];
+  const camposTarjeta = campos
+    .filter((c) => c.id !== kanbanCampo?.id && c.id !== kanbanTitulo?.id)
+    .slice(0, 3);
+
+  const configVista = () => ({
+    ...vistaActiva?.config,
+    columnas,
+    filtros,
+    orden,
+    q: busqueda,
+  });
 
   const cargarDetalle = async ({ resetVista = false } = {}) => {
     const data = await api(`/listas/${listaId}`);
@@ -264,7 +285,7 @@ function ListaDetalle({ listaId, area }) {
     try {
       await api(`/lista-vistas/${vistaId}`, {
         method: 'PATCH',
-        body: { config: { columnas, filtros, orden, q: busqueda } },
+        body: { config: configVista() },
       });
       toastShow('Vista guardada', 'ok');
       await cargarDetalle({ resetVista: false });
@@ -280,7 +301,7 @@ function ListaDetalle({ listaId, area }) {
     try {
       const res = await api(`/listas/${lista.id}/vistas`, {
         method: 'POST',
-        body: { nombre, predeterminada, config: { columnas, filtros, orden, q: busqueda } },
+        body: { nombre, predeterminada, config: configVista() },
       });
       setModal(null);
       await cargarDetalle({ resetVista: false });
@@ -305,6 +326,25 @@ function ListaDetalle({ listaId, area }) {
       }
       setModal(null);
       await recargarRegistros();
+    } catch (e) {
+      toastShow(e.message, 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const convertirRegistro = async ({ cliente, equipo }) => {
+    if (!modal?.registro) return;
+    setBusy(true);
+    try {
+      const res = await api(`/listas/${lista.id}/registros/${modal.registro.id}/convertir`, {
+        method: 'POST',
+        body: { cliente, equipo },
+      });
+      await sync();
+      await recargarRegistros();
+      setModal(null);
+      toastShow(`Cliente creado y orden ${res.orden_id} ingresada al taller`, 'ok');
     } catch (e) {
       toastShow(e.message, 'error');
     } finally {
@@ -390,6 +430,18 @@ function ListaDetalle({ listaId, area }) {
 
   const filtrados = useMemo(() => {
     let out = registros || [];
+    if (vistaActiva?.config?.mis) {
+      const campoResp = campos.find((c) => c.id === vistaActiva.config.responsable)
+        || campos.find((c) => String(c.nombre || '').toLowerCase().includes('responsable'));
+      out = out.filter((r) => {
+        if (usuario?.email && r.creado_por === usuario.email) return true;
+        if (!campoResp || !usuario) return false;
+        const valor = String(r.datos?.[campoResp.id] ?? '').toLowerCase();
+        return [usuario.email, usuario.nombre]
+          .filter(Boolean)
+          .some((v) => valor.includes(String(v).toLowerCase()));
+      });
+    }
     const q = busqueda.trim().toLowerCase();
     if (q) {
       out = out.filter((r) => campos.some((c) => texto(r.datos?.[c.id]).includes(q)));
@@ -401,7 +453,7 @@ function ListaDetalle({ listaId, area }) {
       }));
     }
     return ordenarRegistros(out, campos, orden);
-  }, [registros, campos, busqueda, filtros, orden]);
+  }, [registros, campos, busqueda, filtros, orden, vistaActiva, usuario]);
 
   const cambiarOrden = (campo) => {
     setOrden((prev) => (
@@ -409,6 +461,25 @@ function ListaDetalle({ listaId, area }) {
         ? { campo: campo.id, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
         : { campo: campo.id, dir: 'asc' }
     ));
+  };
+
+  const moverKanban = async (registro, opcion) => {
+    if (!kanbanCampo || !puede.editar_registros) return;
+    const actual = String(registro.datos?.[kanbanCampo.id] ?? '');
+    if (actual === String(opcion)) return;
+    setBusy(true);
+    try {
+      await api(`/lista-registros/${registro.id}`, {
+        method: 'PATCH',
+        body: { datos: { [kanbanCampo.id]: opcion || null } },
+      });
+      await recargarRegistros();
+      toastShow(opcion ? `Movido a ${opcion}` : 'Movido a Sin etapa', 'ok');
+    } catch (e) {
+      toastShow(e.message, 'error');
+    } finally {
+      setBusy(false);
+    }
   };
 
   if (cargando) return <div className="wrap page"><p className="muted">Abriendo lista...</p></div>;
@@ -427,34 +498,31 @@ function ListaDetalle({ listaId, area }) {
 
   return (
     <div className="wrap page listas-page">
-      <div className="row between wrap mb16">
-        <div>
-          <div className="muted" style={{ fontSize: 11.5 }}>
-            <Link to={`/listas/${lista.area_slug}`} className="listas-breadcrumb">{lista.area_nombre}</Link>
-            {' / '}{lista.nombre}
-          </div>
-          <h1 className="page-title" style={{ marginBottom: 2 }}>{lista.nombre}</h1>
-          <p className="page-sub" style={{ marginTop: 0 }}>{lista.descripcion || 'Lista de trabajo'}</p>
-        </div>
-        <div className="row wrap" style={{ gap: 7 }}>
-          {puede.crear_registros && (
-            <button
-              type="button"
-              className="btn primary"
-              onClick={() => setModal({ tipo: 'registro', registro: null })}
-              disabled={!campos.length}
-              title={!campos.length ? 'Primero agregá campos a la lista' : 'Nuevo registro'}
-            >
-              <Icon name="plus" size={14} /> Nuevo registro
-            </button>
-          )}
-          {puede.editar_listas && (
-            <button type="button" className="btn" onClick={() => setModal({ tipo: 'config' })}>
-              <Icon name="gear" size={14} /> Configurar
-            </button>
-          )}
-        </div>
-      </div>
+      <PageHeader
+        group={lista.area_nombre}
+        title={lista.nombre}
+        sub={lista.descripcion || 'Lista de trabajo'}
+        actions={(
+          <>
+            {puede.crear_registros && (
+              <button
+                type="button"
+                className="btn primary sm"
+                onClick={() => setModal({ tipo: 'registro', registro: null })}
+                disabled={!campos.length}
+                title={!campos.length ? 'Primero agregá campos a la lista' : 'Nuevo registro'}
+              >
+                <Icon name="plus" size={14} /> Nuevo registro
+              </button>
+            )}
+            {puede.editar_listas && (
+              <button type="button" className="btn sm" onClick={() => setModal({ tipo: 'config' })}>
+                <Icon name="gear" size={14} /> Configurar
+              </button>
+            )}
+          </>
+        )}
+      />
 
       {campos.length === 0 ? (
         <div className="card">
@@ -503,9 +571,11 @@ function ListaDetalle({ listaId, area }) {
               <button type="button" className={`btn sm${filtros.length ? ' primary' : ''}`} onClick={() => setModal({ tipo: 'filtros' })}>
                 <Icon name="filter" size={13} /> Filtros{filtros.length ? ` (${filtros.length})` : ''}
               </button>
-              <button type="button" className="btn sm" onClick={() => setModal({ tipo: 'columnas' })}>
-                <Icon name="grid" size={13} /> Columnas
-              </button>
+              {vistaActiva?.tipo !== 'kanban' && (
+                <button type="button" className="btn sm" onClick={() => setModal({ tipo: 'columnas' })}>
+                  <Icon name="grid" size={13} /> Columnas
+                </button>
+              )}
               {puede.administrar_vistas && vistaId && (
                 <button type="button" className="btn sm" onClick={guardarVista} disabled={busy}>
                   <Icon name="check" size={13} /> Guardar vista
@@ -519,6 +589,75 @@ function ListaDetalle({ listaId, area }) {
               <Icon name="shield" size={15} />
               <span>No tenés permiso para ver los registros de esta lista.</span>
             </div>
+          ) : vistaActiva?.tipo === 'kanban' ? (
+            (!kanbanCampo || kanbanOpciones.length === 0) ? (
+              <div className="banner-info">
+                <Icon name="info" size={15} />
+                <span>Esta vista kanban no tiene una columna de etapa configurada.</span>
+              </div>
+            ) : (
+              <div className="listas-kanban-wrap">
+                <div className="listas-kanban">
+                  {[...kanbanOpciones, ...(filtrados.some((r) => !kanbanOpciones.includes(String(r.datos?.[kanbanCampo.id] ?? ''))) ? [''] : [])].map((op) => {
+                    const cards = filtrados.filter((r) => String(r.datos?.[kanbanCampo.id] ?? '') === op);
+                    return (
+                      <section
+                        key={op || '__sin'}
+                        className={`kanban-col${op === '' ? ' kanban-col-sin' : ''}`}
+                        onDragOver={(e) => e.preventDefault()}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          const id = e.dataTransfer.getData('text/plain');
+                          const registro = registros.find((r) => r.id === id);
+                          if (registro) moverKanban(registro, op);
+                        }}
+                      >
+                        <header>
+                          <b>{op || 'Sin etapa'}</b>
+                          <span className="badge gray">{cards.length}</span>
+                        </header>
+                        <div className="kanban-cards">
+                          {cards.map((r) => {
+                            const titulo = kanbanTitulo ? valorVisible(kanbanTitulo, r.datos?.[kanbanTitulo.id]) : '';
+                            return (
+                              <article
+                                key={r.id}
+                                className="kanban-card"
+                                draggable={Boolean(puede.editar_registros)}
+                                onDragStart={(e) => {
+                                  e.dataTransfer.setData('text/plain', r.id);
+                                  e.dataTransfer.effectAllowed = 'move';
+                                }}
+                                onClick={() => {
+                                  if (puede.editar_registros) setModal({ tipo: 'registro', registro: r });
+                                }}
+                              >
+                                <b>{titulo || 'Sin título'}</b>
+                                {camposTarjeta.map((c) => {
+                                  const valor = r.datos?.[c.id];
+                                  if (vacio(valor)) return null;
+                                  return (
+                                    <div className="kanban-meta" key={c.id}>
+                                      <span>{c.nombre}</span>
+                                      <span>{valorVisible(c, valor).slice(0, 80)}</span>
+                                    </div>
+                                  );
+                                })}
+                              </article>
+                            );
+                          })}
+                          {cards.length === 0 && <div className="kanban-empty">Sin registros</div>}
+                        </div>
+                      </section>
+                    );
+                  })}
+                </div>
+                <div className="listas-grid-foot">
+                  <span className="muted" style={{ fontSize: 11.5 }}>{filtrados.length} de {total} registro(s)</span>
+                  <span className="muted" style={{ fontSize: 11.5 }}>Arrastrá las tarjetas para cambiar de etapa</span>
+                </div>
+              </div>
+            )
           ) : (
             <div className="card listas-grid-card">
               {visibles.length === 0 ? (
@@ -616,9 +755,21 @@ function ListaDetalle({ listaId, area }) {
           lista={lista}
           registro={modal.registro}
           puedeBorrar={puede.borrar_registros}
+          puedeConvertir={puedeConvertir}
           busy={busy}
           onGuardar={guardarRegistro}
           onEliminar={(r) => confirmarArchivarRegistro(r)}
+          onConvertir={(r) => setModal({ tipo: 'convertir', registro: r })}
+          onClose={() => setModal(null)}
+        />
+      )}
+
+      {modal?.tipo === 'convertir' && (
+        <ConvertirModal
+          lista={lista}
+          registro={modal.registro}
+          busy={busy}
+          onGuardar={convertirRegistro}
           onClose={() => setModal(null)}
         />
       )}

@@ -15,7 +15,8 @@ import { nextId } from './ids.js';
 import { signToken, authRequired, requireRol, permisoRequerido, SECRET } from './middleware/auth.js';
 import { PERMISOS, COLUMNAS, agruparPermisos, permisosPorDefecto, normalizarPermisos, permisosEfectivos, puedeVer, tienePermiso } from './permisos.js';
 import { listasRouter, areasVisibles } from './listas-routes.js';
-import { normalizarAreas } from './listas.js';
+import { sembrarListasVentas } from './listas-seed.js';
+import { normalizarAreas, permisosArea } from './listas.js';
 import { canTransition, ORDEN_ESTADOS, ESTADO_LABEL, MIN_CAPACIDAD_PCT, esEstadoCerrado , puedeTrabajarEnOrden } from './reglas.js';
 import { obtenerDolar } from './dolar.js';
 import { calcularVisita, normalizarConfig, CONFIG_DEFAULT, textoFueraCobertura } from '../src/data/cotizadorVisita.js';
@@ -223,6 +224,11 @@ async function asegurarCodigos() {
   await query('ALTER TABLE ordenes ADD COLUMN IF NOT EXISTS medio_pago TEXT');
   // Aceptacion que origino la orden cuando entra por el formulario web.
   await query('ALTER TABLE ordenes ADD COLUMN IF NOT EXISTS consentimiento_id TEXT');
+  // Origen del ingreso: permite saber si la orden nació en el taller o desde
+  // una oportunidad de Ventas (y evitar convertir dos veces el mismo registro).
+  await query('ALTER TABLE ordenes ADD COLUMN IF NOT EXISTS origen TEXT');
+  await query('ALTER TABLE ordenes ADD COLUMN IF NOT EXISTS oportunidad_id TEXT');
+  await query('CREATE INDEX IF NOT EXISTS idx_ordenes_oportunidad ON ordenes (oportunidad_id)');
   await query('CREATE INDEX IF NOT EXISTS idx_ordenes_consentimiento ON ordenes (consentimiento_id)');
   // Trazabilidad: versiones de cotizacion (quien cotizo que y cuando).
   await query(`CREATE TABLE IF NOT EXISTS cotizaciones_historial (
@@ -529,6 +535,8 @@ async function asegurarCodigos() {
     predeterminada BOOLEAN DEFAULT FALSE
   )`);
   await query('CREATE INDEX IF NOT EXISTS idx_lista_vistas_lista ON lista_vistas (lista_id, creado_en)');
+  // Siembra inicial del área Ventas (solo si todavía no tiene listas).
+  await sembrarListasVentas();
   await query(`CREATE TABLE IF NOT EXISTS login_2fa (
     id TEXT PRIMARY KEY,
     usuario_id TEXT NOT NULL,
@@ -1953,6 +1961,12 @@ app.get('/api/estado', authRequired, async (req, res) => {
   for (const [tabla, seccion] of Object.entries({ clientes: 'clientes', tecnicos: 'tecnicos', insumos: 'inventario', bajas: 'baja' })) {
     if (!puedeVer(req.user, seccion)) out[tabla] = [];
   }
+  // El taller solo ve clientes con al menos una orden. El admin ve toda la
+  // cartera y puede abrir la pestaña "Sin órdenes" desde el panel.
+  if (rol !== 'admin' && rol !== 'cliente' && puedeVer(req.user, 'clientes')) {
+    const conOrden = new Set(out.ordenes.map((o) => o.cliente_id));
+    out.clientes = out.clientes.filter((c) => conOrden.has(c.id));
+  }
   if (rol === 'cliente') {
     const propias = out.ordenes.filter((o) => o.cliente_id === req.user.cliente_id);
     const series = new Set(propias.map((o) => o.bateria_serie));
@@ -2657,6 +2671,22 @@ app.get('/api/clientes', authRequired, permisoRequerido('clientes'), async (req,
     if (!esAdmin(req)) return res.status(403).json({ error: 'Solo un administrador puede ver la papelera' });
     return res.json(await query('SELECT * FROM clientes WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC LIMIT 200'));
   }
+  if (!esAdmin(req)) {
+    return res.json(await query(`
+      SELECT c.* FROM clientes c
+       WHERE c.deleted_at IS NULL
+         AND EXISTS (SELECT 1 FROM ordenes o WHERE o.cliente_id = c.id)
+       ORDER BY c.nombre
+    `));
+  }
+  if (String(req.query?.sin_ordenes || '') === '1') {
+    return res.json(await query(`
+      SELECT c.* FROM clientes c
+       WHERE c.deleted_at IS NULL
+         AND NOT EXISTS (SELECT 1 FROM ordenes o WHERE o.cliente_id = c.id)
+       ORDER BY c.nombre
+    `));
+  }
   return res.json(await query('SELECT * FROM clientes WHERE deleted_at IS NULL ORDER BY nombre'));
 });
 
@@ -3192,6 +3222,118 @@ app.delete('/api/categorias/:id', authRequired, requireRol('admin'), async (req,
 
 // ---------- Motor de listas dinámicas ----------
 app.use('/api', listasRouter);
+
+// Conversión de una oportunidad/prospecto de Ventas en cliente de taller.
+// Crea el cliente (o reutiliza el email) y una orden de ingreso real, para que
+// el taller la vea en su tablero y el cliente aparezca en la cartera.
+app.post('/api/listas/:id/registros/:rid/convertir', authRequired, async (req, res) => {
+  const lista = await one(`
+    SELECT l.*, a.slug AS area_slug
+      FROM listas l JOIN areas a ON a.id = l.area_id
+     WHERE l.id = $1 AND l.archivada = false
+  `, [req.params.id]);
+  if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
+  if (lista.area_slug !== 'ventas') return res.status(400).json({ error: 'La conversión solo está disponible en el área Ventas.' });
+  const caps = esAdmin(req) ? { convertir_prospecto: true } : permisosArea(req.user.areas, lista.area_id);
+  if (!caps.convertir_prospecto) {
+    return res.status(403).json({ error: 'No tenés permiso para convertir prospectos en clientes.' });
+  }
+  const registro = await one('SELECT * FROM lista_registros WHERE id = $1 AND lista_id = $2 AND archivado = false', [req.params.rid, lista.id]);
+  if (!registro) return res.status(404).json({ error: 'Registro no encontrado' });
+
+  const previa = await one('SELECT id, cliente_id, codigo_seguimiento FROM ordenes WHERE oportunidad_id = $1 ORDER BY fecha_ingreso DESC LIMIT 1', [registro.id]);
+  if (previa) {
+    return res.status(409).json({
+      error: `Este registro ya fue convertido: orden ${previa.codigo_seguimiento || previa.id}.`,
+      orden_id: previa.id,
+      cliente_id: previa.cliente_id,
+    });
+  }
+
+  const cli = req.body?.cliente && typeof req.body.cliente === 'object' ? req.body.cliente : {};
+  const eq = req.body?.equipo && typeof req.body.equipo === 'object' ? req.body.equipo : {};
+  const nombre = limStr(cli.nombre, 120);
+  const email = String(cli.email || '').trim();
+  if (!nombre || !validEmail(email)) {
+    return res.status(400).json({ error: 'Completá el nombre y un email válido del cliente.' });
+  }
+  const existente = await one('SELECT * FROM clientes WHERE LOWER(email) = LOWER($1)', [email]);
+  if (existente?.deleted_at) {
+    return res.status(400).json({ error: 'Ese email pertenece a un cliente en la papelera. Restauralo antes de convertir.' });
+  }
+
+  try {
+    const creada = await tx(async (client) => {
+      let clienteId = existente?.id || null;
+      if (!clienteId) {
+        clienteId = await nextId('cli', client);
+        await client.query(
+          `INSERT INTO clientes (id, nombre, tipo, telefono, contacto, email, empresa, notas,
+             direccion, localidad, cuit, condicion_pago, canal_origen, vendedor)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+          [
+            clienteId, nombre, normalizarTipoCliente(cli.tipo), limStr(cli.telefono, 40),
+            limStr(cli.contacto, 120) || nombre, email, limStr(cli.empresa, 120),
+            limStr(cli.notas, 1000), limStr(cli.direccion, 160), limStr(cli.localidad, 80),
+            limStr(cli.cuit, 20), limStr(cli.condicion_pago, 60),
+            limStr(cli.canal_origen, 60) || 'Ventas', limStr(cli.vendedor, 80) || req.user.email,
+          ]
+        );
+      }
+      const serie = limStr(eq.serie, 64) || `PEND-${String(clienteId).slice(-8)}-${Date.now().toString(36)}`;
+      const bateria = await one('SELECT cliente_id FROM baterias WHERE numero_serie = $1', [serie]);
+      if (bateria?.cliente_id && bateria.cliente_id !== clienteId) {
+        throw { status: 400, message: 'La serie del equipo ya pertenece a otro cliente.' };
+      }
+      const falla = limStr(eq.falla || eq.descripcion || cli.notas, 500) || 'Ingreso generado desde Ventas.';
+      const ordId = await crearOrdenTx(client, {
+        serieT: serie,
+        tipo: eq.tipo,
+        voltaje: eq.voltaje,
+        capacidad: eq.capacidad,
+        aplicacion: eq.aplicacion,
+        marca: eq.marca,
+        modelo: eq.modelo,
+        equipo: eq.equipo || eq.descripcion || serie,
+        clienteT: clienteId,
+        fallaT: falla,
+        tecnico_id: null,
+      }, actorDe(req));
+      await client.query('UPDATE ordenes SET origen = $2, oportunidad_id = $3 WHERE id = $1', [ordId, 'ventas', registro.id]);
+      // Si la lista tiene una etapa/estado con una opción de cierre, la
+      // oportunidad pasa a Ganada al convertirla. La orden queda vinculada.
+      const camposLista = await client.query('SELECT id, nombre, tipo, config FROM lista_campos WHERE lista_id = $1 AND activo = true', [lista.id]);
+      const datosNuevos = { ...registro.datos };
+      let cambioEtapa = false;
+      for (const campo of camposLista.rows) {
+        if (campo.tipo !== 'seleccion') continue;
+        const nombreCampo = String(campo.nombre || '').toLowerCase();
+        if (!nombreCampo.includes('etapa') && !nombreCampo.includes('estado')) continue;
+        const opciones = Array.isArray(campo.config?.opciones) ? campo.config.opciones : [];
+        const ganada = opciones.find((op) => /ganad|convert|cerrad/i.test(String(op)));
+        if (ganada) { datosNuevos[campo.id] = ganada; cambioEtapa = true; }
+      }
+      if (cambioEtapa) {
+        await client.query(
+          'UPDATE lista_registros SET datos = $2::jsonb, actualizado_por = $3, actualizado_en = now() WHERE id = $1',
+          [registro.id, datosNuevos, req.user.email]
+        );
+      }
+      return { clienteId, ordId };
+    });
+    await auditar({
+      req, tabla: 'ordenes', registroId: creada.ordId, accion: 'crear',
+      detalle: `conversión desde Ventas (registro ${registro.id})`,
+      despues: { origen: 'ventas', cliente_id: creada.clienteId, oportunidad_id: registro.id },
+    });
+    await auditar({ req, tabla: 'lista_registros', registroId: registro.id, accion: 'convertir', detalle: `cliente ${creada.clienteId} / orden ${creada.ordId}` });
+    return res.status(201).json({ ok: true, cliente_id: creada.clienteId, orden_id: creada.ordId });
+  } catch (e) {
+    if (e?.status) return res.status(e.status).json({ error: e.message });
+    if (e?.code === '23505') return res.status(409).json({ error: 'Ya hay un cliente con ese email. Revisá la ficha existente.' });
+    throw e;
+  }
+});
 
 // ---------- Usuarios (admin) ----------
 app.get('/api/usuarios', authRequired, permisoRequerido('usuarios'), async (req, res) => {

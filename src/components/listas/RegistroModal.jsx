@@ -85,7 +85,7 @@ function CampoInput({ campo, value, onChange }) {
   );
 }
 
-export default function RegistroModal({ lista, registro, puedeBorrar, busy, onGuardar, onEliminar, onClose }) {
+export default function RegistroModal({ lista, registro, puedeBorrar, puedeConvertir, busy, onGuardar, onEliminar, onConvertir, onClose }) {
   const campos = lista.campos || [];
   const [datos, setDatos] = useState(() => {
     const salida = {};
@@ -128,12 +128,19 @@ export default function RegistroModal({ lista, registro, puedeBorrar, busy, onGu
       closeOnBackdrop={false}
       footer={(
         <>
-          {registro && puedeBorrar && (
-            <button type="button" className="btn danger izq" onClick={() => onEliminar(registro)} disabled={busy}>
-              <Icon name="x" size={14} /> Archivar
-            </button>
-          )}
-          <button type="button" className="btn izq" onClick={onClose} disabled={busy}>Cancelar</button>
+          <div className="row" style={{ gap: 6, marginRight: 'auto' }}>
+            {registro && puedeConvertir && (
+              <button type="button" className="btn" onClick={() => onConvertir(registro)} disabled={busy}>
+                <Icon name="external" size={14} /> Convertir a cliente
+              </button>
+            )}
+            {registro && puedeBorrar && (
+              <button type="button" className="btn danger" onClick={() => onEliminar(registro)} disabled={busy}>
+                <Icon name="x" size={14} /> Archivar
+              </button>
+            )}
+          </div>
+          <button type="button" className="btn" onClick={onClose} disabled={busy}>Cancelar</button>
           <button type="submit" form="form-registro-lista" className="btn primary" disabled={busy || !campos.length}>
             <Icon name="check" size={14} /> {busy ? 'Guardando...' : registro ? 'Guardar cambios' : 'Guardar registro'}
           </button>

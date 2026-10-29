@@ -364,8 +364,10 @@ function Ficha({ cliente, datos, onAbrirOrden, onEditar, onBaja, onClose }) {
 
 export default function ClientesCrm({ onAbrirOrden }) {
   const data = useStore((s) => s.data);
+  const esAdmin = useStore((s) => s.user?.rol === 'admin');
   const editarCliente = useStore((s) => s.editarCliente);
   const darDeBajaCliente = useStore((s) => s.darDeBajaCliente);
+  const [vista, setVista] = useState('con_ordenes');
   const [texto, setTexto] = useState('');
   const [orden, setOrden] = useState('nombre');
   const [abierto, setAbierto] = useState(null);
@@ -396,17 +398,48 @@ export default function ClientesCrm({ onAbrirOrden }) {
     }
   };
 
+  const conOrden = useMemo(() => new Set((data.ordenes || []).map((o) => o.cliente_id)), [data.ordenes]);
+  const clientesBase = useMemo(() => {
+    const todos = data.clientes || [];
+    if (vista === 'sin_ordenes' && esAdmin) return todos.filter((c) => !conOrden.has(c.id));
+    return todos.filter((c) => conOrden.has(c.id));
+  }, [data.clientes, conOrden, vista, esAdmin]);
   const { filas, totales } = useMemo(
-    () => resumenClientes(data.clientes, data),
-    [data.clientes, data.ordenes, data.baterias] // eslint-disable-line react-hooks/exhaustive-deps
+    () => resumenClientes(clientesBase, data),
+    [clientesBase, data.ordenes, data.baterias] // eslint-disable-line react-hooks/exhaustive-deps
   );
   const visibles = useMemo(() => ordenarClientes(filtrarClientes(filas, texto), orden), [filas, texto, orden]);
 
   const seleccionado = abierto ? data.clientes.find((c) => c.id === abierto) || null : null;
-  const hayClientes = Array.isArray(data.clientes) && data.clientes.length > 0;
+  const hayClientes = clientesBase.length > 0;
+  const nCon = (data.clientes || []).filter((c) => conOrden.has(c.id)).length;
+  const nSin = (data.clientes || []).length - nCon;
 
   return (
     <div className="col">
+      <div className="tabs" role="tablist">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={vista === 'con_ordenes'}
+          className={`tab${vista === 'con_ordenes' ? ' active' : ''}`}
+          onClick={() => setVista('con_ordenes')}
+        >
+          Con órdenes ({nCon})
+        </button>
+        {esAdmin && (
+          <button
+            type="button"
+            role="tab"
+            aria-selected={vista === 'sin_ordenes'}
+            className={`tab${vista === 'sin_ordenes' ? ' active' : ''}`}
+            onClick={() => setVista('sin_ordenes')}
+          >
+            Sin órdenes ({nSin})
+          </button>
+        )}
+      </div>
+
       {/* Cabecera con los totales de la cartera */}
       <div className="grid4">
         <Kpi icono="users" label="Clientes" valor={totales.clientes} sub="en la cartera" />
@@ -440,9 +473,13 @@ export default function ClientesCrm({ onAbrirOrden }) {
         {!hayClientes && (
           <div className="empty">
             <div className="big"><Icon name="users" size={30} /></div>
-            Todavía no hay clientes cargados.
+            {vista === 'sin_ordenes'
+              ? 'No hay clientes sin órdenes.'
+              : 'Todavía no hay clientes con órdenes.'}
             <p className="muted" style={{ marginTop: 6, fontSize: 12.5 }}>
-              Cuando se cree una orden con un cliente nuevo, aparece acá con sus equipos y garantías.
+              {vista === 'sin_ordenes'
+                ? 'Acá quedan las fichas viejas que todavía no tienen ninguna orden. No se borran.'
+                : 'Cuando una orden se cree para un cliente, aparece acá con sus equipos y garantías.'}
             </p>
           </div>
         )}
