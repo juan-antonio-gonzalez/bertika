@@ -120,6 +120,7 @@ function menuDe(rol, c, esFlotilla) {
 // Titulos de las pantallas que no son un item del menu.
 const TITULOS_SUELTOS = {
   '/home': ['Plataforma', 'Inicio'],
+  '/listas': ['Listas', 'Listas'],
   '/tracker': ['Seguimiento', 'Orden en el taller'],
   '/cotizacion': ['Seguimiento', 'Cotización'],
 };
@@ -156,6 +157,7 @@ export default function AppShell({ children }) {
   const [altas, setAltas] = useState(false);
   const [buscar, setBuscar] = useState(false);
   const [ordenAbierta, setOrdenAbierta] = useState(null);
+  const [gruposCerrados, setGruposCerrados] = useState({});
 
   const ruta = CANONICO[location.pathname] || location.pathname;
   const esAdmin = user?.rol === 'admin';
@@ -179,7 +181,34 @@ export default function AppShell({ children }) {
       { to: '/auth', label: 'Acceso', icon: 'user' },
     ] },
   ]), [user, c, esFlotilla]);
-  const { grupo, label } = tituloDe(ruta, grupos);
+  // Áreas y listas visibles: el menú se arma con lo que devuelve /estado
+  // según la categoría. Para el admin vienen todas.
+  const gruposConAreas = useMemo(() => {
+    const areas = data.areas || [];
+    if (!user || user.rol === 'cliente' || !areas.length) return grupos;
+    const grupoListas = {
+      grupo: 'Listas',
+      items: areas.map((a) => ({
+        to: `/listas/${a.slug}`,
+        label: a.nombre,
+        icon: a.icono || 'clipboard',
+        subitems: (a.listas || []).map((l) => ({
+          to: `/listas/${a.slug}/${l.id}`,
+          label: l.nombre,
+          icon: l.icono || 'clipboard',
+        })),
+      })),
+    };
+    // Antes de Sistema: las áreas son trabajo diario; Configuración queda al final.
+    const indiceSistema = grupos.findIndex((g) => g.grupo === 'Sistema');
+    if (indiceSistema < 0) return [...grupos, grupoListas];
+    const salida = [...grupos];
+    salida.splice(indiceSistema, 0, grupoListas);
+    return salida;
+  }, [grupos, data.areas, user]);
+
+  const toggleGrupo = (nombre) => setGruposCerrados((prev) => ({ ...prev, [nombre]: !prev[nombre] }));
+  const { grupo, label } = tituloDe(ruta, gruposConAreas);
 
   // El drawer se cierra al cambiar de pantalla y con Escape.
   useEffect(() => { setAbierto(false); }, [location.pathname]);
@@ -233,18 +262,42 @@ export default function AppShell({ children }) {
         </div>
 
         <nav className="shell-nav">
-          {grupos.map((g) => (
-            <div className="shell-grupo" key={g.grupo}>
-              <div className="shell-grupo-t">{g.grupo}</div>
-              {g.items.map((it) => (
-                <Link key={it.to} to={it.to} className={`shell-item${esActivo(it) ? ' on' : ''}`}>
-                  <Icon name={it.icon} size={15} />
-                  <span className="shell-item-l">{it.label}</span>
-                  {it.contador > 0 && <span className="shell-count">{it.contador}</span>}
-                </Link>
-              ))}
-            </div>
-          ))}
+          {gruposConAreas.map((g) => {
+            const cerrado = Boolean(gruposCerrados[g.grupo]);
+            return (
+              <div className="shell-grupo" key={g.grupo}>
+                <button
+                  type="button"
+                  className={`shell-grupo-t${cerrado ? ' closed' : ''}`}
+                  onClick={() => toggleGrupo(g.grupo)}
+                  aria-expanded={!cerrado}
+                  title={cerrado ? `Mostrar ${g.grupo}` : `Ocultar ${g.grupo}`}
+                >
+                  <span>{g.grupo}</span>
+                  <span className="shell-chevron">{cerrado ? '+' : '−'}</span>
+                </button>
+                {!cerrado && g.items.map((it) => (
+                  <div key={it.to}>
+                    <Link to={it.to} className={`shell-item${esActivo(it) ? ' on' : ''}`}>
+                      <Icon name={it.icon} size={15} />
+                      <span className="shell-item-l">{it.label}</span>
+                      {it.contador > 0 && <span className="shell-count">{it.contador}</span>}
+                    </Link>
+                    {it.subitems?.length > 0 && (
+                      <div className="shell-subitems">
+                        {it.subitems.map((sub) => (
+                          <Link key={sub.to} to={sub.to} className={`shell-subitem${ruta === sub.to ? ' on' : ''}`}>
+                            <Icon name={sub.icon} size={12} />
+                            <span>{sub.label}</span>
+                          </Link>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            );
+          })}
           {/* Acceso directo a la nube de archivos (OpenCloud). Es un enlace
               externo: no suma una seccion de permisos porque los permisos
               reales los aplica OpenCloud con el usuario de cada persona. */}

@@ -3,6 +3,8 @@ import { Icon, Modal, ConfirmDialog, FormGrid, fmtFecha } from '../components/ui
 import { api } from '../store/api';
 import { useStore, usePermiso } from '../store/store';
 import MatrizPermisos from '../components/MatrizPermisos';
+import MatrizAreas from '../components/MatrizAreas';
+import { AREAS_SEMILLA, normalizarAreas } from '../data/listas';
 import { PasswordPair } from '../components/PasswordFields';
 import { validarPassword, PASSWORD_MIN } from '../data/passwordPolicy';
 import {
@@ -284,13 +286,14 @@ function FormUsuariosModal({ mode, user, tecnicos, clientes, categorias, busy, o
   );
 }
 
-function FormCategoriaModal({ mode, categoria, busy, onGuardar, onClose }) {
+function FormCategoriaModal({ mode, categoria, areasCatalogo, busy, onGuardar, onClose }) {
   const toastShow = useStore((s) => s.toastShow);
   const [nombre, setNombre] = useState(categoria?.nombre || '');
   const [descripcion, setDescripcion] = useState(categoria?.descripcion || '');
   const [permisos, setPermisos] = useState(() => (
     categoria ? normalizarPermisos(categoria.permisos, 'tecnico') : { ...MAPA_VACIO }
   ));
+  const [areas, setAreas] = useState(() => normalizarAreas(categoria?.areas));
   const [aplicarUsuarios, setAplicarUsuarios] = useState(false);
 
   const submit = (e) => {
@@ -303,6 +306,7 @@ function FormCategoriaModal({ mode, categoria, busy, onGuardar, onClose }) {
       nombre: nombre.trim(),
       descripcion: descripcion.trim(),
       permisos,
+      areas,
       aplicarUsuarios: Boolean(aplicarUsuarios && mode === 'editar'),
     });
   };
@@ -338,7 +342,13 @@ function FormCategoriaModal({ mode, categoria, busy, onGuardar, onClose }) {
         </FormGrid>
 
         <div className="fsec-head" style={{ marginTop: 18 }}>
-          <h4>Permisos de la categoría</h4>
+          <h4>Áreas y listas</h4>
+          <p>Qué espacios ve esta categoría en el menú y si puede crear listas, cargar registros o administrar vistas.</p>
+        </div>
+        <MatrizAreas areas={areasCatalogo} valor={areas} onChange={setAreas} disabled={busy} />
+
+        <div className="fsec-head" style={{ marginTop: 18 }}>
+          <h4>Módulos del taller</h4>
           <p>Es una plantilla. Al asignar la categoría a un usuario, su matriz se precarga con esto; después se puede personalizar.</p>
         </div>
         <MatrizPermisos permisos={permisos} setPermisos={setPermisos} disabled={busy} />
@@ -362,6 +372,7 @@ export default function Usuarios() {
   const puedeEditar = usePermiso('editar_usuarios');
   const tecnicos = useStore((s) => s.data.tecnicos);
   const clientes = useStore((s) => s.data.clientes);
+  const areasCatalogo = useStore((s) => s.data.areas);
   const toastShow = useStore((s) => s.toastShow);
 
   const [vista, setVista] = useState('usuarios');
@@ -747,6 +758,7 @@ export default function Usuarios() {
         <FormCategoriaModal
           mode={catModal.mode}
           categoria={catModal.categoria}
+          areasCatalogo={areasCatalogo?.length ? areasCatalogo : AREAS_SEMILLA}
           busy={catBusy}
           onGuardar={guardarCategoria}
           onClose={() => setCatModal(null)}

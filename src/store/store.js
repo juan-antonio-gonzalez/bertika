@@ -11,6 +11,7 @@ const emptyData = () => ({
   bajas: [],
   notificaciones: [],
   tareas: [],
+  areas: [],
   seq: { ev: 100, ord: 100, bat: 100 },
 });
 
@@ -104,6 +105,17 @@ export const useStore = create()((set, get) => ({
         : null,
     }));
     return estado;
+  },
+
+  // Refresca solo el menú de áreas/listas sin volver a bajar todo el estado.
+  async cargarAreas() {
+    try {
+      const areas = await api('/listas/nav');
+      set((s) => ({ data: { ...s.data, areas: Array.isArray(areas) ? areas : [] } }));
+      return areas;
+    } catch {
+      return get().data.areas;
+    }
   },
 
   async reset() {

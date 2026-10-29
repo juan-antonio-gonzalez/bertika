@@ -34,6 +34,7 @@ const Cotizador = lazy(() => import('./pages/Cotizador'));
 const CotizacionPublica = lazy(() => import('./pages/CotizacionPublica'));
 const Reportes = lazy(() => import('./pages/Reportes'));
 const Usuarios = lazy(() => import('./pages/Usuarios'));
+const Listas = lazy(() => import('./pages/Listas'));
 const Respaldos = lazy(() => import('./pages/Respaldos'));
 const Sistema = lazy(() => import('./pages/Sistema'));
 const Privacidad = lazy(() => import('./pages/Privacidad'));
@@ -69,6 +70,13 @@ function RequireSeccion({ children }) {
   if (!user) return <Navigate to="/auth" replace />;
   const seccion = seccionDeRuta(pathname);
   if (seccion && !puedeVer(user, seccion)) return <Navigate to={inicioDe(user)} replace />;
+  return children;
+}
+
+function RequireListas({ children }) {
+  const user = useStore((s) => s.user);
+  if (!user) return <Navigate to="/auth" replace />;
+  if (user.rol === 'cliente') return <Navigate to="/home" replace />;
   return children;
 }
 
@@ -190,6 +198,9 @@ export default function App() {
         {/* Seguimiento publico: pantalla completa y SIN el shell de la plataforma.
             Se ve igual con o sin sesion abierta (siempre como cliente). */}
         <Route path="/tracker/:orden_id" element={<Tracker />} />
+        <Route path="/listas" element={<AppLayout><RequireListas><Listas /></RequireListas></AppLayout>} />
+        <Route path="/listas/:areaSlug" element={<AppLayout><RequireListas><Listas /></RequireListas></AppLayout>} />
+        <Route path="/listas/:areaSlug/:listaId" element={<AppLayout><RequireListas><Listas /></RequireListas></AppLayout>} />
         <Route path="/settings" element={<AppLayout><Protected><Settings /></Protected></AppLayout>} />
         <Route path="/reportes" element={<AppLayout><RequireSeccion><Reportes /></RequireSeccion></AppLayout>} />
         <Route path="/usuarios" element={<AppLayout><RequireSeccion><Usuarios /></RequireSeccion></AppLayout>} />

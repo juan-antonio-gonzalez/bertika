@@ -24,11 +24,13 @@ CREATE TABLE IF NOT EXISTS categorias_acceso (
   nombre TEXT NOT NULL,
   descripcion TEXT,
   permisos JSONB NOT NULL DEFAULT '{}'::jsonb,
+  areas JSONB NOT NULL DEFAULT '{}'::jsonb,
   creado_en TIMESTAMPTZ DEFAULT now(),
   actualizado_en TIMESTAMPTZ
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS categorias_acceso_nombre_uniq ON categorias_acceso (lower(nombre));
+ALTER TABLE categorias_acceso ADD COLUMN IF NOT EXISTS areas JSONB DEFAULT '{}'::jsonb;
 
 CREATE TABLE IF NOT EXISTS login_2fa (
   id TEXT PRIMARY KEY,
@@ -267,3 +269,83 @@ CREATE TABLE IF NOT EXISTS wa_mensajes (
   error TEXT,
   fecha TIMESTAMPTZ DEFAULT now()
 );
+
+-- Areas de trabajo y motor de listas dinamicas.
+CREATE TABLE IF NOT EXISTS areas (
+  id TEXT PRIMARY KEY,
+  slug TEXT NOT NULL UNIQUE,
+  nombre TEXT NOT NULL,
+  descripcion TEXT,
+  icono TEXT DEFAULT 'clipboard',
+  orden INTEGER DEFAULT 0,
+  activo BOOLEAN DEFAULT TRUE,
+  creado_en TIMESTAMPTZ DEFAULT now()
+);
+
+INSERT INTO areas (id, slug, nombre, descripcion, icono, orden)
+VALUES
+  ('area_taller', 'taller', 'Taller', 'Operación, inventario, materiales y herramientas del taller.', 'tools', 10),
+  ('area_ventas', 'ventas', 'Ventas', 'Prospectos, oportunidades y actividades comerciales.', 'dollar', 20),
+  ('area_admin', 'administracion', 'Administración', 'Listas de gestión interna y administración.', 'gear', 30)
+ON CONFLICT (id) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS listas (
+  id TEXT PRIMARY KEY,
+  area_id TEXT NOT NULL,
+  nombre TEXT NOT NULL,
+  descripcion TEXT,
+  icono TEXT DEFAULT 'clipboard',
+  orden INTEGER DEFAULT 0,
+  creada_por TEXT,
+  creado_en TIMESTAMPTZ DEFAULT now(),
+  actualizado_en TIMESTAMPTZ,
+  archivada BOOLEAN DEFAULT FALSE,
+  archivada_en TIMESTAMPTZ,
+  archivada_por TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_listas_area ON listas (area_id, archivada, orden);
+CREATE UNIQUE INDEX IF NOT EXISTS listas_area_nombre_uniq ON listas (area_id, lower(nombre)) WHERE archivada = false;
+
+CREATE TABLE IF NOT EXISTS lista_campos (
+  id TEXT PRIMARY KEY,
+  lista_id TEXT NOT NULL,
+  nombre TEXT NOT NULL,
+  tipo TEXT NOT NULL,
+  config JSONB NOT NULL DEFAULT '{}'::jsonb,
+  requerido BOOLEAN DEFAULT FALSE,
+  unico BOOLEAN DEFAULT FALSE,
+  orden INTEGER DEFAULT 0,
+  activo BOOLEAN DEFAULT TRUE,
+  creado_en TIMESTAMPTZ DEFAULT now(),
+  actualizado_en TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_lista_campos_lista ON lista_campos (lista_id, activo, orden);
+CREATE UNIQUE INDEX IF NOT EXISTS lista_campos_nombre_uniq ON lista_campos (lista_id, lower(nombre)) WHERE activo = true;
+
+CREATE TABLE IF NOT EXISTS lista_registros (
+  id TEXT PRIMARY KEY,
+  lista_id TEXT NOT NULL,
+  datos JSONB NOT NULL DEFAULT '{}'::jsonb,
+  creado_por TEXT,
+  actualizado_por TEXT,
+  creado_en TIMESTAMPTZ DEFAULT now(),
+  actualizado_en TIMESTAMPTZ,
+  archivado BOOLEAN DEFAULT FALSE,
+  archivado_en TIMESTAMPTZ,
+  archivado_por TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_lista_registros_lista ON lista_registros (lista_id, archivado, creado_en DESC);
+
+CREATE TABLE IF NOT EXISTS lista_vistas (
+  id TEXT PRIMARY KEY,
+  lista_id TEXT NOT NULL,
+  nombre TEXT NOT NULL,
+  tipo TEXT DEFAULT 'grid',
+  config JSONB NOT NULL DEFAULT '{}'::jsonb,
+  visibilidad TEXT DEFAULT 'compartida',
+  creada_por TEXT,
+  creado_en TIMESTAMPTZ DEFAULT now(),
+  actualizado_en TIMESTAMPTZ,
+  predeterminada BOOLEAN DEFAULT FALSE
+);
+CREATE INDEX IF NOT EXISTS idx_lista_vistas_lista ON lista_vistas (lista_id, creado_en);

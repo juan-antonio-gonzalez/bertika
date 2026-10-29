@@ -14,6 +14,8 @@ import { query, one, tx } from './db.js';
 import { nextId } from './ids.js';
 import { signToken, authRequired, requireRol, permisoRequerido, SECRET } from './middleware/auth.js';
 import { PERMISOS, COLUMNAS, agruparPermisos, permisosPorDefecto, normalizarPermisos, permisosEfectivos, puedeVer, tienePermiso } from './permisos.js';
+import { listasRouter, areasVisibles } from './listas-routes.js';
+import { normalizarAreas } from './listas.js';
 import { canTransition, ORDEN_ESTADOS, ESTADO_LABEL, MIN_CAPACIDAD_PCT, esEstadoCerrado , puedeTrabajarEnOrden } from './reglas.js';
 import { obtenerDolar } from './dolar.js';
 import { calcularVisita, normalizarConfig, CONFIG_DEFAULT, textoFueraCobertura } from '../src/data/cotizadorVisita.js';
@@ -451,6 +453,82 @@ async function asegurarCodigos() {
     actualizado_en TIMESTAMPTZ
   )`);
   await query('CREATE UNIQUE INDEX IF NOT EXISTS categorias_acceso_nombre_uniq ON categorias_acceso (lower(nombre))');
+  await query('ALTER TABLE categorias_acceso ADD COLUMN IF NOT EXISTS areas JSONB DEFAULT \'{}\'::jsonb');
+  // Areas de trabajo y motor de listas dinamicas. Las listas no crean tablas
+  // SQL: su definicion vive en lista_campos y sus filas en lista_registros.
+  await query(`CREATE TABLE IF NOT EXISTS areas (
+    id TEXT PRIMARY KEY,
+    slug TEXT NOT NULL UNIQUE,
+    nombre TEXT NOT NULL,
+    descripcion TEXT,
+    icono TEXT DEFAULT 'clipboard',
+    orden INTEGER DEFAULT 0,
+    activo BOOLEAN DEFAULT TRUE,
+    creado_en TIMESTAMPTZ DEFAULT now()
+  )`);
+  await query(`INSERT INTO areas (id, slug, nombre, descripcion, icono, orden)
+    VALUES
+      ('area_taller', 'taller', 'Taller', 'Operación, inventario, materiales y herramientas del taller.', 'tools', 10),
+      ('area_ventas', 'ventas', 'Ventas', 'Prospectos, oportunidades y actividades comerciales.', 'dollar', 20),
+      ('area_admin', 'administracion', 'Administración', 'Listas de gestión interna y administración.', 'gear', 30)
+    ON CONFLICT (id) DO NOTHING`);
+  await query(`CREATE TABLE IF NOT EXISTS listas (
+    id TEXT PRIMARY KEY,
+    area_id TEXT NOT NULL,
+    nombre TEXT NOT NULL,
+    descripcion TEXT,
+    icono TEXT DEFAULT 'clipboard',
+    orden INTEGER DEFAULT 0,
+    creada_por TEXT,
+    creado_en TIMESTAMPTZ DEFAULT now(),
+    actualizado_en TIMESTAMPTZ,
+    archivada BOOLEAN DEFAULT FALSE,
+    archivada_en TIMESTAMPTZ,
+    archivada_por TEXT
+  )`);
+  await query('CREATE INDEX IF NOT EXISTS idx_listas_area ON listas (area_id, archivada, orden)');
+  await query("CREATE UNIQUE INDEX IF NOT EXISTS listas_area_nombre_uniq ON listas (area_id, lower(nombre)) WHERE archivada = false");
+  await query(`CREATE TABLE IF NOT EXISTS lista_campos (
+    id TEXT PRIMARY KEY,
+    lista_id TEXT NOT NULL,
+    nombre TEXT NOT NULL,
+    tipo TEXT NOT NULL,
+    config JSONB NOT NULL DEFAULT '{}'::jsonb,
+    requerido BOOLEAN DEFAULT FALSE,
+    unico BOOLEAN DEFAULT FALSE,
+    orden INTEGER DEFAULT 0,
+    activo BOOLEAN DEFAULT TRUE,
+    creado_en TIMESTAMPTZ DEFAULT now(),
+    actualizado_en TIMESTAMPTZ
+  )`);
+  await query('CREATE INDEX IF NOT EXISTS idx_lista_campos_lista ON lista_campos (lista_id, activo, orden)');
+  await query("CREATE UNIQUE INDEX IF NOT EXISTS lista_campos_nombre_uniq ON lista_campos (lista_id, lower(nombre)) WHERE activo = true");
+  await query(`CREATE TABLE IF NOT EXISTS lista_registros (
+    id TEXT PRIMARY KEY,
+    lista_id TEXT NOT NULL,
+    datos JSONB NOT NULL DEFAULT '{}'::jsonb,
+    creado_por TEXT,
+    actualizado_por TEXT,
+    creado_en TIMESTAMPTZ DEFAULT now(),
+    actualizado_en TIMESTAMPTZ,
+    archivado BOOLEAN DEFAULT FALSE,
+    archivado_en TIMESTAMPTZ,
+    archivado_por TEXT
+  )`);
+  await query('CREATE INDEX IF NOT EXISTS idx_lista_registros_lista ON lista_registros (lista_id, archivado, creado_en DESC)');
+  await query(`CREATE TABLE IF NOT EXISTS lista_vistas (
+    id TEXT PRIMARY KEY,
+    lista_id TEXT NOT NULL,
+    nombre TEXT NOT NULL,
+    tipo TEXT DEFAULT 'grid',
+    config JSONB NOT NULL DEFAULT '{}'::jsonb,
+    visibilidad TEXT DEFAULT 'compartida',
+    creada_por TEXT,
+    creado_en TIMESTAMPTZ DEFAULT now(),
+    actualizado_en TIMESTAMPTZ,
+    predeterminada BOOLEAN DEFAULT FALSE
+  )`);
+  await query('CREATE INDEX IF NOT EXISTS idx_lista_vistas_lista ON lista_vistas (lista_id, creado_en)');
   await query(`CREATE TABLE IF NOT EXISTS login_2fa (
     id TEXT PRIMARY KEY,
     usuario_id TEXT NOT NULL,
@@ -1890,6 +1968,8 @@ app.get('/api/estado', authRequired, async (req, res) => {
   out.seq = seq;
   // Permisos efectivos del usuario: el panel los usa para mostrar u ocultar.
   out.permisos = req.user.permisos;
+  // Menú de listas visible según la categoría (y todas para el admin).
+  out.areas = await areasVisibles(req.user);
   // Tareas del CRM: el admin ve todas las pendientes; el tecnico las suyas y las
   // que no tienen responsable; el cliente ninguna.
   if (rol === 'cliente') {
@@ -3014,7 +3094,7 @@ app.get('/api/respaldos/:archivo', authRequired, permisoRequerido('respaldos'), 
 // la plantilla. "aplicarUsuarios" propaga los cambios a todos sus usuarios.
 app.get('/api/categorias', authRequired, permisoRequerido('usuarios'), async (req, res) => {
   const rows = await query(`
-    SELECT c.id, c.nombre, c.descripcion, c.permisos, c.creado_en, c.actualizado_en,
+    SELECT c.id, c.nombre, c.descripcion, c.permisos, c.areas, c.creado_en, c.actualizado_en,
            count(u.id)::int AS usuarios
       FROM categorias_acceso c
       LEFT JOIN usuarios u ON u.categoria_id = c.id AND u.rol = 'tecnico'
@@ -3029,17 +3109,18 @@ app.post('/api/categorias', authRequired, requireRol('admin'), async (req, res) 
   const descripcion = limStr(req.body?.descripcion, 160);
   if (nombre.length < 2) return res.status(400).json({ error: 'El nombre de la categoría debe tener al menos 2 caracteres' });
   const permisos = normalizarPermisos(req.body?.permisos, 'tecnico');
+  const areas = normalizarAreas(req.body?.areas);
   const id = await nextId('cat');
   try {
     await query(
-      'INSERT INTO categorias_acceso (id, nombre, descripcion, permisos) VALUES ($1,$2,$3,$4)',
-      [id, nombre, descripcion || null, permisos]
+      'INSERT INTO categorias_acceso (id, nombre, descripcion, permisos, areas) VALUES ($1,$2,$3,$4,$5::jsonb)',
+      [id, nombre, descripcion || null, permisos, areas]
     );
   } catch (e) {
     if (e.code === '23505') return res.status(400).json({ error: 'Ya existe una categoría con ese nombre' });
     throw e;
   }
-  await auditar({ req, tabla: 'categorias_acceso', registroId: id, accion: 'crear', despues: { nombre, descripcion, permisos } });
+  await auditar({ req, tabla: 'categorias_acceso', registroId: id, accion: 'crear', despues: { nombre, descripcion, permisos, areas } });
   return res.status(201).json({ id });
 });
 
@@ -3061,6 +3142,9 @@ app.patch('/api/categorias/:id', authRequired, requireRol('admin'), async (req, 
   if (req.body?.permisos !== undefined) {
     permisosNuevos = normalizarPermisos(req.body.permisos, 'tecnico');
     params.push(permisosNuevos); sets.push(`permisos = $${params.length}`);
+  }
+  if (req.body?.areas !== undefined) {
+    params.push(normalizarAreas(req.body.areas)); sets.push(`areas = $${params.length}::jsonb`);
   }
   const aplicarUsuarios = normalizarBooleano(req.body?.aplicarUsuarios) === true;
   if (!sets.length && !aplicarUsuarios) return res.status(400).json({ error: 'Sin campos para actualizar' });
@@ -3105,6 +3189,9 @@ app.delete('/api/categorias/:id', authRequired, requireRol('admin'), async (req,
   await auditar({ req, tabla: 'categorias_acceso', registroId: req.params.id, accion: 'borrar', antes });
   return res.json({ ok: true });
 });
+
+// ---------- Motor de listas dinámicas ----------
+app.use('/api', listasRouter);
 
 // ---------- Usuarios (admin) ----------
 app.get('/api/usuarios', authRequired, permisoRequerido('usuarios'), async (req, res) => {

@@ -50,7 +50,14 @@ export async function authRequired(req, res, next) {
   // El token por si solo no alcanza: se relee el usuario para que una baja o un
   // cambio de permisos tenga efecto en el acto (y no 12 h despues).
   try {
-    const u = await one('SELECT activo, rol, permisos, tecnico_id, cliente_id, token_version FROM usuarios WHERE id = $1', [payload.sub]);
+    const u = await one(
+      `SELECT u.activo, u.rol, u.permisos, u.tecnico_id, u.cliente_id,
+              u.token_version, u.categoria_id, c.areas AS areas_permisos
+         FROM usuarios u
+         LEFT JOIN categorias_acceso c ON c.id = u.categoria_id
+        WHERE u.id = $1`,
+      [payload.sub]
+    );
     if (!u || u.activo !== true) {
       return res.status(401).json({ error: 'Tu acceso fue desactivado. Pedile al administrador que lo reactive.' });
     }
@@ -67,6 +74,8 @@ export async function authRequired(req, res, next) {
       rol: u.rol,
       tecnico_id: u.tecnico_id,
       cliente_id: u.cliente_id,
+      categoria_id: u.categoria_id || null,
+      areas: u.areas_permisos || {},
       permisos: permisosEfectivos({ rol: u.rol, permisos: u.permisos }),
     };
   } catch (e) {
