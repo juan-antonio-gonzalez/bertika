@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Icon, Modal, fmtFecha } from '../ui';
 import { api } from '../../store/api';
+import { valorVisible } from '../../data/listas';
 
 const ETIQUETA = {
   crear: 'Creó un registro',
@@ -25,6 +26,17 @@ export default function AuditoriaListaModal({ lista, onClose }) {
     return () => { vivo = false; };
   }, [lista.id]);
 
+  const cambiosDe = (f) => {
+    const antes = f.antes && typeof f.antes === 'object' && !Array.isArray(f.antes) ? (f.antes.datos || f.antes) : null;
+    const despues = f.despues && typeof f.despues === 'object' && !Array.isArray(f.despues) ? (f.despues.datos || f.despues) : null;
+    if (!antes || !despues) return '';
+    return (lista.campos || [])
+      .filter((c) => JSON.stringify(antes[c.id]) !== JSON.stringify(despues[c.id]))
+      .slice(0, 3)
+      .map((c) => `${c.nombre}: ${valorVisible(c, antes[c.id]) || '—'} → ${valorVisible(c, despues[c.id]) || '—'}`)
+      .join(' · ');
+  };
+
   return (
     <Modal
       size="lg"
@@ -45,9 +57,8 @@ export default function AuditoriaListaModal({ lista, onClose }) {
                 <b>{ETIQUETA[f.accion] || f.accion}</b>
                 <div className="muted" style={{ fontSize: 11.5 }}>
                   {f.actor || 'sistema'} · {fmtFecha(f.fecha)}
-                  {f.campos ? ` · ${f.campos}` : ''}
                 </div>
-                {f.detalle && <small className="muted">{f.detalle}</small>}
+                {cambiosDe(f) && <small className="muted">{cambiosDe(f)}</small>}
               </div>
             </div>
           ))}
