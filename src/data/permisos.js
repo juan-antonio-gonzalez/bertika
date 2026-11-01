@@ -43,6 +43,11 @@ export const PERMISOS = [
   { clave: 'borrar_tareas', etiqueta: 'Borrar tareas', grupo: 'Operación', op: 'borrar', detalle: 'Eliminar una tarea cargada.' },
 
   // ---------------- Comercial ----------------
+  { clave: 'ventas', etiqueta: 'Ventas', grupo: 'Comercial', op: 'ver', detalle: 'Pipeline de oportunidades, cotizaciones y seguimiento.' },
+  { clave: 'ventas_editar', etiqueta: 'Editar oportunidades', grupo: 'Comercial', op: 'editar', detalle: 'Crear y mover oportunidades del pipeline.' },
+  { clave: 'ventas_cotizar', etiqueta: 'Cotizar en Ventas', grupo: 'Comercial', op: 'editar', detalle: 'Crear, editar y enviar cotizaciones con ítems.' },
+  { clave: 'ventas_cerrar', etiqueta: 'Ganar/perder y crear orden', grupo: 'Comercial', op: 'editar', critica: true, detalle: 'Cierra la oportunidad y puede generar la orden de taller.' },
+  { clave: 'ventas_todos', etiqueta: 'Ver todas las oportunidades', grupo: 'Comercial', op: 'ver', detalle: 'Si no está, cada vendedor ve solo las suyas y las sin asignar.' },
   { clave: 'clientes', etiqueta: 'Clientes', grupo: 'Comercial', op: 'ver', detalle: 'Cartera, KPIs y ficha de cada cliente.' },
   { clave: 'crear_clientes', etiqueta: 'Crear clientes', grupo: 'Comercial', op: 'crear', detalle: 'Alta de fichas nuevas.' },
   { clave: 'editar_clientes', etiqueta: 'Editar clientes', grupo: 'Comercial', op: 'editar', detalle: 'Corregir teléfono, email y datos comerciales.' },
@@ -105,6 +110,7 @@ const OPERATIVO_TECNICO = [
   'flotillas', 'garantias', 'mi_cuenta',
   'asignar_tecnico', 'diagnostico', 'cotizar', 'cargar_insumos', 'prueba_final',
   'responder_whatsapp', 'crm_whatsapp', 'metricas_whatsapp', 'crear_tareas', 'cerrar_tareas',
+  'ventas', 'ventas_editar', 'ventas_cotizar', 'ventas_cerrar',
 ];
 
 const PLANILLAS = {
@@ -183,6 +189,7 @@ export const SECCION_POR_RUTA = {
   '/hub/tareas': 'tareas',
   '/hub/clientes': 'clientes',
   '/hub/whatsapp': 'whatsapp',
+  '/ventas': 'ventas',
   '/hub/cotizador': 'cotizador',
   '/hub/inventario': 'inventario',
   '/hub/tecnicos': 'tecnicos',
@@ -210,7 +217,7 @@ export function seccionDeRuta(ruta) {
 // tiene permiso sobre la que pidio). /home siempre esta disponible.
 export function inicioDe(usuario) {
   const orden = [
-    ['/hub', 'tablero'], ['/hub/dashboard', 'dashboard'], ['/hub/clientes', 'clientes'], ['/hub/tareas', 'tareas'],
+    ['/hub', 'tablero'], ['/hub/dashboard', 'dashboard'], ['/ventas', 'ventas'], ['/hub/clientes', 'clientes'], ['/hub/tareas', 'tareas'],
     ['/hub/whatsapp', 'whatsapp'], ['/hub/inventario', 'inventario'], ['/hub/garantias', 'garantias'],
     ['/hub/tecnicos', 'tecnicos'], ['/hub/flotillas', 'flotillas'], ['/hub/baja', 'baja'],
     ['/hub/cotizador', 'cotizador'], ['/hub/historial', 'historial'], ['/reportes', 'reportes'],

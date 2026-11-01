@@ -104,6 +104,7 @@ function menuDe(rol, c, esFlotilla) {
       { to: '/hub/historial', label: 'Historial por serie', icon: 'search' , seccion: 'historial' },
     ] },
     { grupo: 'Comercial', items: [
+      { to: '/ventas', label: 'Ventas', icon: 'dollar' , seccion: 'ventas' },
       { to: '/hub/clientes', label: 'Clientes', icon: 'users' , seccion: 'clientes' },
       { to: '/hub/tareas', label: 'Tareas', icon: 'clock', contador: c.tareas , seccion: 'tareas' },
       { to: '/hub/whatsapp', label: 'WhatsApp', icon: 'mail' , seccion: 'whatsapp' },
@@ -131,6 +132,7 @@ function menuDe(rol, c, esFlotilla) {
 const TITULOS_SUELTOS = {
   '/home': ['Plataforma', 'Inicio'],
   '/listas': ['Listas', 'Listas'],
+  '/ventas': ['Ventas', 'Ventas'],
   '/tracker': ['Seguimiento', 'Orden en el taller'],
   '/cotizacion': ['Seguimiento', 'Cotización'],
 };

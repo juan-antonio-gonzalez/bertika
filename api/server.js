@@ -15,6 +15,7 @@ import { nextId } from './ids.js';
 import { signToken, authRequired, requireRol, permisoRequerido, SECRET } from './middleware/auth.js';
 import { PERMISOS, COLUMNAS, agruparPermisos, permisosPorDefecto, normalizarPermisos, permisosEfectivos, puedeVer, tienePermiso } from './permisos.js';
 import { listasRouter, areasVisibles, listaAccesible, capacidadesLista } from './listas-routes.js';
+import { ventasRouter } from './ventas-routes.js';
 import { sembrarListasVentas, sembrarListasTaller } from './listas-seed.js';
 import { normalizarAreas } from './listas.js';
 import { canTransition, ORDEN_ESTADOS, ESTADO_LABEL, MIN_CAPACIDAD_PCT, esEstadoCerrado , puedeTrabajarEnOrden } from './reglas.js';
@@ -653,6 +654,86 @@ async function asegurarCodigos() {
     creado_en TIMESTAMPTZ DEFAULT now()
   )`);
   await query('CREATE INDEX IF NOT EXISTS idx_lista_adjuntos_lista ON lista_adjuntos (lista_id, creado_en DESC)');
+  await query(`CREATE TABLE IF NOT EXISTS oportunidades (
+    id TEXT PRIMARY KEY,
+    titulo TEXT NOT NULL,
+    cliente_id TEXT,
+    prospecto_nombre TEXT,
+    prospecto_telefono TEXT,
+    prospecto_email TEXT,
+    etapa TEXT DEFAULT 'nuevo',
+    monto_estimado NUMERIC,
+    probabilidad INTEGER DEFAULT 10,
+    cierre_estimado DATE,
+    responsable TEXT,
+    origen TEXT,
+    canal TEXT,
+    conversacion_id TEXT,
+    serie TEXT,
+    activo_id TEXT,
+    proxima_accion TEXT,
+    fecha_proxima_accion DATE,
+    motivo_perdida TEXT,
+    cotizacion_actual_id TEXT,
+    orden_id TEXT,
+    notas TEXT,
+    origen_dato TEXT,
+    origen_id TEXT,
+    etapa_desde TIMESTAMPTZ DEFAULT now(),
+    creado_por TEXT,
+    actualizado_por TEXT,
+    creado_en TIMESTAMPTZ DEFAULT now(),
+    actualizado_en TIMESTAMPTZ DEFAULT now(),
+    archivada BOOLEAN DEFAULT FALSE
+  )`);
+  await query("CREATE UNIQUE INDEX IF NOT EXISTS idx_oportunidades_origen ON oportunidades (origen_dato, origen_id) WHERE origen_id IS NOT NULL");
+  await query('CREATE INDEX IF NOT EXISTS idx_oportunidades_etapa ON oportunidades (etapa, archivada, actualizado_en DESC)');
+  await query(`CREATE TABLE IF NOT EXISTS cotizaciones (
+    id TEXT PRIMARY KEY,
+    oportunidad_id TEXT NOT NULL,
+    cliente_id TEXT,
+    version INTEGER DEFAULT 1,
+    estado TEXT DEFAULT 'borrador',
+    moneda TEXT DEFAULT 'ARS',
+    subtotal NUMERIC DEFAULT 0,
+    descuento NUMERIC DEFAULT 0,
+    iva_pct NUMERIC DEFAULT 0,
+    total NUMERIC DEFAULT 0,
+    validez_dias INTEGER DEFAULT 15,
+    token TEXT UNIQUE,
+    enviada_en TIMESTAMPTZ,
+    vista_en TIMESTAMPTZ,
+    decidida_en TIMESTAMPTZ,
+    motivo_rechazo TEXT,
+    creada_por TEXT,
+    creado_en TIMESTAMPTZ DEFAULT now(),
+    actualizado_en TIMESTAMPTZ DEFAULT now()
+  )`);
+  await query('CREATE INDEX IF NOT EXISTS idx_cotizaciones_oportunidad ON cotizaciones (oportunidad_id, version DESC)');
+  await query(`CREATE TABLE IF NOT EXISTS cotizacion_items (
+    id TEXT PRIMARY KEY,
+    cotizacion_id TEXT NOT NULL,
+    descripcion TEXT NOT NULL,
+    cantidad NUMERIC DEFAULT 1,
+    precio_unitario NUMERIC DEFAULT 0,
+    descuento NUMERIC DEFAULT 0,
+    total NUMERIC DEFAULT 0,
+    orden INTEGER DEFAULT 0
+  )`);
+  await query('CREATE INDEX IF NOT EXISTS idx_cotizacion_items_cotizacion ON cotizacion_items (cotizacion_id, orden)');
+  await query(`CREATE TABLE IF NOT EXISTS oportunidad_eventos (
+    id TEXT PRIMARY KEY,
+    oportunidad_id TEXT NOT NULL,
+    tipo TEXT,
+    detalle TEXT,
+    usuario TEXT,
+    creado_en TIMESTAMPTZ DEFAULT now()
+  )`);
+  await query('CREATE INDEX IF NOT EXISTS idx_oportunidad_eventos ON oportunidad_eventos (oportunidad_id, creado_en DESC)');
+  await query('ALTER TABLE wa_conversaciones ADD COLUMN IF NOT EXISTS oportunidad_id TEXT');
+  await query('ALTER TABLE whatsapp_tareas ADD COLUMN IF NOT EXISTS oportunidad_id TEXT');
+  await query('ALTER TABLE ordenes ADD COLUMN IF NOT EXISTS oportunidad_id TEXT');
+  await query('ALTER TABLE ordenes ADD COLUMN IF NOT EXISTS cotizacion_id TEXT');
   await query(`CREATE TABLE IF NOT EXISTS menu_favoritos (
     usuario_email TEXT NOT NULL,
     path TEXT NOT NULL,
@@ -3449,6 +3530,7 @@ app.delete('/api/categorias/:id', authRequired, requireRol('admin'), async (req,
 });
 
 // ---------- Motor de listas dinámicas ----------
+app.use('/api', ventasRouter);
 app.use('/api', listasRouter);
 
 // Conversión de una oportunidad/prospecto de Ventas en cliente de taller.

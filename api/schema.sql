@@ -509,3 +509,85 @@ CREATE TABLE IF NOT EXISTS activos (
   creado_en TIMESTAMPTZ DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_activos_cliente ON activos (cliente_id, archivado);
+
+
+-- Ventas V2: oportunidad comercial, cotizaciones con ítems y eventos.
+CREATE TABLE IF NOT EXISTS oportunidades (
+  id TEXT PRIMARY KEY,
+  titulo TEXT NOT NULL,
+  cliente_id TEXT,
+  prospecto_nombre TEXT,
+  prospecto_telefono TEXT,
+  prospecto_email TEXT,
+  etapa TEXT DEFAULT 'nuevo',
+  monto_estimado NUMERIC,
+  probabilidad INTEGER DEFAULT 10,
+  cierre_estimado DATE,
+  responsable TEXT,
+  origen TEXT,
+  canal TEXT,
+  conversacion_id TEXT,
+  serie TEXT,
+  activo_id TEXT,
+  proxima_accion TEXT,
+  fecha_proxima_accion DATE,
+  motivo_perdida TEXT,
+  cotizacion_actual_id TEXT,
+  orden_id TEXT,
+  notas TEXT,
+  origen_dato TEXT,
+  origen_id TEXT,
+  etapa_desde TIMESTAMPTZ DEFAULT now(),
+  creado_por TEXT,
+  actualizado_por TEXT,
+  creado_en TIMESTAMPTZ DEFAULT now(),
+  actualizado_en TIMESTAMPTZ DEFAULT now(),
+  archivada BOOLEAN DEFAULT FALSE
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_oportunidades_origen ON oportunidades (origen_dato, origen_id) WHERE origen_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_oportunidades_etapa ON oportunidades (etapa, archivada, actualizado_en DESC);
+
+CREATE TABLE IF NOT EXISTS cotizaciones (
+  id TEXT PRIMARY KEY,
+  oportunidad_id TEXT NOT NULL,
+  cliente_id TEXT,
+  version INTEGER DEFAULT 1,
+  estado TEXT DEFAULT 'borrador',
+  moneda TEXT DEFAULT 'ARS',
+  subtotal NUMERIC DEFAULT 0,
+  descuento NUMERIC DEFAULT 0,
+  iva_pct NUMERIC DEFAULT 0,
+  total NUMERIC DEFAULT 0,
+  validez_dias INTEGER DEFAULT 15,
+  token TEXT UNIQUE,
+  enviada_en TIMESTAMPTZ,
+  vista_en TIMESTAMPTZ,
+  decidida_en TIMESTAMPTZ,
+  motivo_rechazo TEXT,
+  creada_por TEXT,
+  creado_en TIMESTAMPTZ DEFAULT now(),
+  actualizado_en TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_cotizaciones_oportunidad ON cotizaciones (oportunidad_id, version DESC);
+
+CREATE TABLE IF NOT EXISTS cotizacion_items (
+  id TEXT PRIMARY KEY,
+  cotizacion_id TEXT NOT NULL,
+  descripcion TEXT NOT NULL,
+  cantidad NUMERIC DEFAULT 1,
+  precio_unitario NUMERIC DEFAULT 0,
+  descuento NUMERIC DEFAULT 0,
+  total NUMERIC DEFAULT 0,
+  orden INTEGER DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_cotizacion_items_cotizacion ON cotizacion_items (cotizacion_id, orden);
+
+CREATE TABLE IF NOT EXISTS oportunidad_eventos (
+  id TEXT PRIMARY KEY,
+  oportunidad_id TEXT NOT NULL,
+  tipo TEXT,
+  detalle TEXT,
+  usuario TEXT,
+  creado_en TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_oportunidad_eventos ON oportunidad_eventos (oportunidad_id, creado_en DESC);

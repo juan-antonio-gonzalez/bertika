@@ -32,9 +32,11 @@ const Contacto = lazy(() => import('./pages/Contacto'));
 const Seguimiento = lazy(() => import('./pages/Seguimiento'));
 const Cotizador = lazy(() => import('./pages/Cotizador'));
 const CotizacionPublica = lazy(() => import('./pages/CotizacionPublica'));
+const CotizacionVenta = lazy(() => import('./pages/CotizacionVenta'));
 const Reportes = lazy(() => import('./pages/Reportes'));
 const Usuarios = lazy(() => import('./pages/Usuarios'));
 const Listas = lazy(() => import('./pages/Listas'));
+const Ventas = lazy(() => import('./pages/Ventas'));
 const FormularioPublico = lazy(() => import('./pages/FormularioPublico'));
 const Respaldos = lazy(() => import('./pages/Respaldos'));
 const Sistema = lazy(() => import('./pages/Sistema'));
@@ -181,6 +183,7 @@ export default function App() {
         <Route path="/cotizador" element={<TemaPublico><Cotizador /></TemaPublico>} />
         <Route path="/seguimiento" element={<PublicLayout><Seguimiento /></PublicLayout>} />
         <Route path="/cotizacion/:orden_id" element={<PublicLayout><CotizacionPublica /></PublicLayout>} />
+        <Route path="/cotizacion-venta/:token" element={<PublicLayout><CotizacionVenta /></PublicLayout>} />
         <Route path="/f/:token" element={<PublicLayout><FormularioPublico /></PublicLayout>} />
         <Route path="/plataforma" element={<PublicLayout><Plataforma /></PublicLayout>} />
 
@@ -200,6 +203,8 @@ export default function App() {
         {/* Seguimiento publico: pantalla completa y SIN el shell de la plataforma.
             Se ve igual con o sin sesion abierta (siempre como cliente). */}
         <Route path="/tracker/:orden_id" element={<Tracker />} />
+        <Route path="/ventas" element={<AppLayout><RequireSeccion><Ventas /></RequireSeccion></AppLayout>} />
+        <Route path="/ventas/:tab" element={<AppLayout><RequireSeccion><Ventas /></RequireSeccion></AppLayout>} />
         <Route path="/listas" element={<AppLayout><RequireListas><Listas /></RequireListas></AppLayout>} />
         <Route path="/listas/:areaSlug" element={<AppLayout><RequireListas><Listas /></RequireListas></AppLayout>} />
         <Route path="/listas/:areaSlug/:listaId" element={<AppLayout><RequireListas><Listas /></RequireListas></AppLayout>} />

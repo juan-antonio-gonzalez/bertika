@@ -1522,3 +1522,13 @@ details[open] > .cz-summary::after { content: ' –'; }
 .busqueda-lista-item:hover { border-color: var(--amber); }
 .busqueda-lista-item b { font-size: 12px; color: var(--navy); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .busqueda-lista-item span { font-size: 10.5px; color: var(--muted); }
+
+/* Ventas V2: pipeline de oportunidades */
+.ventas-pipeline { display: grid; grid-template-columns: repeat(5, minmax(190px, 1fr)); gap: 10px; overflow-x: auto; padding-bottom: 8px; }
+.ventas-col { min-width: 190px; background: var(--bg-3); border: 1px solid var(--line); border-radius: 10px; padding: 8px; }
+.ventas-col-head { display: flex; justify-content: space-between; gap: 6px; align-items: baseline; padding: 2px 3px 8px; font-size: 12.5px; }
+.ventas-col-head span { color: var(--muted); font-size: 10.5px; }
+.ventas-card { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px; margin-bottom: 6px; cursor: pointer; display: grid; gap: 3px; }
+.ventas-card:hover { border-color: var(--amber); }
+.ventas-next { font-size: 10.5px; color: var(--amber); display: flex; gap: 4px; align-items: center; margin-top: 4px; }
+@media (max-width: 900px) { .ventas-pipeline { grid-template-columns: repeat(5, 220px); } }

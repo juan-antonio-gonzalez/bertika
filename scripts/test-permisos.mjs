@@ -167,7 +167,8 @@ console.log('\nCoherencia con la API');
 test('todas las claves que exige la API existen en el catálogo', () => {
   // Evita el error silencioso de escribir mal una clave en un endpoint: eso
   // dejaría el endpoint inaccesible para todos menos el admin.
-  const fuente = readFileSync(new URL('../api/server.js', import.meta.url), 'utf8');
+  const fuente = ['../api/server.js', '../api/ventas-routes.js', '../api/listas-routes.js']
+    .map((f) => readFileSync(new URL(f, import.meta.url), 'utf8')).join('\n');
   const usadas = new Set();
   for (const m of fuente.matchAll(/permisoRequerido\(([^)]*)\)/g)) {
     for (const k of m[1].matchAll(/'([^']+)'/g)) usadas.add(k[1]);
@@ -177,7 +178,8 @@ test('todas las claves que exige la API existen en el catálogo', () => {
 });
 
 test('los permisos del catálogo no quedan sin uso en la API', () => {
-  const fuente = readFileSync(new URL('../api/server.js', import.meta.url), 'utf8');
+  const fuente = ['../api/server.js', '../api/ventas-routes.js', '../api/listas-routes.js']
+    .map((f) => readFileSync(new URL(f, import.meta.url), 'utf8')).join('\n');
   const huerfanos = CLAVES.filter((k) => !fuente.includes(`'${k}'`));
   // Las secciones se usan para el menu y los filtros, no siempre en un require.
   const sinUso = huerfanos.filter((k) => !SECCIONES.includes(k));
