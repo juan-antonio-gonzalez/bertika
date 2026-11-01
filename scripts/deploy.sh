@@ -28,6 +28,25 @@ if ! grep -qi 'bertika' dist/index.html 2>/dev/null; then
 fi
 echo "OK: dist sin 'Vertika' y con marca Bertika."
 
+echo "== Snapshot previo para rollback =="
+STAMP="$(date +%Y%m%d%H%M%S)"
+BACKUP="/var/backups/bertika/deploy-pre-$STAMP.tgz"
+if ! ssh $SSH_ARGS "root@$SSH_HOST" "mkdir -p /var/backups/bertika && tar czf '$BACKUP' -C /var/www bertika --exclude='bertika/uploads' --exclude='bertika/api/uploads-private' --exclude='bertika/api/node_modules'"; then
+  echo "ERROR: no se pudo crear el snapshot previo; no se despliega."
+  exit 1
+fi
+echo "Snapshot: $BACKUP"
+
+rollback_deploy() {
+  echo "== ROLLBACK =="
+  if ssh $SSH_ARGS "root@$SSH_HOST" "tar xzf '$BACKUP' -C /var/www && systemctl restart bertika-api && systemctl is-active --quiet bertika-api"; then
+    echo "Rollback aplicado. Revisar logs antes de reintentar."
+  else
+    echo "ERROR: el rollback también falló. Intervención manual."
+  fi
+}
+
+
 # Excluye de TODO lo que sube: documentacion, readmes, archivos de sistema y basura.
 # La VPS solo recibe codigo: NUNCA readme/*.md/instructivos/PROMPT/docs.
 EXCLUDE_DOCS=(--exclude '*.md' --exclude '*.pdf' --exclude 'readme*' --exclude 'README*' --exclude docs --exclude 'PROMPT*' --exclude 'INSTRUCTIVO*' --exclude '.DS_Store')
@@ -57,7 +76,7 @@ rsync -az "${EXCLUDE_DOCS[@]}" -e "ssh $SSH_ARGS" \
   "root@$SSH_HOST:$REMOTE_DIR/scripts/"
 
 echo "== Dependencias, directorios y servicio =="
-ssh $SSH_ARGS "root@$SSH_HOST" bash -s <<'EOF'
+if ! ssh $SSH_ARGS "root@$SSH_HOST" bash -s <<'EOF'
 set -euo pipefail
 cd /var/www/bertika/api
 npm ci --omit=dev --no-fund --no-audit
@@ -65,6 +84,11 @@ mkdir -p /var/www/bertika/uploads /var/backups/bertika
 systemctl restart bertika-api
 systemctl is-active --quiet bertika-api
 EOF
+then
+  echo "ERROR: falló la actualización/restart de la API."
+  rollback_deploy
+  exit 1
+fi
 
 echo "== Verificacion (con reintentos) =="
 # Un deploy no puede terminar bien si la API quedo en 502/503. Reintenta para
@@ -85,11 +109,11 @@ check_url() {
   return 1
 }
 
-check_url "https://bertika.com/" || exit 1
-check_url "https://bertika.com/tarjetas/" || exit 1
-check_url "https://bertika.com/api/health" || exit 1
-check_url "https://bertika.com/api/public/stats" || exit 1
-check_url "https://srv1981179.hstgr.cloud/" || exit 1
+check_url "https://bertika.com/" || { rollback_deploy; exit 1; }
+check_url "https://bertika.com/tarjetas/" || { rollback_deploy; exit 1; }
+check_url "https://bertika.com/api/health" || { rollback_deploy; exit 1; }
+check_url "https://bertika.com/api/public/stats" || { rollback_deploy; exit 1; }
+check_url "https://srv1981179.hstgr.cloud/" || { rollback_deploy; exit 1; }
 
 echo "Deploy verificado: frontend, tarjetas y API responden 200."
 

@@ -673,21 +673,44 @@ listasRouter.get('/listas/buscar', authRequired, async (req, res) => {
   if (q.length < 2) return res.json({ q, resultados: [] });
   const patron = `%${q.replace(/[\\%_]/g, (m) => `\\${m}`)}%`;
   const areas = await areasVisibles(req.user);
+  const ids = areas.flatMap((a) => (a.listas || []).map((l) => l.id));
+  if (!ids.length) return res.json({ q, resultados: [] });
+
+  // Una sola consulta de listas, campos y registros: antes se hacía N+1 por lista.
+  const [listas, campos, filas] = await Promise.all([
+    query('SELECT * FROM listas WHERE id = ANY($1) AND archivada = false', [ids]),
+    query('SELECT id, lista_id, nombre, tipo FROM lista_campos WHERE lista_id = ANY($1) AND activo = true ORDER BY orden, lower(nombre)', [ids]),
+    query(`
+      SELECT id, lista_id, datos, creado_por, creado_en
+        FROM lista_registros
+       WHERE lista_id = ANY($1) AND archivado = false AND datos::text ILIKE $2
+       ORDER BY creado_en DESC
+       LIMIT 500
+    `, [ids, patron]),
+  ]);
+  const porId = new Map(listas.map((l) => [l.id, l]));
+  const camposPorLista = new Map();
+  for (const c of campos) {
+    if (!camposPorLista.has(c.lista_id)) camposPorLista.set(c.lista_id, []);
+    camposPorLista.get(c.lista_id).push(c);
+  }
+  const filasPorLista = new Map();
+  for (const f of filas) {
+    if (!filasPorLista.has(f.lista_id)) filasPorLista.set(f.lista_id, []);
+    filasPorLista.get(f.lista_id).push(f);
+  }
+
   const resultados = [];
   for (const area of areas) {
     for (const meta of area.listas || []) {
-      const lista = await listaConArea(meta.id, req.user);
-      if (!lista) continue;
-      const campos = await camposDe(lista.id);
-      const tituloCampo = campos.find((c) => c.tipo === 'texto') || campos[0] || null;
-      const filas = await query(`
-        SELECT id, lista_id, datos, creado_por, creado_en
-          FROM lista_registros
-         WHERE lista_id = $1 AND archivado = false AND datos::text ILIKE $2
-         ORDER BY creado_en DESC
-         LIMIT 10
-      `, [lista.id, patron]);
-      for (const fila of filas) {
+      const lista = porId.get(meta.id);
+      if (!lista || !listaAccesible(req.user, lista)) continue;
+      const camposLista = camposPorLista.get(lista.id) || [];
+      const tituloCampo = camposLista.find((c) => c.tipo === 'texto') || camposLista[0] || null;
+      const propias = filasPorLista.get(lista.id) || [];
+      let usadas = 0;
+      for (const fila of propias) {
+        if (usadas >= 10) break;
         if (!puedeVerRegistro(req, lista, fila)) continue;
         const valor = fila.datos?.[tituloCampo?.id];
         const titulo = valor && typeof valor === 'object'
@@ -702,6 +725,7 @@ listasRouter.get('/listas/buscar', authRequired, async (req, res) => {
           titulo: String(titulo).slice(0, 180),
           creado_en: fila.creado_en,
         });
+        usadas += 1;
         if (resultados.length >= 25) return res.json({ q, resultados });
       }
     }
