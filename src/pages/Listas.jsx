@@ -12,6 +12,7 @@ import ListaConfigModal from '../components/listas/ListaConfigModal';
 import ConvertirModal from '../components/listas/ConvertirModal';
 import ReglasModal from '../components/listas/ReglasModal';
 import FormularioPublicoModal from '../components/listas/FormularioPublicoModal';
+import AprobacionesPendientesModal from '../components/listas/AprobacionesPendientesModal';
 import {
   FiltrosModal, ColumnasModal, NuevaVistaModal, NuevaListaModal, ImportarModal, DuplicarListaModal, FormatoModal,
   PapeleraListasModal, PapeleraRegistrosModal,
@@ -227,6 +228,7 @@ function AreaDetalle({ area }) {
   const toastShow = useStore((s) => s.toastShow);
   const navigate = useNavigate();
   const [nueva, setNueva] = useState(false);
+  const [aprobaciones, setAprobaciones] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const crear = async (payload) => {
@@ -250,11 +252,20 @@ function AreaDetalle({ area }) {
         group="Listas"
         title={area.nombre}
         sub={area.descripcion || 'Listas y tablas del área.'}
-        actions={area.puede?.crear_listas ? (
-          <button type="button" className="btn primary sm" onClick={() => setNueva(true)}>
-            <Icon name="plus" size={14} /> Nueva lista
-          </button>
-        ) : null}
+        actions={(
+          <>
+            {area.puede?.editar_listas && (
+              <button type="button" className="btn sm" onClick={() => setAprobaciones(true)}>
+                <Icon name="check" size={14} /> Aprobaciones
+              </button>
+            )}
+            {area.puede?.crear_listas && (
+              <button type="button" className="btn primary sm" onClick={() => setNueva(true)}>
+                <Icon name="plus" size={14} /> Nueva lista
+              </button>
+            )}
+          </>
+        )}
       />
 
       <ResumenArea area={area} />
@@ -281,6 +292,9 @@ function AreaDetalle({ area }) {
 
       {nueva && (
         <NuevaListaModal area={area} busy={busy} onGuardar={crear} onClose={() => setNueva(false)} />
+      )}
+      {aprobaciones && (
+        <AprobacionesPendientesModal area={area} onClose={() => setAprobaciones(false)} />
       )}
     </div>
   );

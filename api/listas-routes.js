@@ -499,6 +499,52 @@ listasRouter.post('/public/formulario/:token', publicFormLimiter, async (req, re
   return res.status(201).json({ ok: true });
 });
 
+// Bandeja de aprobaciones pendientes del área (para gestores de listas).
+listasRouter.get('/listas/aprobaciones/pendientes', authRequired, async (req, res) => {
+  const areaId = limStr(req.query?.area_id, 60);
+  const area = await one('SELECT id, slug, nombre FROM areas WHERE id = $1 AND activo = true', [areaId]);
+  if (!area) return res.status(400).json({ error: 'Área inválida.' });
+  const cap = capacidades(req, areaId);
+  if (!cap.ver || !cap.editar_listas) return sinPermiso(res, 'Solo quien administra las listas puede ver las aprobaciones pendientes.');
+
+  const filas = await query(`
+    SELECT a.id, a.lista_id, a.registro_id, a.solicitado_por, a.comentario, a.creado_en,
+           l.nombre AS lista_nombre, r.datos
+      FROM lista_aprobaciones a
+      JOIN listas l ON l.id = a.lista_id
+      JOIN lista_registros r ON r.id = a.registro_id
+     WHERE l.area_id = $1 AND l.archivada = false AND r.archivado = false AND a.estado = 'pendiente'
+     ORDER BY a.creado_en ASC
+     LIMIT 300
+  `, [areaId]);
+
+  const campos = await query(`
+    SELECT c.id, c.lista_id, c.nombre, c.tipo
+      FROM lista_campos c JOIN listas l ON l.id = c.lista_id
+     WHERE l.area_id = $1 AND l.archivada = false AND c.activo = true
+     ORDER BY c.orden, lower(c.nombre)
+  `, [areaId]);
+  const tituloPorLista = new Map();
+  for (const c of campos) {
+    const actual = tituloPorLista.get(c.lista_id);
+    if (!actual || (actual.tipo !== 'texto' && c.tipo === 'texto')) tituloPorLista.set(c.lista_id, c);
+  }
+  const limpiar = (v) => {
+    if (Array.isArray(v)) return v.join(', ');
+    if (v && typeof v === 'object') return v.etiqueta || v.nombre || v.id || '';
+    return v == null ? '' : String(v);
+  };
+  return res.json({
+    area,
+    total: filas.length,
+    aprobaciones: filas.map((f) => ({
+      ...f,
+      titulo: limpiar(f.datos?.[tituloPorLista.get(f.lista_id)?.id]) || 'Sin título',
+      datos: undefined,
+    })),
+  });
+});
+
 // Dashboard de un área: métricas, actividad reciente y alertas.
 listasRouter.get('/listas/resumen', authRequired, async (req, res) => {
   const areaId = limStr(req.query?.area_id, 60);
