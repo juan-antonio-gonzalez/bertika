@@ -85,7 +85,8 @@ async function pedir(ruta, { method = 'GET', token, body, headers = {} } = {}) {
 }
 
 async function esperarServidor() {
-  const limite = Date.now() + 20000;
+  const timeoutMs = Number(process.env.TEST_STARTUP_TIMEOUT_MS) || 60000;
+  const limite = Date.now() + timeoutMs;
   while (Date.now() < limite) {
     if (servidor.exitCode !== null) throw new Error(`El servidor terminó (código ${servidor.exitCode}).`);
     try {
