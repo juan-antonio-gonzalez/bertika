@@ -819,6 +819,32 @@ async function main() {
     assert.ok(detalle.json.campos.some((c) => c.nombre === 'Nombre'));
   });
 
+  let oportunidadE2E = '';
+  await test('oportunidad, cotización, link público y orden de Ventas V2', async () => {
+    const cliente = await pedir('/clientes', { method: 'POST', token: tokenAdmin, body: { nombre: `Ventas E2E ${Date.now()}`, email: `ventas.e2e.${Date.now()}@example.com` } });
+    assert.equal(cliente.status, 201);
+    const opp = await pedir('/oportunidades', { method: 'POST', token: tokenAdmin, body: { titulo: 'Venta E2E', cliente_id: cliente.json.id, serie: `SERIE-E2E-${Date.now()}`, monto_estimado: 1000, probabilidad: 50 } });
+    assert.equal(opp.status, 201);
+    oportunidadE2E = opp.json.id;
+    const cot = await pedir(`/oportunidades/${oportunidadE2E}/cotizaciones`, { method: 'POST', token: tokenAdmin, body: { items: [{ descripcion: 'Servicio E2E', cantidad: 1, precio_unitario: 1000 }], iva_pct: 21 } });
+    assert.equal(cot.status, 201);
+    assert.equal(cot.json.total, 1210);
+    const envio = await pedir(`/cotizaciones/${cot.json.id}/enviar`, { method: 'POST', token: tokenAdmin });
+    assert.equal(envio.status, 200);
+    assert.ok(envio.json.token);
+    const publica = await pedir(`/public/cotizacion-venta/${envio.json.token}`);
+    assert.equal(publica.status, 200);
+    assert.equal(publica.json.items.length, 1);
+    const decision = await pedir(`/public/cotizacion-venta/${envio.json.token}`, { method: 'POST', body: { decision: 'aceptada' } });
+    assert.equal(decision.status, 200);
+    assert.equal(decision.json.estado, 'aceptada');
+    const detalle = await pedir(`/oportunidades/${oportunidadE2E}`, { token: tokenAdmin });
+    assert.equal(detalle.json.etapa, 'ganado');
+    const orden = await pedir(`/oportunidades/${oportunidadE2E}/orden`, { method: 'POST', token: tokenAdmin });
+    assert.equal(orden.status, 201);
+    assert.ok(orden.json.id);
+  });
+
   await test('la salud ve la cola con el envío fallido', async () => {
     const r = await pedir('/salud', { token: tokenAdmin });
     assert.equal(r.status, 200);
