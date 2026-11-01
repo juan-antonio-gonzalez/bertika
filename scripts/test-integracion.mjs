@@ -755,6 +755,11 @@ async function main() {
     assert.equal(bruto.includes('$2b$'), false, 'nunca se guarda el hash');
     assert.equal(bruto.includes('password_hash'), false);
     assert.match(fila.detalle, /contraseña/);
+    // El cambio de clave invalida el token anterior: se vuelve a loguear para
+    // que los tests posteriores del técnico sigan siendo válidos.
+    const t = await pedir('/auth/login', { method: 'POST', body: { email: 'tec01@bertika.com', password: 'otraClave123' } });
+    assert.equal(t.status, 200);
+    tokenTec = t.json.token;
   });
 
   await test('la auditoría filtra por tabla y no inventa resultados', async () => {

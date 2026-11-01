@@ -44,6 +44,12 @@ function cotizacionVencida(q, ahora = Date.now()) {
   return new Date(q.enviada_en).getTime() + dias * 86400000 < ahora;
 }
 
+function normalizarCotizacion(q) {
+  if (!q) return q;
+  const n = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+  return { ...q, subtotal: n(q.subtotal), descuento: n(q.descuento), iva_pct: n(q.iva_pct), total: n(q.total) };
+}
+
 async function evento(oportunidadId, tipo, detalle, usuario) {
   try {
     await query(
@@ -149,7 +155,7 @@ ventasRouter.get('/oportunidades', authRequired, permisoRequerido('ventas'), asy
   params.push(limit, offset);
   const filas = await query(
     `SELECT o.*, c.nombre AS cliente_nombre, c.telefono AS cliente_telefono,
-            q.estado AS cotizacion_estado, q.total AS cotizacion_total, q.token AS cotizacion_token,
+            q.estado AS cotizacion_estado, q.total::float8 AS cotizacion_total, q.token AS cotizacion_token,
             GREATEST(0, floor(extract(epoch FROM (now() - o.etapa_desde)) / 86400))::int AS dias_etapa
        FROM oportunidades o
        LEFT JOIN clientes c ON c.id = o.cliente_id
@@ -297,7 +303,7 @@ ventasRouter.post('/oportunidades/:id/cotizaciones', authRequired, permisoRequer
   await query('UPDATE oportunidades SET cotizacion_actual_id=$2, monto_estimado=$3, etapa=CASE WHEN etapa=\'nuevo\' THEN \'presupuestado\' ELSE etapa END, etapa_desde=CASE WHEN etapa=\'nuevo\' THEN now() ELSE etapa_desde END, actualizado_en=now(), actualizado_por=$4 WHERE id=$1', [o.id, id, calculo.total, req.user.email]);
   await evento(o.id, 'cotizacion', `Cotización v${version} · $ ${calculo.total}`, req.user.email);
   await auditar({ req, tabla: 'cotizaciones', registroId: id, accion: 'crear', despues: fila });
-  return res.status(201).json({ ...fila, items: calculo.items });
+  return res.status(201).json({ ...normalizarCotizacion(fila), items: calculo.items });
 });
 
 ventasRouter.get('/cotizaciones/:id', authRequired, permisoRequerido('ventas'), async (req, res) => {
@@ -306,7 +312,7 @@ ventasRouter.get('/cotizaciones/:id', authRequired, permisoRequerido('ventas'), 
   const o = await oportunidadVisible(req, q.oportunidad_id);
   if (!o) return res.status(404).json({ error: 'Oportunidad no encontrada' });
   const items = await query('SELECT * FROM cotizacion_items WHERE cotizacion_id = $1 ORDER BY orden, id', [q.id]);
-  return res.json({ ...q, items, oportunidad: o });
+  return res.json({ ...normalizarCotizacion(q), items, oportunidad: o });
 });
 
 ventasRouter.patch('/cotizaciones/:id', authRequired, permisoRequerido('ventas_cotizar'), async (req, res) => {
@@ -324,7 +330,7 @@ ventasRouter.patch('/cotizaciones/:id', authRequired, permisoRequerido('ventas_c
   const fila = await one('UPDATE cotizaciones SET subtotal=$2, descuento=$3, iva_pct=$4, total=$5, validez_dias=$6, actualizado_en=now() WHERE id=$1 RETURNING *', [q.id, calculo.subtotal, calculo.descuento, calculo.iva_pct, calculo.total, Math.max(1, Math.min(365, Number(req.body?.validez_dias) || q.validez_dias))]);
   await query('UPDATE oportunidades SET monto_estimado=$2, actualizado_en=now() WHERE id=$1', [o.id, calculo.total]);
   await auditar({ req, tabla: 'cotizaciones', registroId: q.id, accion: 'editar', antes: q, despues: fila });
-  return res.json({ ...fila, items: calculo.items });
+  return res.json({ ...normalizarCotizacion(fila), items: calculo.items });
 });
 
 ventasRouter.post('/cotizaciones/:id/enviar', authRequired, permisoRequerido('ventas_cotizar'), async (req, res) => {
@@ -338,7 +344,7 @@ ventasRouter.post('/cotizaciones/:id/enviar', authRequired, permisoRequerido('ve
   await query('UPDATE oportunidades SET etapa=CASE WHEN etapa=\'nuevo\' THEN \'presupuestado\' ELSE etapa END, etapa_desde=CASE WHEN etapa=\'nuevo\' THEN now() ELSE etapa_desde END, actualizado_en=now() WHERE id=$1', [o.id]);
   await evento(o.id, 'cotizacion_enviada', `Cotización v${q.version}`, req.user.email);
   await auditar({ req, tabla: 'cotizaciones', registroId: q.id, accion: 'enviar', despues: fila });
-  return res.json({ ...fila, url: `/cotizacion-venta/${token}` });
+  return res.json({ ...normalizarCotizacion(fila), url: `/cotizacion-venta/${token}` });
 });
 
 ventasRouter.post('/cotizaciones/:id/decision', authRequired, permisoRequerido('ventas_cerrar'), async (req, res) => {
@@ -366,7 +372,7 @@ async function decidirCotizacion(req, res, q, o, decision, motivo) {
     await evento(o.id, 'perdida', limStr(motivo, 200) || 'Cotización rechazada', req.user?.email || 'cliente');
   }
   await auditar({ req, tabla: 'cotizaciones', registroId: q.id, accion: estado, despues: fila });
-  return res.json(fila);
+  return res.json(normalizarCotizacion(fila));
 }
 
 // ---------- Resumen / hoy ----------
@@ -445,7 +451,7 @@ ventasRouter.get('/public/cotizacion-venta/:token', ventasPublicLimiter, async (
     await query("UPDATE cotizaciones SET estado='vista', vista_en=now() WHERE id=$1", [q.id]);
     q.estado = 'vista';
   }
-  return res.json({ cotizacion: q, items, oportunidad: o, cliente });
+  return res.json({ cotizacion: normalizarCotizacion(q), items, oportunidad: o, cliente });
 });
 
 ventasRouter.post('/public/cotizacion-venta/:token', ventasPublicLimiter, async (req, res) => {
