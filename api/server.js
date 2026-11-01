@@ -1369,6 +1369,9 @@ app.get('/api/estado', authRequired, async (req, res) => {
   const rol = req.user.rol;
   const deps = ['tecnicos', 'clientes', 'baterias', 'activos', 'insumos', 'ordenes', 'bajas', 'notificaciones'];
   const out = {};
+  const paginado = String(req.query?.paginado || '') === '1';
+  const limite = Math.min(500, Math.max(1, Number(req.query?.limit) || 200));
+  const offset = Math.max(0, Number(req.query?.offset) || 0);
   for (const t of deps) {
     if (rol === 'cliente' && (t === 'insumos' || t === 'bajas')) { out[t] = []; continue; }
     if (rol !== 'admin' && t === 'bajas') { out[t] = []; continue; }
@@ -1420,6 +1423,16 @@ app.get('/api/estado', authRequired, async (req, res) => {
        ORDER BY vence ASC NULLS LAST LIMIT 200`,
       rol === 'admin' ? [] : [req.user.email]
     );
+  }
+  if (paginado) {
+    const paginacion = {};
+    for (const clave of deps) {
+      if (!Array.isArray(out[clave])) continue;
+      const total = out[clave].length;
+      paginacion[clave] = { total, limit: limite, offset, next: offset + limite < total };
+      out[clave] = out[clave].slice(offset, offset + limite);
+    }
+    out.paginacion = paginacion;
   }
   return res.json(out);
 });

@@ -851,6 +851,18 @@ async function main() {
     assert.ok(orden.json.id);
   });
 
+  await test('/estado mantiene el bootstrap y acepta paginación opt-in', async () => {
+    const completo = await pedir('/estado', { token: tokenAdmin });
+    assert.equal(completo.status, 200);
+    assert.equal(completo.json.paginacion, undefined);
+    const pagina = await pedir('/estado?paginado=1&limit=1&offset=0', { token: tokenAdmin });
+    assert.equal(pagina.status, 200);
+    assert.ok(pagina.json.paginacion);
+    assert.ok(pagina.json.paginacion.ordenes.total >= 1);
+    assert.ok(pagina.json.ordenes.length <= 1);
+    assert.equal(pagina.json.paginacion.ordenes.next, pagina.json.paginacion.ordenes.total > 1);
+  });
+
   await test('la salud ve la cola con el envío fallido', async () => {
     const r = await pedir('/salud', { token: tokenAdmin });
     assert.equal(r.status, 200);
