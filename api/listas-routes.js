@@ -220,14 +220,14 @@ async function camposDe(listaId) {
   `, [listaId]);
 }
 
-async function vistasDe(listaId) {
+async function vistasDe(listaId, email) {
   return query(`
     SELECT id, lista_id, nombre, tipo, config, visibilidad, creada_por,
            creado_en, actualizado_en, predeterminada
       FROM lista_vistas
-     WHERE lista_id = $1
+     WHERE lista_id = $1 AND (visibilidad = 'compartida' OR creada_por = $2)
      ORDER BY predeterminada DESC, creado_en
-  `, [listaId]);
+  `, [listaId, email]);
 }
 
 function calcularCampos(campos, datos) {
@@ -764,7 +764,7 @@ listasRouter.get('/listas/:id', authRequired, async (req, res) => {
   if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
   const cap = capacidades(req, lista.area_id);
   if (!cap.ver) return sinPermiso(res, 'No tenés acceso a esta área.');
-  const [campos, vistas] = await Promise.all([camposDe(lista.id), vistasDe(lista.id)]);
+  const [campos, vistas] = await Promise.all([camposDe(lista.id), vistasDe(lista.id, req.user.email)]);
   return res.json({ ...lista, campos, vistas, puede: cap });
 });
 
@@ -1104,6 +1104,9 @@ listasRouter.patch('/lista-vistas/:id', authRequired, async (req, res) => {
   const lista = await listaConArea(vista.lista_id);
   if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
   if (!capacidades(req, lista.area_id).administrar_vistas) return sinPermiso(res);
+  if (vista.visibilidad === 'personal' && vista.creada_por !== req.user.email && req.user.rol !== 'admin') {
+    return res.status(404).json({ error: 'Vista no encontrada' });
+  }
   const sets = [];
   const params = [];
   if (req.body?.nombre !== undefined) {
@@ -1139,6 +1142,9 @@ listasRouter.delete('/lista-vistas/:id', authRequired, async (req, res) => {
   const lista = await listaConArea(vista.lista_id);
   if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
   if (!capacidades(req, lista.area_id).administrar_vistas) return sinPermiso(res);
+  if (vista.visibilidad === 'personal' && vista.creada_por !== req.user.email && req.user.rol !== 'admin') {
+    return res.status(404).json({ error: 'Vista no encontrada' });
+  }
   await query('DELETE FROM lista_vistas WHERE id = $1', [vista.id]);
   await auditar({ req, tabla: 'lista_vistas', registroId: vista.id, accion: 'borrar', antes: vista });
   return res.json({ ok: true });

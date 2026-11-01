@@ -618,12 +618,12 @@ function ListaDetalle({ listaId, area }) {
     }
   };
 
-  const crearVista = async ({ nombre, predeterminada, tipo = 'grid', extra = {} }) => {
+  const crearVista = async ({ nombre, predeterminada, tipo = 'grid', extra = {}, visibilidad = 'compartida' }) => {
     setBusy(true);
     try {
       const res = await api(`/listas/${lista.id}/vistas`, {
         method: 'POST',
-        body: { nombre, predeterminada, tipo, config: { ...configVista(), ...extra } },
+        body: { nombre, predeterminada, tipo, visibilidad, config: { ...configVista(), ...extra } },
       });
       setModal(null);
       await cargarDetalle({ resetVista: false });
@@ -918,7 +918,7 @@ function ListaDetalle({ listaId, area }) {
                   onClick={() => seleccionarVista(v)}
                   title={v.predeterminada ? 'Vista predeterminada' : v.nombre}
                 >
-                  {v.nombre}
+                  {v.nombre}{v.visibilidad === 'personal' && <Icon name="eye-off" size={11} title="Solo para mí" style={{ marginLeft: 5, opacity: 0.6 }} />}
                 </button>
               ))}
               {puede.administrar_vistas && (

@@ -136,6 +136,7 @@ export function NuevaVistaModal({ campos, busy, onGuardar, onClose }) {
   const [nombre, setNombre] = useState('');
   const [tipo, setTipo] = useState('grid');
   const [predeterminada, setPredeterminada] = useState(false);
+  const [personal, setPersonal] = useState(false);
   const [grupo, setGrupo] = useState('');
   const [fecha, setFecha] = useState('');
   const [titulo, setTitulo] = useState('');
@@ -152,7 +153,7 @@ export function NuevaVistaModal({ campos, busy, onGuardar, onClose }) {
     if (tipo === 'kanban') { extra.kanban = grupo || null; extra.titulo = titulo || null; }
     if (tipo === 'calendar') { extra.calendario = fecha || null; extra.titulo = titulo || null; }
     if (tipo === 'gallery') { extra.titulo = titulo || null; extra.galeria = imagen || null; }
-    onGuardar({ nombre: nombre.trim(), predeterminada, tipo, extra });
+    onGuardar({ nombre: nombre.trim(), predeterminada, tipo, extra, visibilidad: personal ? 'personal' : 'compartida' });
   };
 
   return (
@@ -226,6 +227,10 @@ export function NuevaVistaModal({ campos, busy, onGuardar, onClose }) {
         <label className="check-line" style={{ marginTop: 12, textTransform: 'none', letterSpacing: 0 }}>
           <input type="checkbox" checked={predeterminada} onChange={(e) => setPredeterminada(e.target.checked)} />
           <span>Usar como vista predeterminada</span>
+        </label>
+        <label className="check-line" style={{ marginTop: 8, textTransform: 'none', letterSpacing: 0 }}>
+          <input type="checkbox" checked={personal} onChange={(e) => setPersonal(e.target.checked)} />
+          <span>Solo para mí (vista personal)</span>
         </label>
       </form>
     </Modal>
