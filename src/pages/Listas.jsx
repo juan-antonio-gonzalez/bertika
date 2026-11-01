@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Icon, ConfirmDialog } from '../components/ui';
+import { Icon, ConfirmDialog, fmtFecha } from '../components/ui';
 import PageHeader from '../components/layout/PageHeader';
 import { api } from '../store/api';
 import { useStore } from '../store/store';
