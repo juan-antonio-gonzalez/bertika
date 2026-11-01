@@ -86,6 +86,91 @@ function TarjetaLista({ lista, areaSlug }) {
   );
 }
 
+function ResumenGlobal({ areas }) {
+  const navigate = useNavigate();
+  const usuario = useStore((s) => s.user);
+  const [datos, setDatos] = useState(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let vivo = true;
+    const cargar = async () => {
+      if (!areas.length) { setDatos({ areas: 0, listas: 0, registros: 0, nuevos: 0, pendientes: 0, recientes: [], barras: [] }); return; }
+      const resultados = await Promise.allSettled(areas.map(async (area) => {
+        const resumen = await api(`/listas/resumen?area_id=${encodeURIComponent(area.id)}`);
+        return { area, resumen };
+      }));
+      if (!vivo) return;
+      const ok = resultados.filter((r) => r.status === 'fulfilled').map((r) => r.value);
+      if (!ok.length) { setError('No se pudo cargar el resumen general.'); return; }
+      const recientes = [];
+      const barras = [];
+      let listas = 0;
+      let registros = 0;
+      let nuevos = 0;
+      for (const { area, resumen } of ok) {
+        listas += resumen.listas.length;
+        registros += resumen.total_registros;
+        nuevos += resumen.nuevos_7d;
+        barras.push({ id: area.id, slug: area.slug, nombre: area.nombre, total: resumen.total_registros });
+        for (const r of resumen.recientes) recientes.push({ ...r, area_slug: area.slug, area_nombre: area.nombre });
+      }
+      let pendientes = 0;
+      const conAprobaciones = ok.filter(({ area }) => usuario?.rol === 'admin' || area.puede?.editar_listas);
+      const aprobaciones = await Promise.allSettled(conAprobaciones.map(({ area }) => api(`/listas/aprobaciones/pendientes?area_id=${encodeURIComponent(area.id)}`)));
+      for (const r of aprobaciones) if (r.status === 'fulfilled') pendientes += Number(r.value.total || 0);
+      if (!vivo) return;
+      recientes.sort((a, b) => new Date(b.creado_en) - new Date(a.creado_en));
+      setDatos({ areas: ok.length, listas, registros, nuevos, pendientes, recientes: recientes.slice(0, 8), barras });
+    };
+    cargar().catch((e) => { if (vivo) setError(e.message); });
+    return () => { vivo = false; };
+  }, [areas, usuario?.rol]);
+
+  if (error) return <div className="banner-red" style={{ marginBottom: 14 }}><div><Icon name="x" size={15} /> {error}</div></div>;
+  if (!datos) return <div className="card" style={{ marginBottom: 14 }}><p className="muted" style={{ margin: 0 }}>Cargando resumen general...</p></div>;
+  const max = Math.max(1, ...datos.barras.map((b) => b.total));
+  return (
+    <div className="listas-resumen resumen-global">
+      <div className="resumen-kpis">
+        <div className="resumen-kpi"><span>Áreas</span><b>{datos.areas}</b></div>
+        <div className="resumen-kpi"><span>Listas</span><b>{datos.listas}</b></div>
+        <div className="resumen-kpi"><span>Registros</span><b>{datos.registros}</b></div>
+        <div className="resumen-kpi"><span>Aprobaciones pendientes</span><b>{datos.pendientes}</b></div>
+      </div>
+      <div className="resumen-grid">
+        <div className="card resumen-card">
+          <h3 className="card-title"><Icon name="chart" size={15} /> Registros por área</h3>
+          {datos.barras.length === 0 ? <p className="muted">Sin áreas visibles.</p> : (
+            <div className="resumen-bars">
+              {datos.barras.map((b) => (
+                <button type="button" className="resumen-bar-row" key={b.id} onClick={() => navigate(`/listas/${b.slug}`)}>
+                  <span className="resumen-bar-name">{b.nombre}</span>
+                  <span className="resumen-bar-track"><span style={{ width: `${Math.max(3, (b.total / max) * 100)}%` }} /></span>
+                  <b>{b.total}</b>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="card resumen-card">
+          <h3 className="card-title"><Icon name="clock" size={15} /> Actividad reciente</h3>
+          {datos.recientes.length === 0 ? <p className="muted">Sin registros recientes.</p> : (
+            <div className="resumen-recientes">
+              {datos.recientes.map((r) => (
+                <button type="button" className="resumen-reciente" key={`${r.area_slug}-${r.id}`} onClick={() => navigate(`/listas/${r.area_slug}/${r.lista_id}`)}>
+                  <b>{r.titulo}</b>
+                  <span>{r.area_nombre} · {r.lista_nombre} · {fmtFecha(r.creado_en)}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AreasHome({ areas, cargando }) {
   const esAdmin = useStore((s) => s.user?.rol === 'admin');
   const cargarAreas = useStore((s) => s.cargarAreas);
@@ -103,6 +188,8 @@ function AreasHome({ areas, cargando }) {
           </button>
         ) : null}
       />
+
+      <ResumenGlobal areas={areas} />
       {papelera && (
         <PapeleraListasModal
           onRestaurada={cargarAreas}

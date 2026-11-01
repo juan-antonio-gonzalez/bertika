@@ -1491,3 +1491,5 @@ details[open] > .cz-summary::after { content: ' –'; }
 .lista-aprobacion.aprobado { border-color: rgba(22, 163, 74, .35); }
 .lista-aprobacion.rechazado { border-color: rgba(220, 38, 38, .35); }
 .lista-aprobacion p { margin: 0; font-size: 12px; white-space: pre-wrap; }
+
+.resumen-global { margin-bottom: 16px; }
