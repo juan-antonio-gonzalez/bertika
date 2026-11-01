@@ -3,6 +3,7 @@
 import { query, one } from './db.js';
 
 export async function migrarHardening() {
+  console.log('[hardening] inicio');
   await query(`CREATE TABLE IF NOT EXISTS schema_migrations (
     id TEXT PRIMARY KEY,
     aplicada_en TIMESTAMPTZ DEFAULT now()
@@ -16,4 +17,5 @@ export async function migrarHardening() {
   )`);
   await query('CREATE INDEX IF NOT EXISTS idx_rate_limit_expira ON rate_limit_hits (expira)');
   await query("INSERT INTO schema_migrations (id) VALUES ('003_rate_limit_store') ON CONFLICT DO NOTHING");
+  console.log('[hardening] fin');
 }

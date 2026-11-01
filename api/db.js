@@ -19,6 +19,7 @@ export async function closePool() {
 }
 
 export async function query(text, params) {
+  if (process.env.SQL_DEBUG) console.log('[sql]', String(text).replace(/\s+/g, ' ').slice(0, 120));
   const r = await pool.query(text, params);
   return r.rows;
 }

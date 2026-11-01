@@ -232,3 +232,5 @@ Datos semilla precargados (5 tecnicos, 5 clientes, 9 baterias, 10+ insumos, 8 or
 - `GET /api/estado?paginado=1`: bootstrap por páginas; el store une las páginas.
 
 - Adjuntos multipart procesados con `busboy` (`api/upload.js`).
+
+- Almacenamiento local o S3/R2 (`STORAGE_DRIVER`).

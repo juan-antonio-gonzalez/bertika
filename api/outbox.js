@@ -13,13 +13,10 @@
 // haber llegado. Un humano decide desde el panel (evita mandar dos veces).
 
 import { randomUUID } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { query, one } from './db.js';
 import { enviarTexto, enviarPlantilla, enviarImagen, enviarDocumento, subirMedia } from './whatsapp.js';
+import { leerMedia } from './storage.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export const MAX_INTENTOS = 4;
 export const ESTADOS_OUTBOX = ['pendiente', 'enviando', 'enviado', 'fallido', 'incierto'];
@@ -81,12 +78,6 @@ export async function encolar({
   return id;
 }
 
-function rutaMediaSegura(mediaPath) {
-  const base = path.resolve(process.env.UPLOAD_DIR || path.join(__dirname, 'uploads'));
-  const ruta = path.resolve(String(mediaPath || ''));
-  return ruta.startsWith(`${base}${path.sep}`) ? ruta : null;
-}
-
 async function enviarFila(fila) {
   if (fila.tipo === 'plantilla') {
     return enviarPlantilla({
@@ -100,11 +91,9 @@ async function enviarFila(fila) {
     return enviarTexto({ to: fila.telefono, texto: fila.texto });
   }
   if (fila.tipo === 'imagen' || fila.tipo === 'documento') {
-    const ruta = rutaMediaSegura(fila.media_path);
-    if (!ruta) return { ok: false, error: 'El archivo adjunto ya no está disponible.' };
     let buffer;
     try {
-      buffer = await readFile(ruta);
+      buffer = await leerMedia(fila.media_path);
     } catch {
       return { ok: false, error: 'El archivo adjunto ya no está disponible en el servidor.' };
     }

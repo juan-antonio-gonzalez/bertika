@@ -11,6 +11,7 @@ import { RESPUESTAS_EJEMPLO, colorDePaleta } from '../src/data/respuestas.js';
 const limStr = (v, max = 200) => (typeof v === 'string' ? v.trim().slice(0, max).replace(/\u0000/g, '') : '');
 
 export async function migrarLegacy() {
+  console.log('[legacy] inicio');
   await query(`CREATE TABLE IF NOT EXISTS schema_migrations (
     id TEXT PRIMARY KEY,
     aplicada_en TIMESTAMPTZ DEFAULT now()
@@ -864,4 +865,5 @@ export async function migrarLegacy() {
   } catch (e) { console.error(`[migracion] indice unico de respuestas: ${e.message}`); }
   console.log('[migracion] esquema asegurado (codigos, medio de pago, historial de cotizaciones, movimientos de insumos, cotizador configurable, whatsapp, crm de whatsapp, avisos automaticos, embudo comercial, integridad, papelera de clientes)');
   await query("INSERT INTO schema_migrations (id) VALUES ('000_legacy_baseline') ON CONFLICT DO NOTHING");
+  console.log('[legacy] fin');
 }

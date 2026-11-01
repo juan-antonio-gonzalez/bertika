@@ -7,6 +7,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import { memoryUpload } from './upload.js';
+import { guardarPublico, guardarPrivado, leerPrivado } from './storage.js';
 import nodemailer from 'nodemailer';
 import bcrypt from 'bcryptjs';
 import rateLimit from 'express-rate-limit';
@@ -4748,7 +4749,7 @@ app.post('/api/whatsapp/conversaciones/:id/adjunto', authRequired, permisoRequer
   const nombre = limStr(req.file.originalname, 120) || (esPdf ? 'documento.pdf' : 'foto.jpg');
   // Se guarda la copia local para mostrarla en la bandeja y para poder
   // reintentar: el worker vuelve a subirla a Meta si el primer intento falla.
-  const local = guardarArchivoChat({ buffer: req.file.buffer, mime: req.file.mimetype, nombre });
+  const local = await guardarArchivoChat({ buffer: req.file.buffer, mime: req.file.mimetype, nombre });
   if (!local) return res.status(400).json({ error: 'Archivo inválido: solo se permiten fotos (jpg, png, webp, gif) o PDF.' });
   return enviarPorOutbox(res, {
     conv,
@@ -4759,7 +4760,7 @@ app.post('/api/whatsapp/conversaciones/:id/adjunto', authRequired, permisoRequer
       tipo: local.tipo,
       nombre: local.nombre,
       mime: esPdf ? 'application/pdf' : req.file.mimetype,
-      path: path.join(UPLOAD_DIR, local.archivo),
+      path: local.key,
     },
   });
 });
@@ -4822,7 +4823,7 @@ app.post('/api/whatsapp/webhook', async (req, res) => {
         let media = null;
         if (adjunto?.id) {
           const bajado = await descargarMedia({ mediaId: adjunto.id });
-          if (bajado.ok) media = guardarArchivoChat({ buffer: bajado.buffer, mime: bajado.mime || adjunto.mime_type, nombre: bajado.nombre || adjunto.filename });
+          if (bajado.ok) media = await guardarArchivoChat({ buffer: bajado.buffer, mime: bajado.mime || adjunto.mime_type, nombre: bajado.nombre || adjunto.filename });
           else console.warn('[whatsapp] no se pudo bajar el archivo entrante:', bajado.error);
         }
         const texto = m.text?.body
@@ -4867,7 +4868,7 @@ app.post('/api/whatsapp/webhook', async (req, res) => {
 });
 
 // ---------- Fotos de diagnostico ----------
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 mkdirSync(UPLOAD_DIR, { recursive: true });
 mkdirSync(PRIVATE_UPLOAD_DIR, { recursive: true });
 app.use('/uploads', express.static(UPLOAD_DIR));
@@ -4886,14 +4887,14 @@ function detectImg(buf) {
 
 // Guarda un archivo del chat (foto o PDF) con nombre aleatorio, validando el
 // contenido real y no lo que dice el remitente.
-function guardarArchivoChat({ buffer, mime, nombre = '' }) {
+async function guardarArchivoChat({ buffer, mime, nombre = '' }) {
   if (!buffer?.length) return null;
   const ext = detectImg(buffer) || (buffer.subarray(0, 4).toString('latin1') === '%PDF' ? '.pdf' : null);
   if (!ext) return null;
   const archivo = `chat-${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
-  writeFileSync(path.join(UPLOAD_DIR, archivo), buffer);
+  const guardado = await guardarPublico(archivo, buffer);
   const tipo = ext === '.pdf' ? 'documento' : (String(mime || '').split('/')[1] || 'imagen');
-  return { url: `${PUBLIC_URL}/uploads/${archivo}`, archivo, tipo, nombre: limStr(nombre, 120) || `archivo${ext}` };
+  return { url: guardado.url, archivo, key: archivo, tipo, nombre: limStr(nombre, 120) || `archivo${ext}` };
 }
 
 const upload = memoryUpload({
@@ -4926,7 +4927,7 @@ app.post('/api/listas/:id/adjuntos', authRequired, uploadAdjunto.single('archivo
   const id = `adj_${randomUUID()}`;
   const archivo = `${id}${ext}`;
   const nombreOriginal = limStr(req.file.originalname, 160) || `archivo${ext}`;
-  writeFileSync(path.join(PRIVATE_UPLOAD_DIR, archivo), req.file.buffer);
+  await guardarPrivado(archivo, req.file.buffer);
   await query(
     `INSERT INTO lista_adjuntos (id, lista_id, archivo, nombre, mime, size, subido_por)
      VALUES ($1,$2,$3,$4,$5,$6,$7)`,
@@ -4950,7 +4951,7 @@ app.get('/api/lista-adjuntos/:id', authRequired, async (req, res) => {
   if (!caps.ver_registros) return res.status(403).json({ error: 'No tenés acceso a este adjunto.' });
   res.setHeader('Content-Type', adjunto.mime || 'application/octet-stream');
   res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(adjunto.nombre || 'adjunto')}`);
-  return res.sendFile(path.join(PRIVATE_UPLOAD_DIR, adjunto.archivo));
+  return res.send(await leerPrivado(adjunto.archivo));
 });
 
 app.post('/api/diagnostico/:orden_id/fotos', authRequired, upload.array('fotos', 6), async (req, res) => {
@@ -4964,8 +4965,8 @@ app.post('/api/diagnostico/:orden_id/fotos', authRequired, upload.array('fotos',
     const ext = detectImg(f.buffer);
     if (!ext) return res.status(400).json({ error: 'Archivo subido no es una imagen valida (jpg, png, webp, gif)' });
     const name = `${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
-    writeFileSync(path.join(UPLOAD_DIR, name), f.buffer);
-    rutas.push(`${PUBLIC_URL}/uploads/${name}`);
+    const guardado = await guardarPublico(name, f.buffer);
+    rutas.push(guardado.url);
   }
   const dia = orden.diagnostico || {};
   const fotos = [...(dia.fotos || []), ...rutas];

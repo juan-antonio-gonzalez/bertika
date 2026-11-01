@@ -354,3 +354,10 @@ Los adjuntos privados de listas **no** se sirven por nginx: pasan por
 ## 14. Dependencias de subida
 
 Los multipart se procesan con `busboy` (`api/upload.js`), no con `multer`, para eliminar la vulnerabilidad alta sin fix. Se mantienen límites de 8 MB, cantidad de archivos, MIME y validación por magic bytes.
+
+### Almacenamiento S3/R2
+
+`STORAGE_DRIVER=local` usa `UPLOAD_DIR` y `PRIVATE_UPLOAD_DIR`. `STORAGE_DRIVER=s3` usa
+S3/R2 con firma SigV4 (`S3_ENDPOINT`, `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`,
+`S3_SECRET_ACCESS_KEY`). `S3_PUBLIC_BASE` es el dominio público/CDN. Los adjuntos
+privados se siguen sirviendo por `/api/lista-adjuntos/:id` con proxy autenticado.
