@@ -504,10 +504,12 @@ listasRouter.get('/listas/resumen', authRequired, async (req, res) => {
   const areaId = limStr(req.query?.area_id, 60);
   const area = await one('SELECT id, slug, nombre FROM areas WHERE id = $1 AND activo = true', [areaId]);
   if (!area) return res.status(400).json({ error: 'Área inválida.' });
-  if (!capacidades(req, areaId).ver) return sinPermiso(res);
+  const capArea = capacidades(req, areaId);
+  if (!capArea.ver) return sinPermiso(res);
+  const verTodo = req.user.rol === 'admin' || capArea.editar_listas;
 
-  const listas = await query(`
-    SELECT l.id, l.nombre, l.icono, count(r.id)::int AS registros,
+  let listas = await query(`
+    SELECT l.id, l.area_id, l.nombre, l.icono, l.ver_filas, l.ver_campo, count(r.id)::int AS registros,
            count(r.id) FILTER (WHERE r.creado_en >= now() - interval '7 days')::int AS nuevos
       FROM listas l
       LEFT JOIN lista_registros r ON r.lista_id = l.id AND r.archivado = false
@@ -528,7 +530,7 @@ listasRouter.get('/listas/resumen', authRequired, async (req, res) => {
     if (!actual || (actual.tipo !== 'texto' && c.tipo === 'texto')) tituloPorLista.set(c.lista_id, c);
   }
 
-  const recientes = await query(`
+  let recientes = await query(`
     SELECT r.id, r.lista_id, r.datos, r.creado_en, r.creado_por, l.nombre AS lista_nombre
       FROM lista_registros r JOIN listas l ON l.id = r.lista_id
      WHERE l.area_id = $1 AND l.archivada = false AND r.archivado = false
@@ -541,9 +543,30 @@ listasRouter.get('/listas/resumen', authRequired, async (req, res) => {
     return v == null ? '' : String(v);
   };
 
+  if (!verTodo) {
+    const filasArea = await query(`
+      SELECT r.id, r.lista_id, r.datos, r.creado_en, r.creado_por
+        FROM lista_registros r JOIN listas l ON l.id = r.lista_id
+       WHERE l.area_id = $1 AND l.archivada = false AND r.archivado = false
+       ORDER BY r.creado_en DESC
+    `, [areaId]);
+    const porLista = new Map(listas.map((l) => [l.id, { ...l, registros: 0, nuevos: 0 }]));
+    const visibles = [];
+    const desde = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    for (const fila of filasArea) {
+      const lista = porLista.get(fila.lista_id);
+      if (!lista || !puedeVerRegistro(req, lista, fila)) continue;
+      lista.registros += 1;
+      if (new Date(fila.creado_en).getTime() >= desde) lista.nuevos += 1;
+      visibles.push(fila);
+    }
+    listas = [...porLista.values()];
+    recientes = visibles.slice(0, 8);
+  }
+
   let etapas = [];
   let alertas = [];
-  if (area.slug === 'ventas') {
+  if (verTodo && area.slug === 'ventas') {
     const lista = listas.find((l) => l.nombre.toLowerCase() === 'oportunidades');
     const campo = campos.find((c) => c.lista_id === lista?.id && /etapa/i.test(c.nombre));
     if (lista && campo) {
@@ -556,7 +579,7 @@ listasRouter.get('/listas/resumen', authRequired, async (req, res) => {
       etapas = [...conteo.entries()].map(([valor, total]) => ({ valor, total })).sort((a, b) => b.total - a.total);
     }
   }
-  if (area.slug === 'taller') {
+  if (verTodo && area.slug === 'taller') {
     for (const lista of listas) {
       const campo = campos.find((c) => c.lista_id === lista.id && /^(stock|stock mínimo)$/i.test(c.nombre));
       if (!campo) continue;
