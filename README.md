@@ -34,9 +34,11 @@ BERTIKA_UI_EMAIL=... BERTIKA_UI_PASSWORD=... npm run test:ui  # smoke E2E con Ch
 ```
 
 Los tests de integración levantan la API, usan un **Meta simulado** (no gastan mensajes)
-y cubren login, permisos, auditoría, outbox con reintentos, export CSV, webhook y los
-flujos de Listas (lista, campo, registro, búsqueda y plantillas). En GitHub Actions corre
-todo (`.github/workflows/ci.yml`) con un servicio PostgreSQL 16.
+y cubren login, permisos, auditoría, outbox con reintentos, export CSV, webhook, Listas
+y Ventas (oportunidad, cotización, link público y orden). En GitHub Actions corre todo
+(`.github/workflows/ci.yml`) con un servicio PostgreSQL 16.
+
+La suite completa se ejecutó contra una base `_test` descartable: **37 pruebas OK**.
 
 El smoke E2E de navegador verifica login, menú, Ventas, las listas de Taller, la búsqueda
 global y el buscador del menú. Es **solo lectura**: no crea ni modifica datos.

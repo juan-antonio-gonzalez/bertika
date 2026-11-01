@@ -142,6 +142,7 @@ Qué hace `scripts/deploy.sh`:
 6. Snapshot previo en `/var/backups/bertika/deploy-pre-*.tgz` (sin uploads ni node_modules).
 7. Verificación HTTP estricta de `/`, `/tarjetas/`, `/api/health`, `/api/public/stats` y el hostname del VPS, con reintentos.
 8. Si falla el restart o la verificación, restaura el snapshot y reinicia la API.
+9. Conserva los snapshots de deploy por 7 días; los más viejos se limpian en el deploy.
 
 > En el primer despliegue a un VPS nuevo hay que: crear la BD (`createdb`), el usuario de BD,
 > escribir `/etc/bertika/bertika-api.env`, instalar `npm`, y correr `node api/seed.js` una vez.
@@ -311,8 +312,9 @@ bash scripts/backup-db.sh
 nginx aplica CSP, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`,
 `Permissions-Policy` y HSTS. La CSP permite mapas, GTM y estilos inline de React.
 
-Las migraciones nuevas se registran en `schema_migrations`. Las migraciones históricas
-siguen en el arranque de la API; el próximo paso es moverlas a archivos versionados.
+Las migraciones históricas están extraídas en `api/migraciones-legacy.js` y corren una
+sola vez con el marcador `000_legacy_baseline`. Las migraciones nuevas están en
+`schema_migrations` (`001_ventas_hardening`, `002_listas_trgm`).
 
 ## 13. Pruebas antes de deployar
 
