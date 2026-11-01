@@ -853,7 +853,6 @@ export async function migrarLegacy() {
   } catch (e) { console.error(`[migracion] indice unico de bajas: ${e.message}`); }
   try {
     await query('CREATE UNIQUE INDEX IF NOT EXISTS uq_wa_mensajes_wamid ON wa_mensajes (wa_message_id) WHERE wa_message_id IS NOT NULL');
-    indiceWamid = true;
   } catch (e) { console.error(`[migracion] indice unico de mensajes: ${e.message}`); }
   // Catalogo del CRM: nombre de etiqueta y atajo de respuesta no se repiten,
   // ni cambiando mayusculas (el chequeo de la aplicacion queda igual).

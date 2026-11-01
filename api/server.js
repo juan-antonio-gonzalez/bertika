@@ -5065,7 +5065,12 @@ process.on('unhandledRejection', (e) => { console.error('[server] promesa no man
 process.on('uncaughtException', (e) => { console.error('[server] excepción no manejada:', e?.stack || e); process.exit(1); });
 
 migrarLegacy()
-  .then(() => {
+  .then(async () => {
+    // La migración histórica crea el índice único de wa_message_id. El flag
+    // vive en este módulo, así que se restaura después de migrar.
+    try {
+      indiceWamid = Boolean(await one("SELECT 1 FROM pg_indexes WHERE indexname = 'uq_wa_mensajes_wamid'"));
+    } catch { indiceWamid = false; }
     httpServer = app.listen(PORT, '127.0.0.1', () => {
       console.log(`Bertika API escuchando en http://127.0.0.1:${PORT}`);
     });
