@@ -151,6 +151,11 @@ try {
   await evaluar(`(() => { const b = [...document.querySelectorAll('.busqueda-listas button')].find((x) => x.textContent.includes('Buscar')); if (b) b.click(); return true; })()`);
   await sleep(600);
 
+  paso = 'whatsapp web';
+  await navegar(`${BASE}/hub/whatsapp`);
+  await esperar('!!document.querySelector(".wa-panel")', 'bandeja de WhatsApp');
+  await esperar('!!document.querySelector(".wa-composer") || document.body.innerText.includes("Elegí una conversación")', 'compositor o estado vacío');
+
   paso = 'ventas';
   await navegar(`${BASE}/ventas`);
   await esperar("document.body.innerText.toLowerCase().includes('pipeline abierto')", 'pantalla de Ventas', 30000);
