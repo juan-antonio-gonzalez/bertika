@@ -6,6 +6,7 @@
 import { Router } from 'express';
 import nodemailer from 'nodemailer';
 import rateLimit from 'express-rate-limit';
+import { crearStoreRateLimit } from './rate-limit-store.js';
 import { randomUUID } from 'node:crypto';
 import { query, one, tx } from './db.js';
 import { authRequired } from './middleware/auth.js';
@@ -24,6 +25,7 @@ const esObjeto = (v) => Boolean(v) && typeof v === 'object' && !Array.isArray(v)
 const idNuevo = (prefijo) => `${prefijo}_${randomUUID()}`;
 const TODAS = Object.fromEntries(CLAVES_AREA.map((k) => [k, true]));
 const publicFormLimiter = rateLimit({
+  store: crearStoreRateLimit('lista-publica'),
   windowMs: 60_000,
   limit: 30,
   standardHeaders: true,

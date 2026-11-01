@@ -10,8 +10,11 @@ import multer from 'multer';
 import nodemailer from 'nodemailer';
 import bcrypt from 'bcryptjs';
 import rateLimit from 'express-rate-limit';
+import { crearStoreRateLimit } from './rate-limit-store.js';
 import { query, one, tx, closePool } from './db.js';
 import { migrarLegacy } from './migraciones-legacy.js';
+import { migrarHardening } from './migraciones-hardening.js';
+import { crearEstadoRouter } from './estado-routes.js';
 import { nextId } from './ids.js';
 import { signToken, authRequired, requireRol, permisoRequerido, SECRET } from './middleware/auth.js';
 import { PERMISOS, COLUMNAS, agruparPermisos, permisosPorDefecto, normalizarPermisos, permisosEfectivos, puedeVer, tienePermiso } from './permisos.js';
@@ -118,6 +121,7 @@ app.use((req, res, next) => {
 // ---------- Rate limiting ----------
 // Login: contiene el brute-force de credenciales.
 const loginLimiter = rateLimit({
+  store: crearStoreRateLimit('login'),
   windowMs: 15 * 60 * 1000,
   limit: 10,
   standardHeaders: 'draft-7',
@@ -128,6 +132,7 @@ const loginLimiter = rateLimit({
 // Verificación de 2FA: un poco más de margen para tipear el código, pero
 // acotado. El reenvío y la recuperación tienen límites más estrictos.
 const twofaLimiter = rateLimit({
+  store: crearStoreRateLimit('twofa'),
   windowMs: 15 * 60 * 1000,
   limit: 20,
   standardHeaders: 'draft-7',
@@ -135,6 +140,7 @@ const twofaLimiter = rateLimit({
   message: { error: 'Demasiados intentos con el código. Pedí uno nuevo o esperá unos minutos.' },
 });
 const resend2faLimiter = rateLimit({
+  store: crearStoreRateLimit('resend2fa'),
   windowMs: 15 * 60 * 1000,
   limit: 5,
   standardHeaders: 'draft-7',
@@ -142,6 +148,7 @@ const resend2faLimiter = rateLimit({
   message: { error: 'Pediste demasiados códigos. Esperá unos minutos.' },
 });
 const recuperarLimiter = rateLimit({
+  store: crearStoreRateLimit('recuperar'),
   windowMs: 15 * 60 * 1000,
   limit: 5,
   standardHeaders: 'draft-7',
@@ -149,6 +156,7 @@ const recuperarLimiter = rateLimit({
   message: { error: 'Demasiadas solicitudes de recuperación. Esperá unos minutos.' },
 });
 const resetLimiter = rateLimit({
+  store: crearStoreRateLimit('reset'),
   windowMs: 15 * 60 * 1000,
   limit: 10,
   standardHeaders: 'draft-7',
@@ -158,6 +166,7 @@ const resetLimiter = rateLimit({
 
 // Endpoints publicos: evitan abuso de consultas/seguimiento.
 const publicLimiter = rateLimit({
+  store: crearStoreRateLimit('public'),
   windowMs: 15 * 60 * 1000,
   limit: 60,
   standardHeaders: 'draft-7',
@@ -175,6 +184,7 @@ const limiteContacto = (() => {
   return Number.isInteger(n) && n > 0 ? n : 5;
 })();
 const contactoLimiter = rateLimit({
+  store: crearStoreRateLimit('contacto'),
   windowMs: 60 * 60 * 1000,
   limit: limiteContacto,
   standardHeaders: 'draft-7',
@@ -1361,81 +1371,6 @@ app.patch('/api/auth/2fa', authRequired, async (req, res) => {
   return res.json({ ok: true, twofa_email: activo });
 });
 
-
-// ---------- Estado global (para sincronizar el store) ----------
-// Se expone segun rol: admin ve todo; tecnico ve catalogos y sus ordenes
-// asignadas (+ no asignadas en recepcion); cliente ve solo sus datos.
-app.get('/api/estado', authRequired, async (req, res) => {
-  const rol = req.user.rol;
-  const deps = ['tecnicos', 'clientes', 'baterias', 'activos', 'insumos', 'ordenes', 'bajas', 'notificaciones'];
-  const out = {};
-  const paginado = String(req.query?.paginado || '') === '1';
-  const limite = Math.min(500, Math.max(1, Number(req.query?.limit) || 200));
-  const offset = Math.max(0, Number(req.query?.offset) || 0);
-  for (const t of deps) {
-    if (rol === 'cliente' && (t === 'insumos' || t === 'bajas')) { out[t] = []; continue; }
-    if (rol !== 'admin' && t === 'bajas') { out[t] = []; continue; }
-    // Los clientes dados de baja (papelera) no se mandan al panel: se recuperan
-    // desde /api/clientes?papelera=1 (solo admin).
-    out[t] = await query(t === 'clientes' ? 'SELECT * FROM clientes WHERE deleted_at IS NULL' : `SELECT * FROM ${t}`);
-  }
-  // "Que ve": los catalogos de las secciones que el usuario no tiene
-  // habilitadas se mandan vacios, asi el panel no expone datos de mas.
-  for (const [tabla, seccion] of Object.entries({ clientes: 'clientes', tecnicos: 'tecnicos', insumos: 'inventario', bajas: 'baja' })) {
-    if (!puedeVer(req.user, seccion)) out[tabla] = [];
-  }
-  // El taller ve clientes con al menos una orden o una batería/equipo
-  // registrado. El admin ve toda la cartera y puede abrir la pestaña "Sin relación".
-  if (rol !== 'admin' && rol !== 'cliente' && puedeVer(req.user, 'clientes')) {
-    const conRelacion = new Set([
-      ...out.ordenes.map((o) => o.cliente_id),
-      ...out.baterias.map((b) => b.cliente_id),
-      ...out.activos.map((a) => a.cliente_id),
-    ].filter(Boolean));
-    out.clientes = out.clientes.filter((c) => conRelacion.has(c.id));
-  }
-  if (rol === 'cliente') {
-    const propias = out.ordenes.filter((o) => o.cliente_id === req.user.cliente_id);
-    const series = new Set(propias.map((o) => o.bateria_serie));
-    out.ordenes = propias;
-    out.clientes = out.clientes.filter((c) => c.id === req.user.cliente_id);
-    out.baterias = out.baterias.filter((b) => b.cliente_id === req.user.cliente_id || series.has(b.numero_serie));
-    out.activos = out.activos.filter((a) => a.cliente_id === req.user.cliente_id);
-    out.tecnicos = out.tecnicos.map((t) => ({ id: t.id, nombre: t.nombre }));
-    out.notificaciones = out.notificaciones.filter((n) => propias.some((o) => o.id === n.orden_id));
-  }
-  const cont = await query('SELECT * FROM contadores');
-  const seq = {};
-  for (const c of cont) seq[c.nombre] = c.valor;
-  out.seq = seq;
-  // Permisos efectivos del usuario: el panel los usa para mostrar u ocultar.
-  out.permisos = req.user.permisos;
-  // Menú de listas visible según la categoría (y todas para el admin).
-  out.areas = await areasVisibles(req.user);
-  // Tareas del CRM: el admin ve todas las pendientes; el tecnico las suyas y las
-  // que no tienen responsable; el cliente ninguna.
-  if (rol === 'cliente') {
-    out.tareas = [];
-  } else {
-    out.tareas = await query(
-      `SELECT * FROM wa_tareas WHERE estado = 'pendiente'
-       ${rol === 'admin' ? '' : 'AND (asignado_a = $1 OR asignado_a IS NULL)'}
-       ORDER BY vence ASC NULLS LAST LIMIT 200`,
-      rol === 'admin' ? [] : [req.user.email]
-    );
-  }
-  if (paginado) {
-    const paginacion = {};
-    for (const clave of deps) {
-      if (!Array.isArray(out[clave])) continue;
-      const total = out[clave].length;
-      paginacion[clave] = { total, limit: limite, offset, next: offset + limite < total };
-      out[clave] = out[clave].slice(offset, offset + limite);
-    }
-    out.paginacion = paginacion;
-  }
-  return res.json(out);
-});
 
 // ---------- Ordenes ----------
 app.get('/api/ordenes/:id', authRequired, async (req, res) => {
@@ -2742,6 +2677,7 @@ app.delete('/api/categorias/:id', authRequired, requireRol('admin'), async (req,
 });
 
 // ---------- Motor de listas dinámicas ----------
+app.use('/api', crearEstadoRouter({ authRequired, puedeVer, areasVisibles }));
 app.use('/api', ventasRouter);
 app.use('/api', listasRouter);
 
@@ -5079,6 +5015,7 @@ process.on('uncaughtException', (e) => { console.error('[server] excepción no m
 
 migrarLegacy()
   .then(async () => {
+    await migrarHardening();
     // La migración histórica crea el índice único de wa_message_id. El flag
     // vive en este módulo, así que se restaura después de migrar.
     try {

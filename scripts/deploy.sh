@@ -75,6 +75,11 @@ rsync -az "${EXCLUDE_DOCS[@]}" -e "ssh $SSH_ARGS" \
   scripts/retencion-privacidad.mjs scripts/verificar-privacidad.mjs \
   "root@$SSH_HOST:$REMOTE_DIR/scripts/"
 
+echo "== Servicios systemd =="
+rsync -az deploy/bertika-api.service deploy/bertika-worker.service \
+  -e "ssh $SSH_ARGS" "root@$SSH_HOST:/etc/systemd/system/"
+ssh $SSH_ARGS "root@$SSH_HOST" "systemctl daemon-reload"
+
 echo "== Dependencias, directorios y servicio =="
 if ! ssh $SSH_ARGS "root@$SSH_HOST" bash -s <<'EOF'
 set -euo pipefail
@@ -82,7 +87,10 @@ cd /var/www/bertika/api
 npm ci --omit=dev --no-fund --no-audit
 mkdir -p /var/www/bertika/uploads /var/backups/bertika
 systemctl restart bertika-api
+systemctl enable --now bertika-worker
+systemctl restart bertika-worker
 systemctl is-active --quiet bertika-api
+systemctl is-active --quiet bertika-worker
 EOF
 then
   echo "ERROR: falló la actualización/restart de la API."

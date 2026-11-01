@@ -1,0 +1,22 @@
+# Bertika Worker - outbox de WhatsApp (proceso separado)
+# Instalar: cp deploy/bertika-worker.service /etc/systemd/system/
+# Habilitar: systemctl daemon-reload && systemctl enable --now bertika-worker
+[Unit]
+Description=Bertika Worker (outbox WhatsApp)
+After=network.target postgresql.service bertika-api.service
+Wants=postgresql.service bertika-api.service
+
+[Service]
+Type=simple
+WorkingDirectory=/var/www/bertika/api
+Environment=NODE_ENV=production
+Environment=OUTBOX_WORKER=1
+EnvironmentFile=/etc/bertika/bertika-api.env
+ExecStart=/usr/bin/node worker.js
+Restart=always
+RestartSec=5
+User=root
+Group=root
+
+[Install]
+WantedBy=multi-user.target

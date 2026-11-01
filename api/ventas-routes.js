@@ -2,6 +2,7 @@
 // La conversación es un canal; la cotización es un documento con ítems.
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
+import { crearStoreRateLimit } from './rate-limit-store.js';
 import { randomUUID } from 'node:crypto';
 import { authRequired, permisoRequerido } from './middleware/auth.js';
 import { query, one, tx } from './db.js';
@@ -21,6 +22,7 @@ const veTodas = (req) => req.user?.rol === 'admin' || req.user?.permisos?.ventas
 export const ventasRouter = Router();
 
 const ventasPublicLimiter = rateLimit({
+  store: crearStoreRateLimit('ventas-publica'),
   windowMs: 15 * 60 * 1000,
   limit: 60,
   standardHeaders: 'draft-7',

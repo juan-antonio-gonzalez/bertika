@@ -615,3 +615,12 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
   id TEXT PRIMARY KEY,
   aplicada_en TIMESTAMPTZ DEFAULT now()
 );
+
+
+-- Rate limit compartido entre instancias (RATE_LIMIT_STORE=postgres)
+CREATE TABLE IF NOT EXISTS rate_limit_hits (
+  clave TEXT PRIMARY KEY,
+  conteo INTEGER NOT NULL DEFAULT 0,
+  expira TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_rate_limit_expira ON rate_limit_hits (expira);

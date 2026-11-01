@@ -2,6 +2,30 @@ import { create } from 'zustand';
 import { api, getToken, setToken } from './api';
 import { canTransition as reglaTransicion } from '../data/reglas';
 
+// Trae el estado por páginas y las une. Si la API vieja no soporta
+// `paginado=1`, cae al bootstrap completo para no romper el panel.
+async function cargarEstadoCompleto() {
+  const LIMITE = 500;
+  const primera = await api(`/estado?paginado=1&limit=${LIMITE}&offset=0`);
+  if (!primera?.paginacion) return api('/estado');
+  const claves = Object.keys(primera.paginacion);
+  const unido = { ...primera };
+  for (const clave of claves) unido[clave] = [];
+  let pagina = primera;
+  let offset = 0;
+  for (let vuelta = 0; vuelta < 100; vuelta += 1) {
+    for (const clave of claves) {
+      if (Array.isArray(pagina[clave])) unido[clave].push(...pagina[clave]);
+    }
+    const siguiente = claves.some((clave) => pagina.paginacion?.[clave]?.next);
+    if (!siguiente) break;
+    offset += LIMITE;
+    pagina = await api(`/estado?paginado=1&limit=${LIMITE}&offset=${offset}`);
+  }
+  delete unido.paginacion;
+  return unido;
+}
+
 const emptyData = () => ({
   tecnicos: [],
   clientes: [],
@@ -56,7 +80,7 @@ export const useStore = create()((set, get) => ({
     if (!getToken()) return set({ ready: true, user: null, data: emptyData() });
     try {
       const me = await api('/auth/me');
-      const estado = await api('/estado');
+      const estado = await cargarEstadoCompleto();
       set({ ready: true, user: normalizarUser(me, estado), data: estado, lastSync: new Date().toISOString() });
     } catch {
       setToken(null);
@@ -70,7 +94,7 @@ export const useStore = create()((set, get) => ({
     // código en verificar2fa().
     if (res?.twofa) return res;
     setToken(res.token);
-    const estado = await api('/estado');
+    const estado = await cargarEstadoCompleto();
     set({ user: normalizarUser(res.user, estado), data: estado, lastSync: new Date().toISOString() });
     return get().user;
   },
@@ -78,7 +102,7 @@ export const useStore = create()((set, get) => ({
   async verificar2fa(challenge, code) {
     const { token, user } = await api('/auth/login/2fa', { method: 'POST', body: { challenge, code } });
     setToken(token);
-    const estado = await api('/estado');
+    const estado = await cargarEstadoCompleto();
     set({ user: normalizarUser(user, estado), data: estado, lastSync: new Date().toISOString() });
     return get().user;
   },
@@ -94,7 +118,7 @@ export const useStore = create()((set, get) => ({
 
   // Re-sincroniza TODO desde la BD (fuente unica de verdad).
   async sync() {
-    const estado = await api('/estado');
+    const estado = await cargarEstadoCompleto();
     set((s) => ({
       data: estado,
       lastSync: new Date().toISOString(),
