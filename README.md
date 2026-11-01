@@ -230,3 +230,5 @@ Datos semilla precargados (5 tecnicos, 5 clientes, 9 baterias, 10+ insumos, 8 or
 - `bertika-worker.service`: outbox de WhatsApp y reintentos.
 - `RATE_LIMIT_STORE=postgres`: contadores compartidos entre instancias.
 - `GET /api/estado?paginado=1`: bootstrap por páginas; el store une las páginas.
+
+- Adjuntos multipart procesados con `busboy` (`api/upload.js`).

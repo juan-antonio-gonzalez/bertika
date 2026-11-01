@@ -349,3 +349,8 @@ TEST_DATABASE_URL=postgres://.../bertika_test npm run test:integracion
 
 Los adjuntos privados de listas **no** se sirven por nginx: pasan por
 `GET /api/lista-adjuntos/:id`, que valida sesión y permiso de lista.
+
+
+## 14. Dependencias de subida
+
+Los multipart se procesan con `busboy` (`api/upload.js`), no con `multer`, para eliminar la vulnerabilidad alta sin fix. Se mantienen límites de 8 MB, cantidad de archivos, MIME y validación por magic bytes.
