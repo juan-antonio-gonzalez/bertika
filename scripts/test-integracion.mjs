@@ -827,6 +827,73 @@ async function main() {
     await descarga.arrayBuffer();
   });
 
+  await test('un campo oculto por categoría no aparece ni en la lista ni en la búsqueda', async () => {
+    const sufijo = Date.now();
+    const areas = {
+      area_taller: {
+        ver: true, ver_registros: true, crear_registros: true, editar_registros: true,
+        borrar_registros: false, editar_listas: false, crear_listas: false,
+        borrar_listas: false, administrar_vistas: false, convertir_prospecto: false,
+      },
+    };
+    const categoria = await pedir('/categorias', {
+      method: 'POST', token: tokenAdmin,
+      body: { nombre: `Categoría oculta ${sufijo}`, areas },
+    });
+    assert.equal(categoria.status, 201, categoria.texto);
+    const email = `oculto.${sufijo}@bertika.com`;
+    const password = 'ClaveSegura123!';
+    const usuario = await pedir('/usuarios', {
+      method: 'POST', token: tokenAdmin,
+      body: { email, password, rol: 'tecnico', categoria_id: categoria.json.id },
+    });
+    assert.equal(usuario.status, 201, usuario.texto);
+    const campo = await pedir(`/listas/${listaE2E}/campos`, {
+      method: 'POST', token: tokenAdmin,
+      body: { nombre: `Secreto ${sufijo}`, tipo: 'texto', oculto_categorias: [categoria.json.id] },
+    });
+    assert.equal(campo.status, 201, campo.texto);
+    const secreto = `SECRETO-${sufijo}`;
+    const registro = await pedir(`/listas/${listaE2E}/registros`, {
+      method: 'POST', token: tokenAdmin,
+      body: { datos: { [campoE2E]: 'Visible para todos', [campo.json.id]: secreto } },
+    });
+    assert.equal(registro.status, 201, registro.texto);
+
+    const login = await pedir('/auth/login', { method: 'POST', body: { email, password } });
+    assert.equal(login.status, 200, login.texto);
+    const token = login.json.token;
+    const detalle = await pedir(`/listas/${listaE2E}`, { token });
+    assert.equal(detalle.status, 200);
+    assert.ok(!detalle.json.campos.some((c) => c.id === campo.json.id), 'el campo oculto no se lista');
+    const filas = await pedir(`/listas/${listaE2E}/registros`, { token });
+    assert.equal(filas.status, 200);
+    const fila = filas.json.registros.find((r) => r.id === registro.json.id);
+    assert.ok(fila, 'el usuario ve el registro');
+    assert.equal(fila.datos[campo.json.id], undefined, 'el valor oculto no se envía');
+    const buscar = await pedir(`/listas/buscar?q=${encodeURIComponent(secreto)}`, { token });
+    assert.equal(buscar.status, 200);
+    assert.equal(JSON.stringify(buscar.json.resultados).includes(secreto), false, 'la búsqueda no filtra el valor oculto');
+  });
+
+  await test('/estado respeta secciones deshabilitadas para un usuario', async () => {
+    const sufijo = Date.now();
+    const email = `sin.clientes.${sufijo}@bertika.com`;
+    const password = 'ClaveSegura123!';
+    const usuario = await pedir('/usuarios', {
+      method: 'POST', token: tokenAdmin,
+      body: { email, password, rol: 'tecnico', permisos: { clientes: false, tareas: false } },
+    });
+    assert.equal(usuario.status, 201, usuario.texto);
+    const login = await pedir('/auth/login', { method: 'POST', body: { email, password } });
+    assert.equal(login.status, 200, login.texto);
+    const estado = await pedir('/estado', { token: login.json.token });
+    assert.equal(estado.status, 200);
+    assert.deepEqual(estado.json.activos, [], 'sin clientes no se exponen activos');
+    assert.deepEqual(estado.json.clientes, [], 'sin clientes no se expone la cartera');
+    assert.deepEqual(estado.json.tareas, [], 'sin tareas no se exponen recordatorios');
+  });
+
   await test('la búsqueda global encuentra el registro y respeta la API', async () => {
     const r = await pedir(`/listas/buscar?q=${encodeURIComponent('Registro E2E')}`, { token: tokenAdmin });
     assert.equal(r.status, 200);

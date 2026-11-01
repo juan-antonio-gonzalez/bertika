@@ -704,10 +704,11 @@ listasRouter.get('/listas/buscar', authRequired, async (req, res) => {
 
   const resultados = [];
   for (const area of areas) {
+    if (!area.puede?.ver_registros) continue;
     for (const meta of area.listas || []) {
       const lista = porId.get(meta.id);
       if (!lista || !listaAccesible(req.user, lista)) continue;
-      const camposLista = camposPorLista.get(lista.id) || [];
+      const camposLista = camposVisibles(req.user, camposPorLista.get(lista.id) || []);
       const tituloCampo = camposLista.find((c) => c.tipo === 'texto') || camposLista[0] || null;
       const propias = filasPorLista.get(lista.id) || [];
       let usadas = 0;
@@ -2030,7 +2031,8 @@ listasRouter.get('/listas/:id/registros-archivados', authRequired, async (req, r
      ORDER BY archivado_en DESC NULLS LAST
      LIMIT 200
   `, [lista.id]);
-  return res.json(filas);
+  const ocultos = idsCamposOcultos(req.user, await camposDe(lista.id));
+  return res.json(ocultos.size ? filas.map((f) => ({ ...f, datos: sinCamposOcultos(f.datos, ocultos) })) : filas);
 });
 
 listasRouter.patch('/lista-registros/:id/restaurar', authRequired, async (req, res) => {

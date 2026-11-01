@@ -21,7 +21,7 @@ export function crearEstadoRouter({ authRequired, puedeVer, areasVisibles }) {
   }
   // "Que ve": los catalogos de las secciones que el usuario no tiene
   // habilitadas se mandan vacios, asi el panel no expone datos de mas.
-  for (const [tabla, seccion] of Object.entries({ clientes: 'clientes', tecnicos: 'tecnicos', insumos: 'inventario', bajas: 'baja' })) {
+  for (const [tabla, seccion] of Object.entries({ clientes: 'clientes', tecnicos: 'tecnicos', insumos: 'inventario', bajas: 'baja', activos: 'clientes' })) {
     if (!puedeVer(req.user, seccion)) out[tabla] = [];
   }
   // El taller ve clientes con al menos una orden o una batería/equipo
@@ -54,7 +54,7 @@ export function crearEstadoRouter({ authRequired, puedeVer, areasVisibles }) {
   out.areas = await areasVisibles(req.user);
   // Tareas del CRM: el admin ve todas las pendientes; el tecnico las suyas y las
   // que no tienen responsable; el cliente ninguna.
-  if (rol === 'cliente') {
+  if (rol === 'cliente' || !puedeVer(req.user, 'tareas')) {
     out.tareas = [];
   } else {
     out.tareas = await query(
