@@ -50,7 +50,9 @@ export default function ReglasModal({ lista, campos, onClose }) {
     setError('');
     if (!form.nombre.trim()) return setError('La regla necesita un nombre.');
     if (!form.campo) return setError('Elegí el campo que dispara el aviso.');
-    if (form.accion === 'campo') {
+    if (form.accion === 'webhook') {
+      if (!/^https:\/\//i.test(form.mensaje.trim())) return setError('El webhook tiene que ser una URL HTTPS.');
+    } else if (form.accion === 'campo') {
       if (!form.campo_destino) return setError('Elegí el campo que va a cambiar la regla.');
     } else if (form.accion === 'whatsapp') {
       if (!form.campo_destino) return setError('Elegí el campo de teléfono para el WhatsApp.');
@@ -105,7 +107,7 @@ export default function ReglasModal({ lista, campos, onClose }) {
                 <b>{r.nombre}</b>
                 <span className={`badge ${r.activo ? 'green' : 'gray'}`} style={{ marginLeft: 6 }}>{r.activo ? 'Activa' : 'Apagada'}</span>
                 <div className="muted" style={{ fontSize: 11.5 }}>
-                  {r.evento} · {c?.nombre || 'campo'} {r.op} {r.valor || ''} · {r.accion === 'whatsapp' ? `WhatsApp a ${campos.find((x) => x.id === r.campo_destino)?.nombre || 'teléfono'}` : r.accion === 'campo' ? `cambia ${campos.find((x) => x.id === r.campo_destino)?.nombre || 'campo'} a “${r.mensaje || ''}”` : `email a ${r.destinatario}`}
+                  {r.evento} · {c?.nombre || 'campo'} {r.op} {r.valor || ''} · {r.accion === 'whatsapp' ? `WhatsApp a ${campos.find((x) => x.id === r.campo_destino)?.nombre || 'teléfono'}` : r.accion === 'campo' ? `cambia ${campos.find((x) => x.id === r.campo_destino)?.nombre || 'campo'} a “${r.mensaje || ''}”` : r.accion === 'webhook' ? `webhook ${r.mensaje || ''}` : `email a ${r.destinatario}`}
                 </div>
               </div>
               <button type="button" className="btn sm" onClick={() => editar(r)}><Icon name="gear" size={12} /> Editar</button>
@@ -139,6 +141,7 @@ export default function ReglasModal({ lista, campos, onClose }) {
               <option value="email">Enviar email</option>
               <option value="whatsapp">Enviar WhatsApp</option>
               <option value="campo">Cambiar un campo</option>
+              <option value="webhook">Enviar a webhook</option>
             </select>
           </div>
           <div className="field">
@@ -157,7 +160,13 @@ export default function ReglasModal({ lista, campos, onClose }) {
               {form.op !== 'vacio' && <input className="input" value={form.valor} onChange={(e) => set('valor', e.target.value)} placeholder="Valor" />}
             </div>
           </div>
-          {form.accion === 'campo' ? (
+          {form.accion === 'webhook' ? (
+            <div className="field" style={{ gridColumn: '1 / -1' }}>
+              <label>URL del webhook *</label>
+              <input className="input" type="url" value={form.mensaje} onChange={(e) => set('mensaje', e.target.value)} placeholder="https://ejemplo.com/bertika/webhook" />
+              <small className="ayuda">Se envía un POST JSON con la lista, la regla, el registro y los datos. Solo HTTPS público.</small>
+            </div>
+          ) : form.accion === 'campo' ? (
             <>
               <div className="field">
                 <label>Campo a cambiar *</label>

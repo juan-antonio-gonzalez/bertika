@@ -74,7 +74,27 @@ async function evaluarReglas(lista, campos, datos, evento, registroId, req) {
         .join(' · ');
       const link = `${PUBLIC_URL}/listas/${lista.area_slug}/${lista.id}`;
       const texto = `Regla "${regla.nombre}" en ${lista.nombre}: ${campo?.nombre || 'campo'} ${regla.op} ${regla.valor || '(vacío)'}.\n${resumen}\n${link}`;
-      if (regla.accion === 'campo') {
+      if (regla.accion === 'webhook') {
+        try {
+          const url = new URL(regla.mensaje || '');
+          const host = url.hostname.toLowerCase();
+          const privado = host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0' || host === '::1'
+            || host.startsWith('10.') || host.startsWith('192.168.') || host.startsWith('169.254.')
+            || /^172\.(1[6-9]|2\d|3[01])\./.test(host);
+          if (url.protocol === 'https:' && !privado) {
+            const ctrl = new AbortController();
+            const timer = setTimeout(() => ctrl.abort(), 5000);
+            await fetch(url.toString(), {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ lista: { id: lista.id, nombre: lista.nombre }, regla: { id: regla.id, nombre: regla.nombre }, registro_id: registroId, datos }),
+              signal: ctrl.signal,
+            }).finally(() => clearTimeout(timer));
+          }
+        } catch (e) {
+          console.error('[listas] webhook falló:', e.message);
+        }
+      } else if (regla.accion === 'campo') {
         const destino = regla.campo_destino;
         const camposDestino = await camposDe(lista.id);
         if (destino && camposDestino.some((c) => c.id === destino)) {
@@ -1512,7 +1532,7 @@ function normalizarRegla(body, campos) {
   if (!campo) return { error: 'Elegí un campo válido para la regla.' };
   const op = ['contiene', 'igual', 'distinto', 'mayor', 'menor', 'vacio'].includes(body?.op) ? body.op : 'igual';
   const evento = ['crear', 'editar', 'ambos'].includes(body?.evento) ? body.evento : 'ambos';
-  const accion = ['whatsapp', 'campo'].includes(body?.accion) ? body.accion : 'email';
+  const accion = ['whatsapp', 'campo', 'webhook'].includes(body?.accion) ? body.accion : 'email';
   const base = {
     nombre,
     campo: campo.id,
@@ -1522,6 +1542,20 @@ function normalizarRegla(body, campos) {
     accion,
     activo: body?.activo === undefined ? true : normalizarBooleano(body.activo),
   };
+  if (accion === 'webhook') {
+    const url = limStr(body?.mensaje, 500);
+    try {
+      const parsed = new URL(url);
+      const host = parsed.hostname.toLowerCase();
+      const privado = host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0' || host === '::1'
+        || host.startsWith('10.') || host.startsWith('192.168.') || host.startsWith('169.254.')
+        || /^172\.(1[6-9]|2\d|3[01])\./.test(host);
+      if (parsed.protocol !== 'https:' || privado) throw new Error('URL no permitida');
+    } catch {
+      return { error: 'El webhook tiene que ser una URL HTTPS pública.' };
+    }
+    return { ...base, campo_destino: null, mensaje: url, destinatario: null, asunto: null };
+  }
   if (accion === 'campo') {
     const destino = (campos || []).find((c) => c.id === limStr(body?.campo_destino, 80) && c.tipo !== 'calculado');
     if (!destino) return { error: 'Elegí el campo que va a cambiar la regla.' };
