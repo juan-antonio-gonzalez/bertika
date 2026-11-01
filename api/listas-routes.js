@@ -111,7 +111,46 @@ function sinPermiso(res, mensaje = 'No tenés permiso para esta acción en esta 
   return res.status(403).json({ error: mensaje });
 }
 
+function puedeVerRegistro(req, lista, registro) {
+  if (req.user?.rol === 'admin') return true;
+  if (capacidades(req, lista.area_id).editar_listas) return true;
+  const modo = lista.ver_filas || 'todos';
+  if (modo === 'todos') return true;
+  if (modo === 'admin') return false;
+  if (modo === 'creador') return registro.creado_por === req.user?.email;
+  if (modo === 'responsable') {
+    if (!lista.ver_campo) return false;
+    const valor = String(registro.datos?.[lista.ver_campo] ?? '').trim().toLowerCase();
+    if (!valor) return false;
+    const email = String(req.user?.email || '').trim().toLowerCase();
+    const uid = String(req.user?.id || '').trim().toLowerCase();
+    return valor === email || (uid && valor === uid);
+  }
+  return true;
+}
+
+function filtroVisibilidad(req, lista, inicio = 1) {
+  if (req.user?.rol === 'admin' || capacidades(req, lista.area_id).editar_listas) return { sql: '', params: [] };
+  const modo = lista.ver_filas || 'todos';
+  if (modo === 'todos') return { sql: '', params: [] };
+  if (modo === 'admin') return { sql: ' AND false', params: [] };
+  if (modo === 'creador') {
+    return { sql: ` AND creado_por = $${inicio}`, params: [req.user?.email] };
+  }
+  if (modo === 'responsable') {
+    if (!lista.ver_campo) return { sql: ' AND false', params: [] };
+    const email = String(req.user?.email || '').trim().toLowerCase();
+    const uid = String(req.user?.id || '').trim().toLowerCase();
+    return {
+      sql: ` AND (lower(datos->>$${inicio}) = $${inicio + 1} OR ($${inicio + 2} <> '' AND lower(datos->>$${inicio}) = $${inicio + 2}))`,
+      params: [lista.ver_campo, email, uid],
+    };
+  }
+  return { sql: '', params: [] };
+}
+
 function puedeEditarRegistro(req, lista, registro) {
+  if (!puedeVerRegistro(req, lista, registro)) return false;
   if (req.user?.rol === 'admin') return true;
   const modo = lista.permiso_filas || 'todos';
   if (modo === 'todos') return true;
@@ -609,6 +648,17 @@ listasRouter.patch('/listas/:id', authRequired, async (req, res) => {
       sets.push('permiso_campo = NULL');
     }
   }
+  if (req.body?.ver_filas !== undefined) {
+    const modoVer = ['todos', 'creador', 'responsable', 'admin'].includes(req.body.ver_filas) ? req.body.ver_filas : 'todos';
+    params.push(modoVer); sets.push(`ver_filas = $${params.length}`);
+    if (modoVer === 'responsable') {
+      const campoVer = await one('SELECT id FROM lista_campos WHERE id = $1 AND lista_id = $2 AND activo = true AND tipo = $3', [limStr(req.body?.ver_campo, 80), lista.id, 'persona']);
+      if (!campoVer) return res.status(400).json({ error: 'Elegí un campo de tipo Persona para la visibilidad de fila.' });
+      params.push(campoVer.id); sets.push(`ver_campo = $${params.length}`);
+    } else {
+      sets.push('ver_campo = NULL');
+    }
+  }
   if (!sets.length) return res.status(400).json({ error: 'Sin campos para actualizar' });
   params.push(new Date()); sets.push(`actualizado_en = $${params.length}`);
   params.push(lista.id);
@@ -634,9 +684,9 @@ listasRouter.post('/listas/:id/duplicar', authRequired, async (req, res) => {
   try {
     await tx(async (client) => {
       await client.query(
-        `INSERT INTO listas (id, area_id, nombre, descripcion, icono, creada_por, permiso_filas)
-         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-        [nuevoId, origen.area_id, nombre, origen.descripcion, origen.icono, req.user.email, origen.permiso_filas || 'todos']
+        `INSERT INTO listas (id, area_id, nombre, descripcion, icono, creada_por, permiso_filas, ver_filas)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+        [nuevoId, origen.area_id, nombre, origen.descripcion, origen.icono, req.user.email, origen.permiso_filas || 'todos', origen.ver_filas || 'todos']
       );
       const campos = await client.query(
         'SELECT * FROM lista_campos WHERE lista_id = $1 AND activo = true ORDER BY orden, lower(nombre)',
@@ -665,6 +715,14 @@ listasRouter.post('/listas/:id/duplicar', authRequired, async (req, res) => {
           await client.query('UPDATE listas SET permiso_campo = $2 WHERE id = $1', [nuevoId, nuevoResponsable]);
         } else {
           await client.query("UPDATE listas SET permiso_filas = 'todos', permiso_campo = NULL WHERE id = $1", [nuevoId]);
+        }
+      }
+      if (origen.ver_filas === 'responsable') {
+        const nuevoVer = mapa.get(origen.ver_campo) || null;
+        if (nuevoVer) {
+          await client.query('UPDATE listas SET ver_campo = $2 WHERE id = $1', [nuevoId, nuevoVer]);
+        } else {
+          await client.query("UPDATE listas SET ver_filas = 'todos', ver_campo = NULL WHERE id = $1", [nuevoId]);
         }
       }
       const vistas = await client.query('SELECT * FROM lista_vistas WHERE lista_id = $1 ORDER BY creado_en', [origen.id]);
@@ -910,17 +968,20 @@ listasRouter.get('/listas/:id/registros', authRequired, async (req, res) => {
   if (!capacidades(req, lista.area_id).ver_registros) return sinPermiso(res);
   const q = limStr(req.query?.q, 120);
   const params = [lista.id];
+  const vis = filtroVisibilidad(req, lista, params.length + 1);
   let sql = `SELECT id, lista_id, datos, creado_por, actualizado_por, creado_en, actualizado_en
                FROM lista_registros
-              WHERE lista_id = $1 AND archivado = false`;
+              WHERE lista_id = $1 AND archivado = false ${vis.sql}`;
+  params.push(...vis.params);
   if (q) {
     params.push(`%${q.replace(/[\\%_]/g, (m) => `\\${m}`)}%`);
     sql += ` AND datos::text ILIKE $${params.length}`;
   }
   sql += ' ORDER BY creado_en DESC LIMIT 500';
   const registros = await query(sql, params);
-  const [total] = await query('SELECT count(*)::int AS n FROM lista_registros WHERE lista_id = $1 AND archivado = false', [lista.id]);
-  return res.json({ registros, total: total.n });
+  const paramsTotal = [lista.id, ...vis.params];
+  const [total] = await query(`SELECT count(*)::int AS n FROM lista_registros WHERE lista_id = $1 AND archivado = false ${vis.sql}`, paramsTotal);
+  return res.json({ registros, total: total.n, restringido: Boolean(vis.sql) });
 });
 
 listasRouter.post('/listas/:id/registros', authRequired, async (req, res) => {
@@ -1071,13 +1132,42 @@ listasRouter.delete('/lista-reglas/:id', authRequired, async (req, res) => {
   return res.json({ ok: true });
 });
 
+async function avisarAprobadores(lista, aprobacion, solicitante, decision = false) {
+  try {
+    const link = `${PUBLIC_URL}/listas/${lista.area_slug}/${lista.id}`;
+    if (decision) {
+      if (!aprobacion.solicitado_por) return;
+      const texto = `Tu solicitud de aprobación en ${lista.nombre} fue ${aprobacion.estado}.\n${aprobacion.comentario || ''}\n${link}`;
+      await avisarPorMail(aprobacion.solicitado_por, `Bertika · aprobación ${aprobacion.estado} en ${lista.nombre}`, texto, `<p>Tu solicitud en <b>${lista.nombre}</b> fue <b>${aprobacion.estado}</b>.</p><p>${aprobacion.comentario || ''}</p><p><a href="${link}">Abrir la lista</a></p>`);
+      return;
+    }
+    const rows = await query(`
+      SELECT DISTINCT u.email FROM usuarios u
+        LEFT JOIN categorias_acceso c ON c.id = u.categoria_id
+       WHERE u.activo = true AND (
+         u.rol = 'admin' OR (c.areas -> $1 ->> 'editar_listas')::boolean = true
+       )
+    `, [lista.area_id]);
+    const correos = new Set(rows.map((r) => r.email).filter(Boolean));
+    if (lista.creada_por) correos.add(lista.creada_por);
+    correos.delete(solicitante);
+    for (const email of correos) {
+      const texto = `${solicitante} solicitó aprobar un registro en ${lista.nombre}.\n${aprobacion.comentario || ''}\n${link}`;
+      await avisarPorMail(email, `Bertika · aprobación pendiente en ${lista.nombre}`, texto, `<p><b>${solicitante}</b> solicitó aprobar un registro en <b>${lista.nombre}</b>.</p><p>${aprobacion.comentario || ''}</p><p><a href="${link}">Abrir la lista</a></p>`);
+    }
+  } catch (e) {
+    console.error('[listas] no se pudo avisar la aprobación:', e.message);
+  }
+}
+
 // ---------- Aprobaciones de registros ----------
 listasRouter.get('/listas/:id/registros/:rid/aprobaciones', authRequired, async (req, res) => {
   const lista = await listaConArea(req.params.id);
   if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
   if (!capacidades(req, lista.area_id).ver_registros) return sinPermiso(res);
-  const registro = await one('SELECT id FROM lista_registros WHERE id = $1 AND lista_id = $2 AND archivado = false', [req.params.rid, lista.id]);
+  const registro = await one('SELECT * FROM lista_registros WHERE id = $1 AND lista_id = $2 AND archivado = false', [req.params.rid, lista.id]);
   if (!registro) return res.status(404).json({ error: 'Registro no encontrado' });
+  if (!puedeVerRegistro(req, lista, registro)) return sinPermiso(res, 'No tenés acceso a este registro.');
   const filas = await query(`
     SELECT id, estado, solicitado_por, decidido_por, comentario, decidido_en, creado_en
       FROM lista_aprobaciones WHERE registro_id = $1 ORDER BY creado_en DESC LIMIT 50
@@ -1091,6 +1181,7 @@ listasRouter.post('/listas/:id/registros/:rid/aprobaciones', authRequired, async
   if (!capacidades(req, lista.area_id).editar_registros) return sinPermiso(res);
   const registro = await one('SELECT * FROM lista_registros WHERE id = $1 AND lista_id = $2 AND archivado = false', [req.params.rid, lista.id]);
   if (!registro) return res.status(404).json({ error: 'Registro no encontrado' });
+  if (!puedeVerRegistro(req, lista, registro)) return sinPermiso(res, 'No tenés acceso a este registro.');
   if (!puedeEditarRegistro(req, lista, registro)) return sinPermiso(res, 'Este registro está reservado para su creador o responsable.');
   const pendiente = await one("SELECT id FROM lista_aprobaciones WHERE registro_id = $1 AND estado = 'pendiente'", [registro.id]);
   if (pendiente) return res.status(400).json({ error: 'Ya hay una aprobación pendiente para este registro.' });
@@ -1102,6 +1193,7 @@ listasRouter.post('/listas/:id/registros/:rid/aprobaciones', authRequired, async
     [id, lista.id, registro.id, req.user.email, comentario]
   );
   await auditar({ req, tabla: 'lista_aprobaciones', registroId: id, accion: 'solicitar', detalle: registro.id });
+  avisarAprobadores(lista, fila, req.user.email);
   return res.status(201).json(fila);
 });
 
@@ -1121,6 +1213,7 @@ listasRouter.patch('/lista-aprobaciones/:id', authRequired, async (req, res) => 
     [aprobacion.id, estado, req.user.email, comentario]
   );
   await auditar({ req, tabla: 'lista_aprobaciones', registroId: aprobacion.id, accion: estado, detalle: aprobacion.registro_id });
+  avisarAprobadores(lista, fila, req.user.email, true);
   return res.json(fila);
 });
 
@@ -1128,8 +1221,9 @@ listasRouter.get('/listas/:id/registros/:rid/comentarios', authRequired, async (
   const lista = await listaConArea(req.params.id);
   if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
   if (!capacidades(req, lista.area_id).ver_registros) return sinPermiso(res);
-  const registro = await one('SELECT id FROM lista_registros WHERE id = $1 AND lista_id = $2 AND archivado = false', [req.params.rid, lista.id]);
+  const registro = await one('SELECT * FROM lista_registros WHERE id = $1 AND lista_id = $2 AND archivado = false', [req.params.rid, lista.id]);
   if (!registro) return res.status(404).json({ error: 'Registro no encontrado' });
+  if (!puedeVerRegistro(req, lista, registro)) return sinPermiso(res, 'No tenés acceso a este registro.');
   const filas = await query(`
     SELECT id, autor, texto, menciones, creado_en
       FROM lista_comentarios
@@ -1144,8 +1238,9 @@ listasRouter.post('/listas/:id/registros/:rid/comentarios', authRequired, async 
   const lista = await listaConArea(req.params.id);
   if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
   if (!capacidades(req, lista.area_id).ver_registros) return sinPermiso(res);
-  const registro = await one('SELECT id, datos FROM lista_registros WHERE id = $1 AND lista_id = $2 AND archivado = false', [req.params.rid, lista.id]);
+  const registro = await one('SELECT * FROM lista_registros WHERE id = $1 AND lista_id = $2 AND archivado = false', [req.params.rid, lista.id]);
   if (!registro) return res.status(404).json({ error: 'Registro no encontrado' });
+  if (!puedeVerRegistro(req, lista, registro)) return sinPermiso(res, 'No tenés acceso a este registro.');
   const texto = limStr(req.body?.texto, 2000);
   if (!texto) return res.status(400).json({ error: 'Escribí un comentario.' });
   const emails = [...new Set((texto.match(/@[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}/g) || []).map((m) => m.slice(1).toLowerCase()))].slice(0, 10);
@@ -1173,8 +1268,9 @@ listasRouter.get('/listas/:id/registros/:rid/historial', authRequired, async (re
   const lista = await listaConArea(req.params.id);
   if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
   if (!capacidades(req, lista.area_id).ver_registros) return sinPermiso(res);
-  const registro = await one('SELECT id FROM lista_registros WHERE id = $1 AND lista_id = $2', [req.params.rid, lista.id]);
+  const registro = await one('SELECT * FROM lista_registros WHERE id = $1 AND lista_id = $2', [req.params.rid, lista.id]);
   if (!registro) return res.status(404).json({ error: 'Registro no encontrado' });
+  if (!puedeVerRegistro(req, lista, registro)) return sinPermiso(res, 'No tenés acceso a este registro.');
   const filas = await query(`
     SELECT id, datos, usuario, accion, creado_en
       FROM lista_registros_historial

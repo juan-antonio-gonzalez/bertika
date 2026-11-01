@@ -305,7 +305,9 @@ CREATE TABLE IF NOT EXISTS listas (
   archivada_en TIMESTAMPTZ,
   archivada_por TEXT,
   permiso_filas TEXT DEFAULT 'todos',
-  permiso_campo TEXT
+  permiso_campo TEXT,
+  ver_filas TEXT DEFAULT 'todos',
+  ver_campo TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_listas_area ON listas (area_id, archivada, orden);
 CREATE UNIQUE INDEX IF NOT EXISTS listas_area_nombre_uniq ON listas (area_id, lower(nombre)) WHERE archivada = false;

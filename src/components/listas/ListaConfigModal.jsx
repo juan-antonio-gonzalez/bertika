@@ -9,6 +9,8 @@ export default function ListaConfigModal({
   const [descripcion, setDescripcion] = useState(lista.descripcion || '');
   const [permisoFilas, setPermisoFilas] = useState(lista.permiso_filas || 'todos');
   const [permisoCampo, setPermisoCampo] = useState(lista.permiso_campo || '');
+  const [verFilas, setVerFilas] = useState(lista.ver_filas || 'todos');
+  const [verCampo, setVerCampo] = useState(lista.ver_campo || '');
   const campos = lista.campos || [];
 
   return (
@@ -25,7 +27,7 @@ export default function ListaConfigModal({
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          if (nombre.trim().length >= 2) onGuardarLista({ nombre: nombre.trim(), descripcion: descripcion.trim(), permiso_filas: permisoFilas, permiso_campo: permisoCampo || null });
+          if (nombre.trim().length >= 2) onGuardarLista({ nombre: nombre.trim(), descripcion: descripcion.trim(), permiso_filas: permisoFilas, permiso_campo: permisoCampo || null, ver_filas: verFilas, ver_campo: verCampo || null });
         }}
         className="col"
         style={{ gap: 12 }}
@@ -40,6 +42,22 @@ export default function ListaConfigModal({
             <input className="input" value={descripcion} onChange={(e) => setDescripcion(e.target.value)} />
           </div>
         </FormGrid>
+        <div className="field">
+          <label>¿Quién puede ver las filas?</label>
+          <select className="input" value={verFilas} onChange={(e) => { setVerFilas(e.target.value); if (e.target.value !== 'responsable') setVerCampo(''); }}>
+            <option value="todos">Todos los que tengan permiso en el área</option>
+            <option value="creador">Solo quien creó la fila</option>
+            <option value="responsable">Solo el responsable de la fila</option>
+            <option value="admin">Solo administradores</option>
+          </select>
+          {verFilas === 'responsable' && (
+            <select className="input" value={verCampo} onChange={(e) => setVerCampo(e.target.value)} style={{ marginTop: 6 }}>
+              <option value="">Elegir campo de persona...</option>
+              {campos.filter((c) => c.tipo === 'persona').map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+            </select>
+          )}
+          <small className="ayuda">Filtra las filas que se listan y el acceso a comentarios, historial y aprobaciones. Los administradores de la lista y del sistema ven todo.</small>
+        </div>
         <div className="field">
           <label>¿Quién puede editar o archivar filas?</label>
           <select className="input" value={permisoFilas} onChange={(e) => { setPermisoFilas(e.target.value); if (e.target.value !== 'responsable') setPermisoCampo(''); }}>

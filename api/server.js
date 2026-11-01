@@ -574,6 +574,8 @@ async function asegurarCodigos() {
   // Fase 3: permisos a nivel de fila.
   await query("ALTER TABLE listas ADD COLUMN IF NOT EXISTS permiso_filas TEXT DEFAULT 'todos'");
   await query('ALTER TABLE listas ADD COLUMN IF NOT EXISTS permiso_campo TEXT');
+  await query("ALTER TABLE listas ADD COLUMN IF NOT EXISTS ver_filas TEXT DEFAULT 'todos'");
+  await query('ALTER TABLE listas ADD COLUMN IF NOT EXISTS ver_campo TEXT');
   // Fase 3: formularios públicos por lista (token no adivinable).
   await query(`CREATE TABLE IF NOT EXISTS lista_formularios (
     id TEXT PRIMARY KEY,
