@@ -29,7 +29,7 @@ RETENCION_DIAS=14
 MIN_BYTES=2048
 
 subir_a_nube() {
-  local db="$1" fotos="$2"
+  local db="$1" fotos="$2" privados="$3"
   local cfg=/etc/bertika/backup-nube.env
   [ -f "$cfg" ] || { echo "   (nube: sin configurar; ver bash scripts/backup-db.sh --configurar-nube)"; return 0; }
   # shellcheck disable=SC1090
@@ -40,7 +40,7 @@ subir_a_nube() {
     return 0
   fi
   local ok=1
-  for f in "$db" "$fotos"; do
+  for f in "$db" "$fotos" "$privados"; do
     [ -f "$f" ] || continue
     if rclone copy "$f" "$NUBE_DESTINO" --no-traverse >/dev/null 2>&1; then
       echo "   nube OK: $(basename "$f") -> $NUBE_DESTINO"
@@ -94,9 +94,16 @@ if [ "${1:-}" = "--en-servidor" ]; then
     chmod 600 "$DESTINO/uploads_$STAMP.tar.gz" 2>/dev/null || true
     [ -f "$DESTINO/uploads_$STAMP.tar.gz" ] && FOTOS="uploads_$STAMP.tar.gz"
   fi
+  PRIVADOS=""
+  if [ -d /var/www/bertika/api/uploads-private ]; then
+    tar czf "$DESTINO/privados_$STAMP.tar.gz" -C /var/www/bertika/api uploads-private 2>/dev/null || true
+    chmod 600 "$DESTINO/privados_$STAMP.tar.gz" 2>/dev/null || true
+    [ -f "$DESTINO/privados_$STAMP.tar.gz" ] && PRIVADOS="privados_$STAMP.tar.gz"
+  fi
   # Limpieza: respaldos viejos (comprimidos) y los .sql vacios del script roto.
   find "$DESTINO" -name 'bertika_*.sql.gz' -mtime "+$RETENCION_DIAS" -delete
   find "$DESTINO" -name 'uploads_*.tar.gz' -mtime "+$RETENCION_DIAS" -delete
+  find "$DESTINO" -name 'privados_*.tar.gz' -mtime "+$RETENCION_DIAS" -delete
   find "$DESTINO" -name 'bertika_*.sql' -size 0 -delete
   BYTES="$(wc -c < "$ARCHIVO" | tr -d ' ')"
   if [ "$JSON" = "1" ]; then
@@ -108,7 +115,7 @@ if [ "${1:-}" = "--en-servidor" ]; then
   # Copia fuera del VPS (si esta configurada): sin esto, si se pierde el
   # servidor se pierden tambien los respaldos. Va a stderr para no ensuciar el
   # JSON, y nunca corta el respaldo (que ya quedo hecho y validado).
-  subir_a_nube "$ARCHIVO" "$DESTINO/uploads_$STAMP.tar.gz" >&2 || true
+  subir_a_nube "$ARCHIVO" "$DESTINO/uploads_$STAMP.tar.gz" "$DESTINO/privados_$STAMP.tar.gz" >&2 || true
   exit 0
 fi
 
@@ -121,9 +128,11 @@ if [ "${1:-}" = "--traer" ]; then
   echo "== Trayendo los ultimos respaldos a $DESTINO_LOCAL =="
   ULTIMO_DB="$(ssh "${SSH_ARGS[@]}" "root@$SSH_HOST" "ls -t $DESTINO/bertika_*.sql.gz 2>/dev/null | head -1" || true)"
   ULTIMO_UP="$(ssh "${SSH_ARGS[@]}" "root@$SSH_HOST" "ls -t $DESTINO/uploads_*.tar.gz 2>/dev/null | head -1" || true)"
+  ULTIMO_PRIV="$(ssh "${SSH_ARGS[@]}" "root@$SSH_HOST" "ls -t $DESTINO/privados_*.tar.gz 2>/dev/null | head -1" || true)"
   if [ -z "$ULTIMO_DB" ]; then echo "  No hay respaldos en el servidor todavia"; exit 1; fi
   scp -q "${SSH_ARGS[@]}" "root@$SSH_HOST:$ULTIMO_DB" "$DESTINO_LOCAL/" && echo "  base: $(basename "$ULTIMO_DB")"
   if [ -n "$ULTIMO_UP" ]; then scp -q "${SSH_ARGS[@]}" "root@$SSH_HOST:$ULTIMO_UP" "$DESTINO_LOCAL/" && echo "  fotos: $(basename "$ULTIMO_UP")"; fi
+  if [ -n "$ULTIMO_PRIV" ]; then scp -q "${SSH_ARGS[@]}" "root@$SSH_HOST:$ULTIMO_PRIV" "$DESTINO_LOCAL/" && echo "  adjuntos privados: $(basename "$ULTIMO_PRIV")"; fi
   echo "  (copia fuera del VPS: si se pierde el servidor, la base esta aca)"
   exit 0
 fi
