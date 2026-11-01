@@ -514,3 +514,97 @@ La plantilla aparece en **Nueva lista → Empezar desde** para esa area.
 - Al crear una orden se puede elegir un activo del cliente.
 - El filtro **Con relacion / Sin relacion** considera ordenes, baterias y activos.
 
+
+---
+
+## 15. Ventas V2 (`/ventas`)
+
+La venta ahora vive en una **oportunidad**, no en una conversación de WhatsApp.
+
+### Crear una oportunidad
+
+1. Entrar a **Ventas** en el menú Comercial.
+2. **Nueva oportunidad**.
+3. Completar:
+   - Título.
+   - Cliente o prospecto.
+   - Etapa.
+   - Monto estimado.
+   - Probabilidad.
+   - Cierre estimado.
+   - Responsable.
+   - Próxima acción y fecha.
+   - N° de serie / equipo (para poder crear la orden).
+4. Guardar.
+
+Se puede crear aunque el cliente todavía no exista como ficha. Si se elige un cliente, la
+oportunidad queda vinculada a su ficha.
+
+### Pipeline
+
+Columnas: **Nuevo**, **Presupuestado**, **Negociando**, **Ganado** y **Perdido**.
+
+Cada tarjeta muestra:
+
+- Monto.
+- Probabilidad.
+- Cierre estimado.
+- Responsable.
+- Próxima acción.
+- Días en la etapa.
+
+Se puede cambiar la etapa desde la tarjeta. Para **Perdido** se exige un motivo.
+
+### Cotizar
+
+1. Abrir la oportunidad.
+2. **Cotizar**.
+3. Cargar ítems: descripción, cantidad, precio y descuento.
+4. Definir descuento global, IVA y validez.
+5. Guardar borrador o **Guardar y enviar**.
+
+Al enviar se genera un link público:
+
+```text
+https://bertika.com/cotizacion-venta/<token>
+```
+
+El cliente puede ver la cotización, aceptarla o rechazarla. Al aceptar:
+
+- La cotización queda aceptada.
+- La oportunidad pasa a **Ganado**.
+- El equipo puede crear la orden desde la oportunidad.
+
+### Pasar a la orden
+
+Con la oportunidad abierta y el número de serie cargado, usar **Crear orden**.
+Se crea la orden en estado `received`, vinculada al cliente, la oportunidad y la cotización.
+
+### Bandeja Hoy
+
+Muestra:
+
+- Próximas acciones.
+- Cotizaciones enviadas hace más de 3 días sin respuesta.
+- Oportunidades con más de 7 días en la misma etapa.
+
+### Permisos
+
+- `ventas`: ver el módulo.
+- `ventas_editar`: crear y editar oportunidades.
+- `ventas_cotizar`: crear y enviar cotizaciones.
+- `ventas_cerrar`: perder, ganar y crear la orden.
+- `ventas_todos`: ver todas las oportunidades; sin este permiso, cada vendedor ve las
+  suyas y las que no tienen responsable.
+
+### Migración
+
+Antes de usar el pipeline con datos viejos:
+
+```bash
+node api/backfill-ventas.js           # modo seco
+node api/backfill-ventas.js --aplicar # aplica
+```
+
+Toma las conversaciones de WhatsApp y los registros de la lista **Oportunidades**. Es
+idempotente: se puede volver a correr sin duplicar.

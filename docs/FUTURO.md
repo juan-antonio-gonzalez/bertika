@@ -2,7 +2,8 @@
 
 > **Módulo de Listas y activos:** ya implementado (listas dinámicas, permisos por lista/campo,
 > aprobaciones, plantillas, adjuntos privados, automatizaciones, activos y E2E). Este
-> documento queda para los pendientes de **producto**, no del motor de listas.
+> documento queda para los pendientes de **producto**, no del motor de listas. **Ventas V2**
+> (oportunidades, cotizaciones y pipeline `/ventas`) ya está implementado como MVP.
 
 **Actualizado:** 01/11/2026. Este documento tiene **solo los pendientes**. Lo ya implementado
 está en [README](../README.md), [INSTRUCTIVO_USO](../INSTRUCTIVO_USO.md) y [API](API.md).

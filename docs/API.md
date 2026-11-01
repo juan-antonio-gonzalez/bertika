@@ -284,6 +284,59 @@ Archivo congelado y manifiesto con hashes: `/legal/versiones` y
 `/legal/archivo/index.json`. Para cambiar un texto: editar `src/data/legal.js`,
 subir la versión y correr `npm run legal:archivar`.
 
+## Ventas V2
+
+La oportunidad es la entidad central; la conversación es un canal y la cotización un
+documento propio. Permisos: `ventas`, `ventas_editar`, `ventas_cotizar`, `ventas_cerrar`
+y `ventas_todos`.
+
+### Oportunidades
+
+| Método | Ruta | Descripción |
+| --- | --- | --- |
+| `GET` | `/oportunidades?q=&etapa=` | Pipeline visible para el usuario. |
+| `POST` | `/oportunidades` | Crea una oportunidad con o sin cliente. |
+| `GET` | `/oportunidades/:id` | Oportunidad, cotizaciones y eventos. |
+| `PATCH` | `/oportunidades/:id` | Edita datos y etapa. |
+| `POST` | `/oportunidades/:id/perder` | Cierra con motivo obligatorio. |
+| `POST` | `/oportunidades/:id/orden` | Crea la orden de taller (requiere cliente y serie). |
+
+Campos principales: `titulo`, `cliente_id` o datos del prospecto, `etapa`, `monto_estimado`,
+`probabilidad`, `cierre_estimado`, `responsable`, `origen`, `serie`, `activo_id`,
+`proxima_accion`, `fecha_proxima_accion`, `motivo_perdida`, `orden_id` y notas.
+
+### Cotizaciones
+
+| Método | Ruta | Descripción |
+| --- | --- | --- |
+| `GET` | `/oportunidades/:id/cotizaciones` | Versiones de la oportunidad. |
+| `POST` | `/oportunidades/:id/cotizaciones` | Crea una cotización con ítems. |
+| `GET` | `/cotizaciones/:id` | Cotización, ítems y oportunidad. |
+| `PATCH` | `/cotizaciones/:id` | Edita un borrador. |
+| `POST` | `/cotizaciones/:id/enviar` | Genera token y link público. |
+| `POST` | `/cotizaciones/:id/decision` | Acepta o rechaza desde el panel. |
+| `GET` | `/public/cotizacion-venta/:token` | Cotización pública; marca vista. |
+| `POST` | `/public/cotizacion-venta/:token` | Acepta o rechaza; actualiza la oportunidad. |
+
+Body de cotización: `{ items: [{ descripcion, cantidad, precio_unitario, descuento }],
+descuento, iva_pct, validez_dias }`. El servidor recalcula subtotal, IVA y total.
+
+### Panel
+
+| Método | Ruta | Descripción |
+| --- | --- | --- |
+| `GET` | `/ventas/resumen` | Pipeline abierto, ponderado, estancadas y cotizaciones. |
+| `GET` | `/ventas/hoy` | Próximas acciones, cotizaciones sin respuesta y estancadas. |
+
+### Migración
+
+```bash
+node api/backfill-ventas.js           # modo seco
+node api/backfill-ventas.js --aplicar # crea oportunidades desde conversaciones y lista
+```
+
+Es idempotente por `(origen_dato, origen_id)`.
+
 ## Listas dinámicas
 
 El motor vive en `api/listas-routes.js`. Resuelve permisos **en el servidor** contra el área,

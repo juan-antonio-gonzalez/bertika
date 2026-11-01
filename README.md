@@ -10,6 +10,7 @@ Aplicacion web para gestionar el ciclo completo de una bateria en el taller: rec
 - **Fase 2 — CRM comercial:** ✅ implementada y en producción (cotizar desde el chat, embudo automático, SLA/reparto, automatizaciones de seguimiento).
 - **Privacidad, cookies y legales:** ✅ implementada (páginas legales, banner de consentimiento, registro con hash, retiro de derechos, versionado y panel de privacidad). Ver [docs/PRIVACIDAD.md](docs/PRIVACIDAD.md).
 - **Listas dinámicas (tipo SharePoint/MS Lists):** ✅ implementada y en producción. Áreas, listas, campos, vistas, formularios públicos, permisos por lista/categoría/campo, aprobaciones, plantillas, adjuntos privados, búsqueda global y automatizaciones. Ver [docs/API.md](docs/API.md) y el [manual](INSTRUCTIVO_USO.md).
+- **Ventas V2 (oportunidades + cotizaciones):** ✅ MVP en producción. Pipeline `/ventas`, oportunidades sin depender de WhatsApp, cotizaciones con ítems y link público, pronóstico, seguimiento y conversión a orden.
 - **Fase 3 y pendientes de infraestructura:** ver [docs/FUTURO.md](docs/FUTURO.md).
 
 ## Como ejecutar
@@ -37,8 +38,8 @@ y cubren login, permisos, auditoría, outbox con reintentos, export CSV, webhook
 flujos de Listas (lista, campo, registro, búsqueda y plantillas). En GitHub Actions corre
 todo (`.github/workflows/ci.yml`) con un servicio PostgreSQL 16.
 
-El smoke E2E de navegador verifica login, menú, las listas de Taller, la búsqueda global
-y el buscador del menú. Es **solo lectura**: no crea ni modifica datos.
+El smoke E2E de navegador verifica login, menú, Ventas, las listas de Taller, la búsqueda
+global y el buscador del menú. Es **solo lectura**: no crea ni modifica datos.
 
 ## Robustez operativa (Fase 1)
 
@@ -64,6 +65,23 @@ y el buscador del menú. Es **solo lectura**: no crea ni modifica datos.
 - **Automatizaciones de seguimiento**: reglas configurables (presupuesto sin respuesta y
   batería lista sin retirar) que crean **tareas** idempotentes cada 6 horas; no mandan
   mensajes solas. Se revisan también a mano desde la bandeja.
+
+## Ventas V2
+
+El módulo `/ventas` ordena la venta alrededor de la **oportunidad**, no de la conversación:
+
+- Pipeline con etapas, monto, probabilidad, cierre, responsable y próxima acción.
+- Oportunidades que existen sin WhatsApp y sin orden.
+- Cotizaciones con ítems, descuento, IVA, validez y link público.
+- Seguimiento de cotizaciones enviadas, vistas, aceptadas y rechazadas.
+- Bandeja **Hoy** con próximas acciones, cotizaciones sin respuesta y oportunidades estancadas.
+- Conversión de una oportunidad ganada en orden de taller.
+- Pronóstico ponderado y monto abierto.
+- Migración de conversaciones y de la lista de Oportunidades con
+  `node api/backfill-ventas.js` (modo seco) y `--aplicar`.
+
+La conversación de WhatsApp sigue siendo el canal de atención, pero ya no es la fuente
+única del pipeline.
 
 ## Listas dinámicas
 
@@ -152,6 +170,9 @@ Las paginas publicas (contacto, seguimiento, tracker, cotizacion) y los paneles 
 | `/cotizacion/:orden_id` | Cotizacion publica con enlace firmado (`?t=`) para aprobar/rechazar |
 | `/auth` | Login real (JWT) de Admin / Tecnico / Cliente |
 | `/home` | Redireccion segun rol |
+| `/ventas` | Pipeline de oportunidades y cotizaciones |
+| `/ventas/:tab` | Pipeline, cotizaciones o bandeja Hoy |
+| `/cotizacion-venta/:token` | Cotización pública para aceptar o rechazar |
 | `/listas` | Inicio del módulo de listas por área |
 | `/listas/:area` | Listas de un área (Taller, Ventas, Administración) |
 | `/listas/:area/:listaId` | Lista, registros y vistas |

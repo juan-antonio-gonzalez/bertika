@@ -151,6 +151,11 @@ try {
   await evaluar(`(() => { const b = [...document.querySelectorAll('.busqueda-listas button')].find((x) => x.textContent.includes('Buscar')); if (b) b.click(); return true; })()`);
   await sleep(600);
 
+  paso = 'ventas';
+  await navegar(`${BASE}/ventas`);
+  await esperar("document.body.innerText.toLowerCase().includes('pipeline abierto')", 'pantalla de Ventas', 30000);
+  await esperar('!!document.querySelector(".ventas-pipeline") || document.body.innerText.includes("Nueva oportunidad")', 'pipeline de Ventas');
+
   paso = 'buscador del menú';
   await escribir('.shell-menu-search input', 'Taller');
   await sleep(500);
