@@ -84,12 +84,13 @@ async function evaluarReglas(lista, campos, datos, evento, registroId, req) {
           if (url.protocol === 'https:' && !privado) {
             const ctrl = new AbortController();
             const timer = setTimeout(() => ctrl.abort(), 5000);
-            await fetch(url.toString(), {
+            const respuesta = await fetch(url.toString(), {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ lista: { id: lista.id, nombre: lista.nombre }, regla: { id: regla.id, nombre: regla.nombre }, registro_id: registroId, datos }),
               signal: ctrl.signal,
             }).finally(() => clearTimeout(timer));
+            await auditar({ req, tabla: 'lista_reglas', registroId: regla.id, accion: respuesta.ok ? 'webhook_ok' : 'webhook_error', detalle: `${respuesta.status} ${url.toString()}` });
           }
         } catch (e) {
           console.error('[listas] webhook falló:', e.message);
