@@ -6,7 +6,7 @@ import { createHmac, createHash, timingSafeEqual, randomUUID, randomBytes, rando
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import multer from 'multer';
+import { memoryUpload } from './upload.js';
 import nodemailer from 'nodemailer';
 import bcrypt from 'bcryptjs';
 import rateLimit from 'express-rate-limit';
@@ -3568,8 +3568,7 @@ async function reservarAviso(ordenId, plantilla) {
 }
 
 // Subida de adjuntos del chat: fotos o PDF, hasta 8 MB.
-const uploadChat = multer({
-  storage: multer.memoryStorage(),
+const uploadChat = memoryUpload({
   limits: { fileSize: 8 * 1024 * 1024, files: 1 },
   fileFilter: (req, file, cb) => {
     if (/^(image\/(jpeg|png|webp|gif)|application\/pdf)$/.test(file.mimetype)) return cb(null, true);
@@ -4897,8 +4896,7 @@ function guardarArchivoChat({ buffer, mime, nombre = '' }) {
   return { url: `${PUBLIC_URL}/uploads/${archivo}`, archivo, tipo, nombre: limStr(nombre, 120) || `archivo${ext}` };
 }
 
-const upload = multer({
-  storage: multer.memoryStorage(),
+const upload = memoryUpload({
   limits: { fileSize: 8 * 1024 * 1024, files: 6 },
   fileFilter: (req, file, cb) => {
     if (/^image\/(jpeg|png|webp|gif)$/.test(file.mimetype)) return cb(null, true);
@@ -4907,8 +4905,7 @@ const upload = multer({
 });
 
 // Adjuntos de una lista: imágenes o PDF, validados por contenido real.
-const uploadAdjunto = multer({
-  storage: multer.memoryStorage(),
+const uploadAdjunto = memoryUpload({
   limits: { fileSize: 8 * 1024 * 1024, files: 1 },
   fileFilter: (req, file, cb) => {
     if (/^(image\/(jpeg|png|webp|gif)|application\/pdf)$/.test(file.mimetype)) return cb(null, true);

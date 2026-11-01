@@ -164,6 +164,7 @@ function arrancarServidor() {
       JWT_SECRET: JWT_SECRET_TEST,
       PUBLIC_URL: BASE,
       UPLOAD_DIR,
+      PRIVATE_UPLOAD_DIR: `${UPLOAD_DIR}-private`,
       OUTBOX_WORKER: '0', // el test decide cuándo procesar la cola
       MONITOREO: '0',
       AUTOMATIZACIONES: '0', // se disparan a mano desde el endpoint
@@ -807,6 +808,23 @@ async function main() {
     assert.equal(detalle.status, 200);
     assert.equal(detalle.json.registros.length, 1);
     assert.equal(detalle.json.registros[0].datos[campoE2E], 'Registro E2E');
+  });
+
+  await test('subir y servir un adjunto de lista (multipart/busboy)', async () => {
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
+    const fd = new FormData();
+    fd.append('archivo', new Blob([png], { type: 'image/png' }), 'pixel.png');
+    const subida = await fetch(`${API}/listas/${listaE2E}/adjuntos`, {
+      method: 'POST', headers: { Authorization: `Bearer ${tokenAdmin}` }, body: fd,
+    });
+    if (!subida.ok) assert.fail(await subida.text());
+    assert.equal(subida.status, 201);
+    const adjunto = await subida.json();
+    assert.ok(adjunto.url);
+    const descarga = await fetch(`${API}${adjunto.url.replace('/api', '')}`, { headers: { Authorization: `Bearer ${tokenAdmin}` } });
+    assert.equal(descarga.status, 200);
+    assert.equal(descarga.headers.get('content-type'), 'image/png');
+    await descarga.arrayBuffer();
   });
 
   await test('la búsqueda global encuentra el registro y respeta la API', async () => {

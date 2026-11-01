@@ -33,3 +33,8 @@ backups/
 *.pem
 *.key
 id_ed25519*
+
+# adjuntos privados (datos de usuario, nunca al repo)
+api/uploads-private/
+
+trash/
