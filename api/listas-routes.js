@@ -174,11 +174,19 @@ async function validarRelaciones(campos, datos) {
     const rel = datos[campo.id];
     if (!rel?.id) continue;
     const objetivo = await one(`
-      SELECT r.id FROM lista_registros r
+      SELECT r.id, r.datos FROM lista_registros r
         JOIN listas l ON l.id = r.lista_id
        WHERE r.id = $1 AND r.lista_id = $2 AND r.archivado = false AND l.archivada = false
     `, [rel.id, campo.config?.lista_id]);
     if (!objetivo) return `“${campo.nombre}”: el registro relacionado no existe o no está disponible.`;
+    // Lookup avanzado: la etiqueta la resuelve el servidor con el campo elegido,
+    // no el texto que mandó el navegador.
+    const camposDestino = await camposDe(campo.config?.lista_id);
+    const mostrar = camposDestino.find((c) => c.id === campo.config?.campo_mostrar)
+      || camposDestino.find((c) => /nombre|t[ií]tulo|material|herramienta|insumo|prospecto|cliente/i.test(c.nombre))
+      || camposDestino[0];
+    const etiqueta = mostrar ? String(objetivo.datos?.[mostrar.id] ?? '').slice(0, 200) : objetivo.id;
+    datos[campo.id] = { id: objetivo.id, etiqueta: etiqueta || objetivo.id };
   }
   return null;
 }
@@ -208,6 +216,7 @@ function normalizarConfigCampo(tipo, config) {
     if (entrada.max !== undefined && entrada.max !== null && entrada.max !== '') salida.max = Number(entrada.max);
   }
   if (tipo === 'relacion' && entrada.lista_id) salida.lista_id = limStr(entrada.lista_id, 80);
+  if (tipo === 'relacion' && entrada.campo_mostrar) salida.campo_mostrar = limStr(entrada.campo_mostrar, 80);
   if (tipo === 'calculado' && entrada.formula) salida.formula = String(entrada.formula).slice(0, 1000);
   if (entrada.defecto !== undefined && entrada.defecto !== null && entrada.defecto !== '') {
     salida.defecto = entrada.defecto;
@@ -475,6 +484,10 @@ listasRouter.post('/listas/:id/campos', authRequired, async (req, res) => {
     const objetivo = await one('SELECT id, area_id FROM listas WHERE id = $1 AND archivada = false', [config.lista_id]);
     if (!objetivo) return res.status(400).json({ error: 'La lista relacionada no existe.' });
     if (objetivo.area_id !== lista.area_id) return res.status(400).json({ error: 'La lista relacionada tiene que ser del mismo área.' });
+    if (config.campo_mostrar) {
+      const campoMostrar = await one('SELECT id FROM lista_campos WHERE id = $1 AND lista_id = $2 AND activo = true', [config.campo_mostrar, config.lista_id]);
+      if (!campoMostrar) return res.status(400).json({ error: 'El campo a mostrar no pertenece a la lista relacionada.' });
+    }
   }
   if (tipo === 'calculado') {
     if (!config.formula) return res.status(400).json({ error: 'Escribí la fórmula del campo calculado.' });
@@ -536,6 +549,11 @@ listasRouter.patch('/lista-campos/:id', authRequired, async (req, res) => {
     const objetivo = await one('SELECT id, area_id FROM listas WHERE id = $1 AND archivada = false', [objetivoId]);
     if (!objetivo) return res.status(400).json({ error: 'La lista relacionada no existe.' });
     if (objetivo.area_id !== lista.area_id) return res.status(400).json({ error: 'La lista relacionada tiene que ser del mismo área.' });
+    const mostrarId = req.body?.config?.campo_mostrar ?? campo.config?.campo_mostrar;
+    if (mostrarId) {
+      const campoMostrar = await one('SELECT id FROM lista_campos WHERE id = $1 AND lista_id = $2 AND activo = true', [mostrarId, objetivoId]);
+      if (!campoMostrar) return res.status(400).json({ error: 'El campo a mostrar no pertenece a la lista relacionada.' });
+    }
   }
   if ((req.body?.tipo || campo.tipo) === 'calculado') {
     const formula = req.body?.config?.formula ?? campo.config?.formula;

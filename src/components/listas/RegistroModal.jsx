@@ -23,7 +23,8 @@ function RelacionInput({ campo, value, onChange }) {
       .then(([detalle, listado]) => {
         if (!vivo) return;
         const campos = detalle.campos || [];
-        const etiqueta = campos.find((c) => /nombre|t[ií]tulo|material|herramienta|insumo|prospecto|cliente/i.test(c.nombre))
+        const etiqueta = campos.find((c) => c.id === campo.config?.campo_mostrar)
+          || campos.find((c) => /nombre|t[ií]tulo|material|herramienta|insumo|prospecto|cliente/i.test(c.nombre))
           || campos.find((c) => c.tipo === 'texto')
           || campos[0];
         setOpciones((listado.registros || []).map((r) => ({

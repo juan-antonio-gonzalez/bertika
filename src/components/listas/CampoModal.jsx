@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Icon, Modal, FormGrid } from '../ui';
+import { api } from '../../store/api';
 import { TIPOS_CAMPO, normalizarOpciones, validarFormula } from '../../data/listas';
 
 export default function CampoModal({ campo, listas = [], listaActual, camposActuales = [], busy, onGuardar, onClose }) {
@@ -13,11 +14,21 @@ export default function CampoModal({ campo, listas = [], listaActual, camposActu
   const [ayuda, setAyuda] = useState(campo?.config?.ayuda || '');
   const [relacionId, setRelacionId] = useState(campo?.config?.lista_id || '');
   const [formula, setFormula] = useState(campo?.config?.formula || '');
+  const [camposDestino, setCamposDestino] = useState([]);
+  const [mostrar, setMostrar] = useState(campo?.config?.campo_mostrar || '');
   const [error, setError] = useState('');
   const esSeleccion = tipo === 'seleccion' || tipo === 'multiseleccion';
   const esNumero = tipo === 'numero' || tipo === 'moneda';
   const esRelacion = tipo === 'relacion';
   const esCalculado = tipo === 'calculado';
+  useEffect(() => {
+    if (!esRelacion || !relacionId) { setCamposDestino([]); return undefined; }
+    let vivo = true;
+    api(`/listas/${relacionId}`)
+      .then((det) => { if (vivo) setCamposDestino(det.campos || []); })
+      .catch(() => { if (vivo) setCamposDestino([]); });
+    return () => { vivo = false; };
+  }, [esRelacion, relacionId]);
   const camposCalculables = (camposActuales || []).filter((c) => ['numero', 'moneda', 'calculado'].includes(c.tipo) && c.id !== campo?.id);
   const otrasListas = (listas || []).filter((l) => l.id !== listaActual?.id);
 
@@ -44,6 +55,7 @@ export default function CampoModal({ campo, listas = [], listaActual, camposActu
     const config = {};
     if (esSeleccion) config.opciones = ops;
     if (esRelacion) config.lista_id = relacionId;
+    if (esRelacion && mostrar) config.campo_mostrar = mostrar;
     if (esCalculado) config.formula = formula;
     if (esNumero) {
       if (min !== '') config.min = Number(min);
@@ -128,12 +140,21 @@ export default function CampoModal({ campo, listas = [], listaActual, camposActu
                   <span>Necesitás otra lista en esta área para crear una relación.</span>
                 </div>
               ) : (
-                <select className="input" value={relacionId} onChange={(e) => setRelacionId(e.target.value)}>
+                <select className="input" value={relacionId} onChange={(e) => { setRelacionId(e.target.value); setMostrar(''); }}>
                   <option value="">Elegir lista...</option>
                   {otrasListas.map((l) => <option key={l.id} value={l.id}>{l.nombre}</option>)}
                 </select>
               )}
-              <small className="ayuda">El registro guarda el vínculo con la otra lista; la API valida que exista.</small>
+              {relacionId && (
+                <div className="field" style={{ marginTop: 8 }}>
+                  <label>Mostrar campo de la lista relacionada</label>
+                  <select className="input" value={mostrar} onChange={(e) => setMostrar(e.target.value)}>
+                    <option value="">Automático</option>
+                    {camposDestino.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                  </select>
+                </div>
+              )}
+              <small className="ayuda">El registro guarda el vínculo; la etiqueta la resuelve la API con el campo que elijas.</small>
             </div>
           )}
 
