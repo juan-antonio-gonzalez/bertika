@@ -892,7 +892,7 @@ async function main() {
     const adjunto = await subida.json();
     const conAdjunto = await pedir(`/listas/${listaE2E}/registros`, {
       method: 'POST', token: tokenAdmin,
-      body: { datos: { [campoAdjunto.json.id]: adjunto } },
+      body: { datos: { [campoE2E]: 'Visible para todos', [campoAdjunto.json.id]: adjunto } },
     });
     assert.equal(conAdjunto.status, 201, conAdjunto.texto);
     const adjuntoId = adjunto.url.split('/').pop();
