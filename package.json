@@ -2,6 +2,7 @@
   "name": "bertika-app",
   "private": true,
   "version": "0.0.0",
+  "engines": { "node": ">=22.12.0" },
   "type": "module",
   "scripts": {
     "dev": "vite",

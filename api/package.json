@@ -1,6 +1,7 @@
 {
   "name": "bertika-api",
   "version": "1.0.0",
+  "engines": { "node": ">=22.12.0" },
   "description": "API REST de Bertika (produccion, PostgreSQL)",
   "type": "module",
   "main": "server.js",

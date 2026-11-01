@@ -745,6 +745,10 @@ async function asegurarCodigos() {
     await query('CREATE INDEX IF NOT EXISTS idx_cotizaciones_estado ON cotizaciones (estado, enviada_en)');
     await query('CREATE INDEX IF NOT EXISTS idx_ordenes_oportunidad ON ordenes (oportunidad_id)');
     await query('CREATE INDEX IF NOT EXISTS idx_lista_registros_datos_gin ON lista_registros USING gin (datos jsonb_path_ops)');
+    try {
+      await query('CREATE EXTENSION IF NOT EXISTS pg_trgm');
+      await query('CREATE INDEX IF NOT EXISTS idx_lista_registros_datos_trgm ON lista_registros USING gin ((datos::text) gin_trgm_ops)');
+    } catch (e) { console.warn('[migracion] pg_trgm para listas no disponible:', e.message); }
     await query(`DO $$ BEGIN
       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'oportunidades_cliente_fk') THEN
         ALTER TABLE oportunidades ADD CONSTRAINT oportunidades_cliente_fk FOREIGN KEY (cliente_id) REFERENCES clientes(id) ON DELETE SET NULL NOT VALID;
