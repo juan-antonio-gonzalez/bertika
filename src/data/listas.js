@@ -240,7 +240,7 @@ export function validarRegistro(campos, datos, { parcial = false } = {}) {
     if (tipo === 'adjunto' || tipo === 'imagen') {
       if (!esObjeto(valor) || !valor.url) return { ok: false, error: `“${campo.nombre}”: subí un archivo válido.` };
       const url = String(valor.url).slice(0, 1000);
-      if (!/^(https?:\/\/|\/uploads\/)/.test(url)) return { ok: false, error: `“${campo.nombre}”: el archivo no es válido.` };
+      if (!/^(https?:\/\/|\/uploads\/|\/api\/lista-adjuntos\/)/.test(url)) return { ok: false, error: `“${campo.nombre}”: el archivo no es válido.` };
       if (tipo === 'imagen' && !String(valor.mime || '').startsWith('image/')) {
         return { ok: false, error: `“${campo.nombre}”: subí una imagen válida.` };
       }

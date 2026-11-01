@@ -74,6 +74,15 @@ prueba('ignora claves que no son campos de la lista', () => {
   assert.equal(r.datos.hacker, undefined);
 });
 
+prueba('acepta adjuntos privados de lista y rechaza URLs externas', () => {
+  const campos = [{ id: 'c_adj', nombre: 'Adjunto', tipo: 'adjunto' }];
+  const ok = validarRegistro(campos, { c_adj: { url: '/api/lista-adjuntos/adj_123', nombre: 'foto.png', mime: 'image/png', size: 10 } });
+  assert.equal(ok.ok, true);
+  assert.equal(ok.datos.c_adj.url, '/api/lista-adjuntos/adj_123');
+  const malo = validarRegistro(campos, { c_adj: { url: 'javascript:alert(1)', nombre: 'x', mime: 'image/png' } });
+  assert.equal(malo.ok, false);
+});
+
 prueba('valorVisible formatea moneda, fecha y checkbox', () => {
   assert.match(valorVisible({ tipo: 'moneda' }, 1500), /1.500/);
   assert.equal(valorVisible({ tipo: 'checkbox' }, true), 'Sí');

@@ -20,7 +20,7 @@ import { crearEstadoRouter } from './estado-routes.js';
 import { nextId } from './ids.js';
 import { signToken, authRequired, requireRol, permisoRequerido, SECRET } from './middleware/auth.js';
 import { PERMISOS, COLUMNAS, agruparPermisos, permisosPorDefecto, normalizarPermisos, permisosEfectivos, puedeVer, tienePermiso } from './permisos.js';
-import { listasRouter, areasVisibles, listaAccesible, capacidadesLista } from './listas-routes.js';
+import { listasRouter, areasVisibles, listaAccesible, capacidadesLista, puedeVerRegistro } from './listas-routes.js';
 import { ventasRouter } from './ventas-routes.js';
 import { normalizarAreas } from './listas.js';
 import { canTransition, ORDEN_ESTADOS, ESTADO_LABEL, MIN_CAPACIDAD_PCT, esEstadoCerrado , puedeTrabajarEnOrden } from './reglas.js';
@@ -4808,6 +4808,13 @@ app.post('/api/listas/:id/adjuntos', authRequired, uploadAdjunto.single('archivo
     return res.status(403).json({ error: 'No tenés permiso para adjuntar archivos en esta lista.' });
   }
   if (!req.file?.buffer?.length) return res.status(400).json({ error: 'No se recibió ningún archivo.' });
+  const campoId = limStr(req.query?.campo_id, 80) || null;
+  if (campoId) {
+    const campo = await one('SELECT id, tipo FROM lista_campos WHERE id = $1 AND lista_id = $2 AND activo = true', [campoId, lista.id]);
+    if (!campo || !['adjunto', 'imagen'].includes(campo.tipo)) {
+      return res.status(400).json({ error: 'El campo indicado no es un campo de adjunto de esta lista.' });
+    }
+  }
   const ext = detectImg(req.file.buffer) || (req.file.buffer.subarray(0, 4).toString('latin1') === '%PDF' ? '.pdf' : null);
   if (!ext) return res.status(400).json({ error: 'El archivo no es una imagen o PDF válido.' });
   const id = `adj_${randomUUID()}`;
@@ -4815,9 +4822,9 @@ app.post('/api/listas/:id/adjuntos', authRequired, uploadAdjunto.single('archivo
   const nombreOriginal = limStr(req.file.originalname, 160) || `archivo${ext}`;
   await guardarPrivado(archivo, req.file.buffer);
   await query(
-    `INSERT INTO lista_adjuntos (id, lista_id, archivo, nombre, mime, size, subido_por)
-     VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-    [id, lista.id, archivo, nombreOriginal, req.file.mimetype, req.file.size, req.user.email]
+    `INSERT INTO lista_adjuntos (id, lista_id, campo_id, archivo, nombre, mime, size, subido_por)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+    [id, lista.id, campoId, archivo, nombreOriginal, req.file.mimetype, req.file.size, req.user.email]
   );
   await auditar({ req, tabla: 'lista_adjuntos', registroId: id, accion: 'adjuntar', detalle: lista.id });
   return res.status(201).json({
@@ -4835,6 +4842,17 @@ app.get('/api/lista-adjuntos/:id', authRequired, async (req, res) => {
   if (!lista || !listaAccesible(req.user, lista)) return res.status(404).json({ error: 'Adjunto no encontrado' });
   const caps = esAdmin(req) ? { ver_registros: true } : capacidadesLista(req, lista);
   if (!caps.ver_registros) return res.status(403).json({ error: 'No tenés acceso a este adjunto.' });
+  // Si el adjunto está asociado a un campo, aplica la visibilidad de campos.
+  if (adjunto.campo_id && !esAdmin(req)) {
+    const campo = await one('SELECT oculto_categorias, activo FROM lista_campos WHERE id = $1 AND lista_id = $2', [adjunto.campo_id, lista.id]);
+    const oculto = Boolean(req.user.categoria_id) && Array.isArray(campo?.oculto_categorias) && campo.oculto_categorias.includes(req.user.categoria_id);
+    if (!campo || campo.activo !== true || oculto) return res.status(404).json({ error: 'Adjunto no encontrado' });
+  }
+  // Si ya está vinculado a una fila, aplica la visibilidad de filas.
+  if (adjunto.registro_id) {
+    const registro = await one('SELECT * FROM lista_registros WHERE id = $1 AND lista_id = $2', [adjunto.registro_id, lista.id]);
+    if (!registro || !puedeVerRegistro(req, lista, registro)) return res.status(404).json({ error: 'Adjunto no encontrado' });
+  }
   res.setHeader('Content-Type', adjunto.mime || 'application/octet-stream');
   res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(adjunto.nombre || 'adjunto')}`);
   return res.send(await leerPrivado(adjunto.archivo));

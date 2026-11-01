@@ -262,7 +262,7 @@ async function areasVisibles(user) {
 }
 
 // Se exporta para que /api/estado arme el menú dinámico en el mismo request.
-export { areasVisibles, listaAccesible, capacidadesLista };
+export { areasVisibles, listaAccesible, capacidadesLista, puedeVerRegistro };
 
 function listaAccesible(user, lista) {
   if (!user) return true;
@@ -1555,6 +1555,41 @@ listasRouter.delete('/lista-vistas/:id', authRequired, async (req, res) => {
   return res.json({ ok: true });
 });
 
+// Ata los adjuntos del registro a su fila para que la descarga aplique también
+// la visibilidad de filas (creador/responsable/admin). El archivo se sube antes
+// de guardar el registro, por eso el vínculo se hace acá.
+function idsDeAdjuntos(datos) {
+  const ids = new Set();
+  const visitar = (valor, campoId = null) => {
+    if (!valor) return;
+    if (Array.isArray(valor)) { valor.forEach((v) => visitar(v, campoId)); return; }
+    if (typeof valor !== 'object') return;
+    if (typeof valor.url === 'string') {
+      const m = valor.url.match(/\/api\/lista-adjuntos\/([A-Za-z0-9_-]+)/);
+      if (m) ids.add(`${m[1]}|${campoId || ''}`);
+      return;
+    }
+    for (const [clave, hijo] of Object.entries(valor)) visitar(hijo, clave);
+  };
+  visitar(datos);
+  return [...ids];
+}
+
+async function vincularAdjuntos(listaId, registroId, datos) {
+  const ids = idsDeAdjuntos(datos);
+  if (!ids.length) return;
+  for (const item of ids) {
+    const [adjuntoId, campoId] = item.split('|');
+    await query(
+      `UPDATE lista_adjuntos
+          SET registro_id = $1,
+              campo_id = COALESCE(campo_id, NULLIF($2, ''))
+        WHERE id = $3 AND lista_id = $4`,
+      [registroId, campoId, adjuntoId, listaId]
+    );
+  }
+}
+
 // ---------- Registros ----------
 listasRouter.get('/listas/:id/registros', authRequired, async (req, res) => {
   const lista = await listaConArea(req.params.id, req.user);
@@ -1614,6 +1649,7 @@ listasRouter.post('/listas/:id/registros', authRequired, async (req, res) => {
     }
     await guardarHistorial(client, lista.id, id, datosFinal, req.user.email, 'crear');
   });
+  await vincularAdjuntos(lista.id, id, datosFinal);
   if (aprobacionAuto) avisarAprobadores(lista, aprobacionAuto, req.user.email);
   await auditar({ req, tabla: 'lista_registros', registroId: id, accion: 'crear', despues: { listaId: lista.id, datos: datosFinal, aprobacion_estado: estadoAprobacion } });
   evaluarReglas(lista, campos, datosFinal, 'crear', id, req);
@@ -1657,6 +1693,7 @@ listasRouter.patch('/lista-registros/:id', authRequired, async (req, res) => {
     }
     await guardarHistorial(client, lista.id, registro.id, datosFinal, req.user.email, 'editar');
   });
+  await vincularAdjuntos(lista.id, registro.id, datosFinal);
   if (aprobacionAuto) avisarAprobadores(lista, aprobacionAuto, req.user.email);
   await auditar({ req, tabla: 'lista_registros', registroId: registro.id, accion: 'editar', antes: registro.datos, despues: { datos: datosFinal, aprobacion_estado: nuevoEstado } });
   evaluarReglas(lista, campos, datosFinal, 'editar', registro.id, req);
@@ -2014,6 +2051,7 @@ listasRouter.patch('/lista-registros/:id/historial/:histId/restaurar', authRequi
     await client.query('UPDATE lista_registros SET datos = $2::jsonb, actualizado_por = $3, actualizado_en = now() WHERE id = $1', [registro.id, version.datos, req.user.email]);
     await guardarHistorial(client, lista.id, registro.id, version.datos, req.user.email, 'restaurar');
   });
+  await vincularAdjuntos(lista.id, registro.id, version.datos);
   await auditar({ req, tabla: 'lista_registros', registroId: registro.id, accion: 'restaurar_version', detalle: version.id });
   return res.json({ ok: true });
 });

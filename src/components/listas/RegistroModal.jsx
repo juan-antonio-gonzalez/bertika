@@ -62,7 +62,7 @@ function RelacionInput({ campo, value, onChange }) {
   );
 }
 
-function AdjuntoInput({ listaId, value, onChange, soloImagen = false }) {
+function AdjuntoInput({ listaId, campoId, value, onChange, soloImagen = false }) {
   const [subiendo, setSubiendo] = useState(false);
   const [error, setError] = useState('');
 
@@ -73,7 +73,8 @@ function AdjuntoInput({ listaId, value, onChange, soloImagen = false }) {
     try {
       const form = new FormData();
       form.append('archivo', file);
-      const subido = await api(`/listas/${listaId}/adjuntos`, { method: 'POST', form });
+      const query = campoId ? `?campo_id=${encodeURIComponent(campoId)}` : '';
+      const subido = await api(`/listas/${listaId}/adjuntos${query}`, { method: 'POST', form });
       onChange(subido);
     } catch (e) {
       setError(e.message || 'No se pudo subir el archivo.');
@@ -217,7 +218,7 @@ export function CampoInput({ campo, value, onChange, listaId }) {
       </label>
     );
   } else if (tipo === 'adjunto' || tipo === 'imagen') {
-    control = <AdjuntoInput listaId={listaId} value={value} onChange={onChange} soloImagen={tipo === 'imagen'} />;
+    control = <AdjuntoInput listaId={listaId} campoId={campo?.id} value={value} onChange={onChange} soloImagen={tipo === 'imagen'} />;
   } else if (tipo === 'relacion') {
     control = <RelacionInput campo={campo} value={value} onChange={onChange} />;
   } else if (tipo === 'calculado') {

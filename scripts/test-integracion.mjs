@@ -874,6 +874,32 @@ async function main() {
     const buscar = await pedir(`/listas/buscar?q=${encodeURIComponent(secreto)}`, { token });
     assert.equal(buscar.status, 200);
     assert.equal(JSON.stringify(buscar.json.resultados).includes(secreto), false, 'la búsqueda no filtra el valor oculto');
+
+    // Un adjunto de un campo oculto tampoco se puede descargar por ID.
+    const campoAdjunto = await pedir(`/listas/${listaE2E}/campos`, {
+      method: 'POST', token: tokenAdmin,
+      body: { nombre: `Adjunto oculto ${sufijo}`, tipo: 'adjunto', oculto_categorias: [categoria.json.id] },
+    });
+    assert.equal(campoAdjunto.status, 201, campoAdjunto.texto);
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
+    const fd = new FormData();
+    fd.append('archivo', new Blob([png], { type: 'image/png' }), 'oculto.png');
+    const subida = await fetch(`${API}/listas/${listaE2E}/adjuntos?campo_id=${campoAdjunto.json.id}`, {
+      method: 'POST', headers: { Authorization: `Bearer ${tokenAdmin}` }, body: fd,
+    });
+    if (!subida.ok) assert.fail(await subida.text());
+    assert.equal(subida.status, 201);
+    const adjunto = await subida.json();
+    const conAdjunto = await pedir(`/listas/${listaE2E}/registros`, {
+      method: 'POST', token: tokenAdmin,
+      body: { datos: { [campoAdjunto.json.id]: adjunto } },
+    });
+    assert.equal(conAdjunto.status, 201, conAdjunto.texto);
+    const adjuntoId = adjunto.url.split('/').pop();
+    const denegado = await pedir(`/lista-adjuntos/${adjuntoId}`, { token });
+    assert.equal(denegado.status, 404, 'el campo oculto no expone el archivo');
+    const permitido = await pedir(`/lista-adjuntos/${adjuntoId}`, { token: tokenAdmin });
+    assert.equal(permitido.status, 200, 'el admin sí puede verlo');
   });
 
   await test('/estado respeta secciones deshabilitadas para un usuario', async () => {

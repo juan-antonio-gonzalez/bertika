@@ -464,6 +464,8 @@ CREATE INDEX IF NOT EXISTS idx_lista_notificaciones_usuario ON lista_notificacio
 CREATE TABLE IF NOT EXISTS lista_adjuntos (
   id TEXT PRIMARY KEY,
   lista_id TEXT NOT NULL,
+  campo_id TEXT,
+  registro_id TEXT,
   archivo TEXT NOT NULL,
   nombre TEXT,
   mime TEXT,
