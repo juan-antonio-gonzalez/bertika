@@ -731,7 +731,7 @@ async function asegurarCodigos() {
   )`);
   await query('CREATE INDEX IF NOT EXISTS idx_oportunidad_eventos ON oportunidad_eventos (oportunidad_id, creado_en DESC)');
   await query('ALTER TABLE wa_conversaciones ADD COLUMN IF NOT EXISTS oportunidad_id TEXT');
-  await query('ALTER TABLE whatsapp_tareas ADD COLUMN IF NOT EXISTS oportunidad_id TEXT');
+  await query('ALTER TABLE wa_tareas ADD COLUMN IF NOT EXISTS oportunidad_id TEXT');
   await query('ALTER TABLE ordenes ADD COLUMN IF NOT EXISTS oportunidad_id TEXT');
   await query('ALTER TABLE ordenes ADD COLUMN IF NOT EXISTS cotizacion_id TEXT');
   await query(`CREATE TABLE IF NOT EXISTS menu_favoritos (
