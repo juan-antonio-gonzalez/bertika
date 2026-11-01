@@ -78,6 +78,22 @@ export function storageInfo() {
   return { driver: usaS3 ? 's3' : 'local', publicBase: usaS3 ? S3.publicBase : `${PUBLIC_BASE}/uploads` };
 }
 
+export function validarStorage() {
+  if (!usaS3) {
+    mkdirSync(PUBLIC_DIR, { recursive: true });
+    mkdirSync(PRIVATE_DIR, { recursive: true });
+    return storageInfo();
+  }
+  const faltan = [
+    !S3.endpoint && 'S3_ENDPOINT',
+    !S3.bucket && 'S3_BUCKET',
+    !S3.accessKey && 'S3_ACCESS_KEY_ID',
+    !S3.secretKey && 'S3_SECRET_ACCESS_KEY',
+  ].filter(Boolean);
+  if (faltan.length) throw new Error(`STORAGE_DRIVER=s3 requiere: ${faltan.join(', ')}`);
+  return storageInfo();
+}
+
 export async function guardarPublico(clave, buffer) {
   if (usaS3) {
     await s3Request('PUT', clave, buffer, 'application/octet-stream');
@@ -97,7 +113,14 @@ export async function guardarPrivado(clave, buffer) {
 }
 
 export async function leerPrivado(clave) {
-  if (usaS3) return Buffer.from(await (await s3Request('GET', clave)).arrayBuffer());
+  if (usaS3) {
+    try { return Buffer.from(await (await s3Request('GET', clave)).arrayBuffer()); }
+    catch (e) {
+      // Compatibilidad durante la migración: si el archivo todavía está en el
+      // disco local, se sigue sirviendo aunque el driver ya sea S3.
+      try { return readFileSync(path.join(PRIVATE_DIR, clave)); } catch { throw e; }
+    }
+  }
   return readFileSync(path.join(PRIVATE_DIR, clave));
 }
 
@@ -108,7 +131,12 @@ export async function leerMedia(clave) {
     if (ruta.startsWith(`${base}${path.sep}`)) return readFileSync(ruta);
     throw new Error('Archivo fuera del directorio de uploads');
   }
-  if (usaS3) return Buffer.from(await (await s3Request('GET', clave)).arrayBuffer());
+  if (usaS3) {
+    try { return Buffer.from(await (await s3Request('GET', clave)).arrayBuffer()); }
+    catch (e) {
+      try { return readFileSync(path.join(PUBLIC_DIR, String(clave || ''))); } catch { throw e; }
+    }
+  }
   const ruta = path.join(PUBLIC_DIR, String(clave || ''));
   if (!ruta.startsWith(`${path.resolve(PUBLIC_DIR)}${path.sep}`)) throw new Error('Archivo inválido');
   return readFileSync(ruta);

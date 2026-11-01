@@ -234,3 +234,5 @@ Datos semilla precargados (5 tecnicos, 5 clientes, 9 baterias, 10+ insumos, 8 or
 - Adjuntos multipart procesados con `busboy` (`api/upload.js`).
 
 - Almacenamiento local o S3/R2 (`STORAGE_DRIVER`).
+
+- Probar S3/R2 real: `npm run storage:s3:test`; migrar: `npm run storage:s3:migrar -- --aplicar`.

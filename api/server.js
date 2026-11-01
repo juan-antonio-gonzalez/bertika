@@ -7,7 +7,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import { memoryUpload } from './upload.js';
-import { guardarPublico, guardarPrivado, leerPrivado } from './storage.js';
+import { guardarPublico, guardarPrivado, leerPrivado, validarStorage } from './storage.js';
 import nodemailer from 'nodemailer';
 import bcrypt from 'bcryptjs';
 import rateLimit from 'express-rate-limit';
@@ -4900,6 +4900,7 @@ process.on('uncaughtException', (e) => { console.error('[server] excepción no m
 migrarLegacy()
   .then(async () => {
     await migrarHardening();
+    validarStorage();
     // La migración histórica crea el índice único de wa_message_id. El flag
     // vive en este módulo, así que se restaura después de migrar.
     try {

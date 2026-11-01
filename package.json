@@ -13,6 +13,8 @@
     "lint": "oxlint src api scripts",
     "test:integracion": "bash scripts/test-integracion.sh",
     "test:ui": "node scripts/test-ui-e2e.mjs",
+    "storage:s3:test": "node scripts/test-storage-s3-real.mjs",
+    "storage:s3:migrar": "node scripts/migrar-storage-s3.mjs",
     "legal:archivar": "node scripts/archivar-legal.mjs",
     "legal:verificar": "node scripts/test-legal.mjs",
     "privacidad:retencion": "node scripts/retencion-privacidad.mjs",

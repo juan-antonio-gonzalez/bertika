@@ -361,3 +361,16 @@ Los multipart se procesan con `busboy` (`api/upload.js`), no con `multer`, para 
 S3/R2 con firma SigV4 (`S3_ENDPOINT`, `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`,
 `S3_SECRET_ACCESS_KEY`). `S3_PUBLIC_BASE` es el dominio público/CDN. Los adjuntos
 privados se siguen sirviendo por `/api/lista-adjuntos/:id` con proxy autenticado.
+
+### Probar y migrar S3/R2
+
+Con `STORAGE_DRIVER=s3` y las variables `S3_*` cargadas:
+
+```bash
+npm run storage:s3:test     # sube, lee y borra un objeto de prueba
+npm run storage:s3:migrar   # dry-run de archivos locales
+npm run storage:s3:migrar -- --aplicar  # copia al bucket (no borra local)
+```
+
+La migración no reescribe URLs públicas antiguas: los archivos viejos siguen en
+`/uploads`. Los adjuntos privados tienen fallback local mientras se migran.
