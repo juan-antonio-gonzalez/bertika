@@ -771,6 +771,17 @@ async function asegurarCodigos() {
     END $$`);
     await query("INSERT INTO schema_migrations (id) VALUES ('001_ventas_hardening') ON CONFLICT DO NOTHING");
   }
+  // Segunda migración: el índice trigram puede fallar si el rol todavía no
+  // puede instalar la extensión. Se reintenta sin marcar la migración hasta
+  // que la extensión y el índice existan.
+  const trgm = await one("SELECT id FROM schema_migrations WHERE id = '002_listas_trgm'");
+  if (!trgm) {
+    try {
+      await query('CREATE EXTENSION IF NOT EXISTS pg_trgm');
+      await query('CREATE INDEX IF NOT EXISTS idx_lista_registros_datos_trgm ON lista_registros USING gin ((datos::text) gin_trgm_ops)');
+      await query("INSERT INTO schema_migrations (id) VALUES ('002_listas_trgm') ON CONFLICT DO NOTHING");
+    } catch (e) { console.warn('[migracion] pg_trgm para listas no disponible:', e.message); }
+  }
   await query(`CREATE TABLE IF NOT EXISTS menu_favoritos (
     usuario_email TEXT NOT NULL,
     path TEXT NOT NULL,
