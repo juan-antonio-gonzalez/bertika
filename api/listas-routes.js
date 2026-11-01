@@ -541,6 +541,19 @@ listasRouter.post('/public/formulario/:token', publicFormLimiter, async (req, re
   return res.status(201).json({ ok: true, aprobacion_estado: estadoAprobacion });
 });
 
+// Equipo interno para los campos de tipo Persona (sin datos sensibles).
+listasRouter.get('/equipo', authRequired, async (req, res) => {
+  if (!req.user || req.user.rol === 'cliente') return sinPermiso(res);
+  const filas = await query(`
+    SELECT u.id, u.email, u.rol, COALESCE(t.nombre, split_part(u.email, '@', 1)) AS nombre
+      FROM usuarios u
+      LEFT JOIN tecnicos t ON t.id = u.tecnico_id
+     WHERE u.activo = true AND u.rol IN ('admin', 'tecnico')
+     ORDER BY lower(COALESCE(t.nombre, u.email))
+  `);
+  return res.json(filas);
+});
+
 // Historial de actividad de los registros de una lista.
 listasRouter.get('/listas/:id/auditoria', authRequired, async (req, res) => {
   const lista = await listaConArea(req.params.id);

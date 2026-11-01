@@ -317,7 +317,20 @@ function AreaDetalle({ area }) {
   const navigate = useNavigate();
   const [nueva, setNueva] = useState(false);
   const [aprobaciones, setAprobaciones] = useState(false);
+  const [pendientesAprobacion, setPendientesAprobacion] = useState(0);
   const [busy, setBusy] = useState(false);
+
+  const cargarPendientes = async () => {
+    if (!area.puede?.editar_listas) return;
+    try {
+      const r = await api(`/listas/aprobaciones/pendientes?area_id=${encodeURIComponent(area.id)}`);
+      setPendientesAprobacion(Number(r.total || 0));
+    } catch {
+      setPendientesAprobacion(0);
+    }
+  };
+
+  useEffect(() => { cargarPendientes(); }, [area.id, area.puede?.editar_listas]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const crear = async (payload) => {
     setBusy(true);
@@ -344,7 +357,7 @@ function AreaDetalle({ area }) {
           <>
             {area.puede?.editar_listas && (
               <button type="button" className="btn sm" onClick={() => setAprobaciones(true)}>
-                <Icon name="check" size={14} /> Aprobaciones
+                <Icon name="check" size={14} /> Aprobaciones{pendientesAprobacion > 0 ? ` (${pendientesAprobacion})` : ''}
               </button>
             )}
             {area.puede?.crear_listas && (
@@ -382,7 +395,7 @@ function AreaDetalle({ area }) {
         <NuevaListaModal area={area} busy={busy} onGuardar={crear} onClose={() => setNueva(false)} />
       )}
       {aprobaciones && (
-        <AprobacionesPendientesModal area={area} onClose={() => setAprobaciones(false)} />
+        <AprobacionesPendientesModal area={area} onClose={() => { setAprobaciones(false); cargarPendientes(); }} />
       )}
     </div>
   );

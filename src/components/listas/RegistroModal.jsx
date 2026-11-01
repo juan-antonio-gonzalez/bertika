@@ -108,6 +108,36 @@ function AdjuntoInput({ listaId, value, onChange }) {
   );
 }
 
+function PersonaInput({ value, onChange }) {
+  const [equipo, setEquipo] = useState([]);
+  useEffect(() => {
+    let vivo = true;
+    api('/equipo')
+      .then((r) => { if (vivo) setEquipo(Array.isArray(r) ? r : []); })
+      .catch(() => { if (vivo) setEquipo([]); });
+    return () => { vivo = false; };
+  }, []);
+  const actual = String(value ?? '');
+  const opciones = actual && !equipo.some((e) => e.email === actual)
+    ? [...equipo, { email: actual, nombre: actual, rol: '' }]
+    : equipo;
+  return (
+    <>
+      <input
+        className="input"
+        list="equipo-bertika"
+        value={actual}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="Nombre o email de la persona"
+      />
+      <datalist id="equipo-bertika">
+        {opciones.map((e) => <option key={e.email} value={e.email}>{e.nombre}{e.rol ? ` · ${e.rol}` : ''}</option>)}
+      </datalist>
+      <small className="ayuda">Sugerencias del equipo interno. También podés escribir un email.</small>
+    </>
+  );
+}
+
 function CampoInput({ campo, value, onChange, listaId }) {
   const opciones = Array.isArray(campo.config?.opciones) ? campo.config.opciones : [];
   const ayuda = campo.config?.ayuda;
@@ -166,6 +196,8 @@ function CampoInput({ campo, value, onChange, listaId }) {
     control = <RelacionInput campo={campo} value={value} onChange={onChange} />;
   } else if (tipo === 'calculado') {
     control = <input className="input" value={value ?? ''} disabled placeholder="Se calcula al guardar" />;
+  } else if (tipo === 'persona') {
+    control = <PersonaInput value={value} onChange={onChange} />;
   } else {
     const inputType = tipo === 'numero' || tipo === 'moneda' ? 'number'
       : tipo === 'fecha' ? 'date'
