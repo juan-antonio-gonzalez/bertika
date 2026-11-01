@@ -31,7 +31,7 @@ export default function CotizacionVenta() {
   if (!data) return <div className="wrap page center" style={{ minHeight: '60vh' }}><span className="spinner" /></div>;
 
   const q = data.cotizacion;
-  const cerrada = ['aceptada', 'rechazada'].includes(q.estado) || hecho;
+  const cerrada = ['aceptada', 'rechazada', 'vencida'].includes(q.estado) || hecho;
   return (
     <div className="wrap page" style={{ maxWidth: 820 }}>
       <div className="card">
@@ -74,7 +74,7 @@ export default function CotizacionVenta() {
           </div>
         ) : (
           <div className={`banner-${q.estado === 'aceptada' ? 'green' : 'red'}`} style={{ marginTop: 16 }}>
-            <Icon name={q.estado === 'aceptada' ? 'check' : 'x'} size={15} /> {q.estado === 'aceptada' ? 'Cotización aceptada. El equipo de Bertika se va a contactar.' : 'Cotización rechazada.'}
+            <Icon name={q.estado === 'aceptada' ? 'check' : 'x'} size={15} /> {q.estado === 'aceptada' ? 'Cotización aceptada. El equipo de Bertika se va a contactar.' : q.estado === 'vencida' ? 'La cotización venció. Pedí una nueva versión.' : 'Cotización rechazada.'}
           </div>
         )}
       </div>

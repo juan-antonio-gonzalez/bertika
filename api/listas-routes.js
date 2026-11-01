@@ -1544,7 +1544,10 @@ listasRouter.get('/listas/:id/registros', authRequired, async (req, res) => {
     params.push(`%${q.replace(/[\\%_]/g, (m) => `\\${m}`)}%`);
     sql += ` AND datos::text ILIKE $${params.length}`;
   }
-  sql += ' ORDER BY creado_en DESC LIMIT 500';
+  const limit = Math.min(500, Math.max(1, Number(req.query?.limit) || 500));
+  const offset = Math.max(0, Number(req.query?.offset) || 0);
+  params.push(limit, offset);
+  sql += ` ORDER BY creado_en DESC LIMIT $${params.length - 1} OFFSET $${params.length}`;
   const registros = await query(sql, params);
   const ocultos = idsCamposOcultos(req.user, await camposDe(lista.id));
   const regsVisibles = ocultos.size ? registros.map((r) => ({ ...r, datos: sinCamposOcultos(r.datos, ocultos) })) : registros;

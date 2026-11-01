@@ -46,6 +46,12 @@ jobs:
         run: npm ci --no-audit --no-fund
         working-directory: api
 
+      - name: Auditoría de dependencias
+        run: |
+          npm audit --omit=dev --audit-level=critical
+          cd api
+          npm audit --omit=dev --audit-level=critical
+
       - name: Lint
         run: npm run lint
 

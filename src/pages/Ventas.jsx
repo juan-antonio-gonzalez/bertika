@@ -120,11 +120,13 @@ function CotizacionModal({ oportunidad, onClose, onSaved }) {
   };
 
   const editable = !quote || quote.estado === 'borrador';
+  const nuevaVersion = () => { setQuote(null); setLink(''); setError(''); };
   return (
     <Modal size="lg" title={quote ? `Cotización v${quote.version}` : 'Nueva cotización'} sub={oportunidad.titulo} onClose={onClose} closeOnBackdrop={false}
       footer={(
         <>
           <button type="button" className="btn izq" onClick={onClose} disabled={busy}>Cerrar</button>
+          {quote && !editable && puede(user, 'ventas_cotizar') && <button type="button" className="btn" onClick={nuevaVersion} disabled={busy}><Icon name="plus" size={13} /> Nueva versión</button>}
           {editable && <button type="button" className="btn" onClick={() => guardar(false)} disabled={busy}><Icon name="check" size={13} /> Guardar borrador</button>}
           {editable && puede(user, 'ventas_cotizar') && <button type="button" className="btn primary" onClick={() => guardar(true)} disabled={busy}><Icon name="mail" size={13} /> {busy ? 'Guardando...' : 'Guardar y enviar'}</button>}
         </>

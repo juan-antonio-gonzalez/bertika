@@ -1,6 +1,7 @@
 // Ventas V2: oportunidad comercial independiente de WhatsApp y de la orden.
 // La conversación es un canal; la cotización es un documento con ítems.
 import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
 import { randomUUID } from 'node:crypto';
 import { authRequired, permisoRequerido } from './middleware/auth.js';
 import { query, one, tx } from './db.js';
@@ -18,6 +19,30 @@ const abiertas = ['nuevo', 'presupuestado', 'negociando'];
 const veTodas = (req) => req.user?.rol === 'admin' || req.user?.permisos?.ventas_todos === true;
 
 export const ventasRouter = Router();
+
+const ventasPublicLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 60,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'Demasiadas consultas de cotización. Esperá unos minutos.' },
+});
+
+// Devuelve null si viene vacío, undefined si es inválida, o la fecha YYYY-MM-DD.
+function fechaISO(valor) {
+  const texto = limStr(valor, 10);
+  if (!texto) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(texto)) return undefined;
+  const d = new Date(`${texto}T00:00:00Z`);
+  if (Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== texto) return undefined;
+  return texto;
+}
+
+function cotizacionVencida(q, ahora = Date.now()) {
+  if (!q || !['enviada', 'vista'].includes(q.estado) || !q.enviada_en) return false;
+  const dias = Math.max(1, Number(q.validez_dias) || 15);
+  return new Date(q.enviada_en).getTime() + dias * 86400000 < ahora;
+}
 
 async function evento(oportunidadId, tipo, detalle, usuario) {
   try {
@@ -97,7 +122,7 @@ async function crearOrdenDesdeOportunidad(oportunidad, req, cotizacion = null) {
         ordId, codigo, serie, clienteId, oportunidad.titulo || 'Ingreso por oportunidad ganada', new Date().toISOString(),
         new Date(Date.now() + 24 * 3600000).toISOString(),
         JSON.stringify([{ id: evId, tipo: 'ingreso', detalle: `Ingreso generado desde la oportunidad "${oportunidad.titulo}".`, fecha: new Date().toISOString(), usuario: req.user.email }]),
-        cotizacionJson, cotizacion ? 'pending' : null, oportunidad.id, cotizacion?.id || null,
+        cotizacionJson, cotizacion ? (cotizacion.estado === 'aceptada' ? 'approved' : 'pending') : null, oportunidad.id, cotizacion?.id || null,
       ]
     );
     await client.query('UPDATE oportunidades SET orden_id = $2, cotizacion_actual_id = COALESCE($3, cotizacion_actual_id), etapa = $4, etapa_desde = now(), actualizado_en = now(), actualizado_por = $5 WHERE id = $1', [oportunidad.id, ordId, cotizacion?.id || oportunidad.cotizacion_actual_id || null, 'ganado', req.user.email]);
@@ -119,6 +144,9 @@ ventasRouter.get('/oportunidades', authRequired, permisoRequerido('ventas'), asy
   }
   if (etapa) { params.push(etapa); cond.push(`o.etapa = $${params.length}`); }
   if (q) { params.push(`%${q.replace(/[\\%_]/g, (m) => `\\${m}`)}%`); cond.push(`(o.titulo ILIKE $${params.length} OR c.nombre ILIKE $${params.length} OR o.prospecto_nombre ILIKE $${params.length})`); }
+  const limit = Math.min(200, Math.max(1, Number(req.query?.limit) || 100));
+  const offset = Math.max(0, Number(req.query?.offset) || 0);
+  params.push(limit, offset);
   const filas = await query(
     `SELECT o.*, c.nombre AS cliente_nombre, c.telefono AS cliente_telefono,
             q.estado AS cotizacion_estado, q.total AS cotizacion_total, q.token AS cotizacion_token,
@@ -128,7 +156,7 @@ ventasRouter.get('/oportunidades', authRequired, permisoRequerido('ventas'), asy
        LEFT JOIN cotizaciones q ON q.id = o.cotizacion_actual_id
       WHERE ${cond.join(' AND ')}
       ORDER BY o.actualizado_en DESC
-      LIMIT 500`,
+      LIMIT $${params.length - 1} OFFSET $${params.length}`,
     params
   );
   return res.json(filas);
@@ -143,6 +171,10 @@ ventasRouter.post('/oportunidades', authRequired, permisoRequerido('ventas_edita
     if (!c) return res.status(400).json({ error: 'El cliente no existe.' });
   }
   const etapa = normalizarEtapa(req.body?.etapa);
+  const cierre = fechaISO(req.body?.cierre_estimado);
+  const proximaFecha = fechaISO(req.body?.fecha_proxima_accion);
+  if (cierre === undefined) return res.status(400).json({ error: 'La fecha de cierre no es válida.' });
+  if (proximaFecha === undefined) return res.status(400).json({ error: 'La fecha de próxima acción no es válida.' });
   if (etapa === 'perdido' && !limStr(req.body?.motivo_perdida, 200)) return res.status(400).json({ error: 'Para perder una oportunidad cargá el motivo.' });
   const id = idNuevo('op');
   const fila = await one(
@@ -151,10 +183,10 @@ ventasRouter.post('/oportunidades', authRequired, permisoRequerido('ventas_edita
     [
       id, titulo, clienteId, limStr(req.body?.prospecto_nombre, 160) || null, limStr(req.body?.prospecto_telefono, 40) || null,
       limStr(req.body?.prospecto_email, 200) || null, etapa, normalizarMonto(req.body?.monto_estimado), req.body?.probabilidad !== undefined ? num(req.body.probabilidad, 0, 100) : (etapa === 'nuevo' ? 10 : 50),
-      limStr(req.body?.cierre_estimado, 10) || null, limStr(req.body?.responsable, 200) || req.user.email,
+      cierre, limStr(req.body?.responsable, 200) || req.user.email,
       limStr(req.body?.origen, 80) || null, limStr(req.body?.canal, 80) || 'manual', limStr(req.body?.serie, 80) || null,
       limStr(req.body?.activo_id, 80) || null, limStr(req.body?.proxima_accion, 240) || null,
-      limStr(req.body?.fecha_proxima_accion, 10) || null, limStr(req.body?.motivo_perdida, 200) || null, limStr(req.body?.notas, 2000) || null, req.user.email,
+      proximaFecha, limStr(req.body?.motivo_perdida, 200) || null, limStr(req.body?.notas, 2000) || null, req.user.email,
     ]
   );
   await evento(id, 'creada', titulo, req.user.email);
@@ -176,6 +208,10 @@ ventasRouter.patch('/oportunidades/:id', authRequired, permisoRequerido('ventas_
   const o = await oportunidadVisible(req, req.params.id);
   if (!o) return res.status(404).json({ error: 'Oportunidad no encontrada' });
   const etapa = req.body?.etapa !== undefined ? normalizarEtapa(req.body.etapa) : o.etapa;
+  const cierre = req.body?.cierre_estimado !== undefined ? fechaISO(req.body.cierre_estimado) : o.cierre_estimado;
+  const proximaFecha = req.body?.fecha_proxima_accion !== undefined ? fechaISO(req.body.fecha_proxima_accion) : o.fecha_proxima_accion;
+  if (cierre === undefined) return res.status(400).json({ error: 'La fecha de cierre no es válida.' });
+  if (proximaFecha === undefined) return res.status(400).json({ error: 'La fecha de próxima acción no es válida.' });
   if (etapa === 'perdido' && !limStr(req.body?.motivo_perdida ?? o.motivo_perdida, 200)) return res.status(400).json({ error: 'Para perder una oportunidad cargá el motivo.' });
   const clienteId = req.body?.cliente_id !== undefined ? (limStr(req.body.cliente_id, 80) || null) : o.cliente_id;
   if (clienteId && clienteId !== o.cliente_id) {
@@ -195,10 +231,10 @@ ventasRouter.patch('/oportunidades/:id', authRequired, permisoRequerido('ventas_
       limStr(req.body?.prospecto_telefono ?? o.prospecto_telefono, 40) || null, limStr(req.body?.prospecto_email ?? o.prospecto_email, 200) || null,
       etapa, req.body?.monto_estimado !== undefined ? normalizarMonto(req.body.monto_estimado) : o.monto_estimado,
       req.body?.probabilidad !== undefined ? num(req.body.probabilidad, 0, 100) : o.probabilidad,
-      limStr(req.body?.cierre_estimado ?? o.cierre_estimado, 10) || null, limStr(req.body?.responsable ?? o.responsable, 200) || req.user.email,
+      cierre, limStr(req.body?.responsable ?? o.responsable, 200) || req.user.email,
       limStr(req.body?.origen ?? o.origen, 80) || null, limStr(req.body?.canal ?? o.canal, 80) || 'manual',
       limStr(req.body?.serie ?? o.serie, 80) || null, limStr(req.body?.activo_id ?? o.activo_id, 80) || null,
-      limStr(req.body?.proxima_accion ?? o.proxima_accion, 240) || null, limStr(req.body?.fecha_proxima_accion ?? o.fecha_proxima_accion, 10) || null,
+      limStr(req.body?.proxima_accion ?? o.proxima_accion, 240) || null, proximaFecha,
       limStr(req.body?.motivo_perdida ?? o.motivo_perdida, 200) || null, limStr(req.body?.notas ?? o.notas, 2000) || null, req.user.email,
     ]
   );
@@ -218,7 +254,7 @@ ventasRouter.post('/oportunidades/:id/perder', authRequired, permisoRequerido('v
   return res.json(fila);
 });
 
-ventasRouter.post('/oportunidades/:id/orden', authRequired, permisoRequerido('ventas_cerrar'), async (req, res) => {
+ventasRouter.post('/oportunidades/:id/orden', authRequired, permisoRequerido('ventas_cerrar'), permisoRequerido('crear_orden'), async (req, res) => {
   const o = await oportunidadVisible(req, req.params.id);
   if (!o) return res.status(404).json({ error: 'Oportunidad no encontrada' });
   if (o.etapa === 'perdido') return res.status(400).json({ error: 'Una oportunidad perdida no puede generar una orden.' });
@@ -316,6 +352,10 @@ ventasRouter.post('/cotizaciones/:id/decision', authRequired, permisoRequerido('
 async function decidirCotizacion(req, res, q, o, decision, motivo) {
   const estado = decision === 'aceptada' ? 'aceptada' : decision === 'rechazada' ? 'rechazada' : null;
   if (!estado) return res.status(400).json({ error: 'Elegí aceptar o rechazar.' });
+  if (cotizacionVencida(q)) {
+    await query("UPDATE cotizaciones SET estado='vencida', actualizado_en=now() WHERE id=$1", [q.id]);
+    return res.status(410).json({ error: 'La cotización venció. Pedí una nueva versión.' });
+  }
   if (q.estado !== 'enviada' && q.estado !== 'vista') return res.status(400).json({ error: 'La cotización no está pendiente de decisión.' });
   const fila = await one('UPDATE cotizaciones SET estado=$2, decidida_en=now(), motivo_rechazo=$3, actualizado_en=now() WHERE id=$1 RETURNING *', [q.id, estado, estado === 'rechazada' ? limStr(motivo, 300) || 'Sin motivo' : null]);
   if (estado === 'aceptada') {
@@ -334,20 +374,32 @@ ventasRouter.get('/ventas/resumen', authRequired, permisoRequerido('ventas'), as
   const cond = ['archivada = false'];
   const params = [];
   if (!veTodas(req)) { params.push(req.user.email); cond.push(`(responsable = $${params.length} OR responsable IS NULL)`); }
-  const filas = await query(`SELECT etapa, monto_estimado, probabilidad, orden_id, etapa_desde, fecha_proxima_accion, proxima_accion FROM oportunidades WHERE ${cond.join(' AND ')}`, params);
+  const filas = await query(
+    `SELECT etapa,
+            count(*)::int AS cantidad,
+            COALESCE(sum(monto_estimado),0) AS monto,
+            COALESCE(sum(monto_estimado * (COALESCE(probabilidad,0) / 100.0)),0) AS ponderado,
+            count(*) FILTER (WHERE etapa IN ('nuevo','presupuestado','negociando') AND etapa_desde < now() - interval '7 days')::int AS estancadas
+       FROM oportunidades WHERE ${cond.join(' AND ')} GROUP BY etapa`,
+    params
+  );
   const porEtapa = Object.fromEntries(ETAPAS.map((e) => [e.key, { cantidad: 0, monto: 0 }]));
+  let total = 0;
+  let abiertasN = 0;
   let pipeline = 0;
   let ponderado = 0;
   let estancadas = 0;
   for (const f of filas) {
     const etapa = normalizarEtapa(f.etapa);
-    const monto = normalizarMonto(f.monto_estimado) || 0;
-    porEtapa[etapa].cantidad += 1;
+    const monto = Number(f.monto) || 0;
+    porEtapa[etapa].cantidad += Number(f.cantidad) || 0;
     porEtapa[etapa].monto += monto;
+    total += Number(f.cantidad) || 0;
     if (abiertas.includes(etapa)) {
+      abiertasN += Number(f.cantidad) || 0;
       pipeline += monto;
-      ponderado += monto * ((Number(f.probabilidad) || 0) / 100);
-      if (f.etapa_desde && Date.now() - new Date(f.etapa_desde).getTime() > 7 * 86400000) estancadas += 1;
+      ponderado += Number(f.ponderado) || 0;
+      estancadas += Number(f.estancadas) || 0;
     }
   }
   const condCotis = ['o.archivada = false'];
@@ -355,8 +407,8 @@ ventasRouter.get('/ventas/resumen', authRequired, permisoRequerido('ventas'), as
   if (!veTodas(req)) { paramsCotis.push(req.user.email); condCotis.push(`(o.responsable = $${paramsCotis.length} OR o.responsable IS NULL)`); }
   const [cotis] = await query(`SELECT count(*) FILTER (WHERE q.estado IN ('enviada','vista'))::int AS pendientes, count(*) FILTER (WHERE q.estado='aceptada')::int AS aceptadas, COALESCE(sum(q.total) FILTER (WHERE q.estado='aceptada'),0) AS total_aceptado FROM cotizaciones q JOIN oportunidades o ON o.id=q.oportunidad_id WHERE ${condCotis.join(' AND ')}`, paramsCotis);
   return res.json({
-    total: filas.length,
-    abiertas: filas.filter((f) => abiertas.includes(normalizarEtapa(f.etapa))).length,
+    total,
+    abiertas: abiertasN,
     porEtapa,
     pipeline: Math.round(pipeline * 100) / 100,
     ponderado: Math.round(ponderado * 100) / 100,
@@ -380,17 +432,23 @@ ventasRouter.get('/ventas/hoy', authRequired, permisoRequerido('ventas'), async 
 });
 
 // ---------- Público ----------
-ventasRouter.get('/public/cotizacion-venta/:token', async (req, res) => {
+ventasRouter.get('/public/cotizacion-venta/:token', ventasPublicLimiter, async (req, res) => {
   const q = await one('SELECT * FROM cotizaciones WHERE token = $1', [req.params.token]);
   if (!q) return res.status(404).json({ error: 'Cotización no encontrada' });
   const o = await one('SELECT id, titulo, cliente_id, prospecto_nombre FROM oportunidades WHERE id = $1', [q.oportunidad_id]);
   const cliente = q.cliente_id ? await one('SELECT nombre, empresa, email, telefono FROM clientes WHERE id = $1', [q.cliente_id]) : null;
   const items = await query('SELECT descripcion, cantidad, precio_unitario, descuento, total FROM cotizacion_items WHERE cotizacion_id=$1 ORDER BY orden,id', [q.id]);
-  if (q.estado === 'enviada') await query('UPDATE cotizaciones SET estado=\'vista\', vista_en=now() WHERE id=$1', [q.id]);
+  if (cotizacionVencida(q)) {
+    await query("UPDATE cotizaciones SET estado='vencida', actualizado_en=now() WHERE id=$1", [q.id]);
+    q.estado = 'vencida';
+  } else if (q.estado === 'enviada') {
+    await query("UPDATE cotizaciones SET estado='vista', vista_en=now() WHERE id=$1", [q.id]);
+    q.estado = 'vista';
+  }
   return res.json({ cotizacion: q, items, oportunidad: o, cliente });
 });
 
-ventasRouter.post('/public/cotizacion-venta/:token', async (req, res) => {
+ventasRouter.post('/public/cotizacion-venta/:token', ventasPublicLimiter, async (req, res) => {
   const q = await one('SELECT * FROM cotizaciones WHERE token = $1', [req.params.token]);
   if (!q) return res.status(404).json({ error: 'Cotización no encontrada' });
   const o = await one('SELECT * FROM oportunidades WHERE id=$1', [q.oportunidad_id]);

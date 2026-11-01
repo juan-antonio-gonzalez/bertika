@@ -136,6 +136,7 @@ CREATE TABLE IF NOT EXISTS ordenes (
   consentimiento_id TEXT,
   origen TEXT,
   oportunidad_id TEXT,
+  cotizacion_id TEXT,
   eventos JSONB DEFAULT '[]'
 );
 
@@ -255,7 +256,8 @@ CREATE TABLE IF NOT EXISTS wa_conversaciones (
   ultima_fecha TIMESTAMPTZ,
   no_leidos INTEGER DEFAULT 0,
   estado TEXT DEFAULT 'abierta',
-  asignado_a TEXT
+  asignado_a TEXT,
+  oportunidad_id TEXT
 );
 
 CREATE TABLE IF NOT EXISTS wa_mensajes (
@@ -591,3 +593,25 @@ CREATE TABLE IF NOT EXISTS oportunidad_eventos (
   creado_en TIMESTAMPTZ DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_oportunidad_eventos ON oportunidad_eventos (oportunidad_id, creado_en DESC);
+
+-- Tablas de seguimiento del CRM de WhatsApp y versionado de migraciones.
+CREATE TABLE IF NOT EXISTS wa_tareas (
+  id TEXT PRIMARY KEY,
+  conversacion_id TEXT,
+  orden_id TEXT,
+  cliente_id TEXT,
+  oportunidad_id TEXT,
+  titulo TEXT,
+  vence TIMESTAMPTZ,
+  asignado_a TEXT,
+  estado TEXT DEFAULT 'pendiente',
+  creada_por TEXT,
+  creada_en TIMESTAMPTZ DEFAULT now(),
+  cerrada_en TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_wa_tareas_vence ON wa_tareas (estado, vence);
+
+CREATE TABLE IF NOT EXISTS schema_migrations (
+  id TEXT PRIMARY KEY,
+  aplicada_en TIMESTAMPTZ DEFAULT now()
+);

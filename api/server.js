@@ -10,7 +10,7 @@ import multer from 'multer';
 import nodemailer from 'nodemailer';
 import bcrypt from 'bcryptjs';
 import rateLimit from 'express-rate-limit';
-import { query, one, tx } from './db.js';
+import { query, one, tx, closePool } from './db.js';
 import { nextId } from './ids.js';
 import { signToken, authRequired, requireRol, permisoRequerido, SECRET } from './middleware/auth.js';
 import { PERMISOS, COLUMNAS, agruparPermisos, permisosPorDefecto, normalizarPermisos, permisosEfectivos, puedeVer, tienePermiso } from './permisos.js';
@@ -734,6 +734,39 @@ async function asegurarCodigos() {
   await query('ALTER TABLE wa_tareas ADD COLUMN IF NOT EXISTS oportunidad_id TEXT');
   await query('ALTER TABLE ordenes ADD COLUMN IF NOT EXISTS oportunidad_id TEXT');
   await query('ALTER TABLE ordenes ADD COLUMN IF NOT EXISTS cotizacion_id TEXT');
+  await query(`CREATE TABLE IF NOT EXISTS schema_migrations (
+    id TEXT PRIMARY KEY,
+    aplicada_en TIMESTAMPTZ DEFAULT now()
+  )`);
+  const hardening = await one("SELECT id FROM schema_migrations WHERE id = '001_ventas_hardening'");
+  if (!hardening) {
+    await query('CREATE INDEX IF NOT EXISTS idx_oportunidades_responsable ON oportunidades (responsable, etapa, archivada)');
+    await query('CREATE INDEX IF NOT EXISTS idx_oportunidades_cierre ON oportunidades (cierre_estimado)');
+    await query('CREATE INDEX IF NOT EXISTS idx_cotizaciones_estado ON cotizaciones (estado, enviada_en)');
+    await query('CREATE INDEX IF NOT EXISTS idx_ordenes_oportunidad ON ordenes (oportunidad_id)');
+    await query('CREATE INDEX IF NOT EXISTS idx_lista_registros_datos_gin ON lista_registros USING gin (datos jsonb_path_ops)');
+    await query(`DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'oportunidades_cliente_fk') THEN
+        ALTER TABLE oportunidades ADD CONSTRAINT oportunidades_cliente_fk FOREIGN KEY (cliente_id) REFERENCES clientes(id) ON DELETE SET NULL NOT VALID;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'cotizaciones_oportunidad_fk') THEN
+        ALTER TABLE cotizaciones ADD CONSTRAINT cotizaciones_oportunidad_fk FOREIGN KEY (oportunidad_id) REFERENCES oportunidades(id) ON DELETE CASCADE NOT VALID;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'cotizacion_items_cotizacion_fk') THEN
+        ALTER TABLE cotizacion_items ADD CONSTRAINT cotizacion_items_cotizacion_fk FOREIGN KEY (cotizacion_id) REFERENCES cotizaciones(id) ON DELETE CASCADE NOT VALID;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'oportunidad_eventos_oportunidad_fk') THEN
+        ALTER TABLE oportunidad_eventos ADD CONSTRAINT oportunidad_eventos_oportunidad_fk FOREIGN KEY (oportunidad_id) REFERENCES oportunidades(id) ON DELETE CASCADE NOT VALID;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ordenes_oportunidad_fk') THEN
+        ALTER TABLE ordenes ADD CONSTRAINT ordenes_oportunidad_fk FOREIGN KEY (oportunidad_id) REFERENCES oportunidades(id) ON DELETE SET NULL NOT VALID;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ordenes_cotizacion_fk') THEN
+        ALTER TABLE ordenes ADD CONSTRAINT ordenes_cotizacion_fk FOREIGN KEY (cotizacion_id) REFERENCES cotizaciones(id) ON DELETE SET NULL NOT VALID;
+      END IF;
+    END $$`);
+    await query("INSERT INTO schema_migrations (id) VALUES ('001_ventas_hardening') ON CONFLICT DO NOTHING");
+  }
   await query(`CREATE TABLE IF NOT EXISTS menu_favoritos (
     usuario_email TEXT NOT NULL,
     path TEXT NOT NULL,
@@ -5840,11 +5873,37 @@ app.use((err, req, res, _next) => {
   return res.status(status).json({ error: err.message, reqId: req.requestId });
 });
 
+let httpServer = null;
+let apagando = false;
+
+async function apagar(senal) {
+  if (apagando) return;
+  apagando = true;
+  console.log(`[server] ${senal}: cerrando ordenadamente...`);
+  const timeout = setTimeout(() => { console.error('[server] cierre forzado'); process.exit(1); }, 10000);
+  timeout.unref();
+  try {
+    if (httpServer) await new Promise((resolve) => httpServer.close(resolve));
+    await closePool();
+    clearTimeout(timeout);
+    process.exit(0);
+  } catch (e) {
+    console.error('[server] error cerrando:', e.message);
+    process.exit(1);
+  }
+}
+
+process.on('SIGTERM', () => { apagar('SIGTERM'); });
+process.on('SIGINT', () => { apagar('SIGINT'); });
+process.on('unhandledRejection', (e) => { console.error('[server] promesa no manejada:', e?.message || e); });
+process.on('uncaughtException', (e) => { console.error('[server] excepción no manejada:', e?.stack || e); process.exit(1); });
+
 asegurarCodigos()
   .then(() => {
-    app.listen(PORT, '127.0.0.1', () => {
+    httpServer = app.listen(PORT, '127.0.0.1', () => {
       console.log(`Bertika API escuchando en http://127.0.0.1:${PORT}`);
     });
+    httpServer.on('error', (e) => { console.error('[server] no pudo escuchar:', e.message); process.exit(1); });
     // Worker de la cola de WhatsApp y monitoreo del sistema. Se pueden apagar
     // por entorno (tests de integracion) para que la corrida sea determinista.
     if (process.env.OUTBOX_WORKER !== '0') iniciarOutbox();

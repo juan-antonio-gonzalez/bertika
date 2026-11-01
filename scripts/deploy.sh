@@ -62,20 +62,34 @@ set -euo pipefail
 cd /var/www/bertika/api
 npm ci --omit=dev --no-fund --no-audit
 mkdir -p /var/www/bertika/uploads /var/backups/bertika
-systemctl restart bertika-api 2>/dev/null || true
+systemctl restart bertika-api
+systemctl is-active --quiet bertika-api
 EOF
 
-echo "== Verificacion =="
-sleep 2
-for url in "https://bertika.com/" "https://bertika.com/tarjetas/" "https://bertika.com/api/public/stats" "https://srv1981179.hstgr.cloud/"; do
-  code=$(curl -ks -o /dev/null -w "%{http_code}" "$url" || true)
-  echo "$code  $url"
-done
+echo "== Verificacion (con reintentos) =="
+# Un deploy no puede terminar bien si la API quedo en 502/503. Reintenta para
+# darle tiempo al servicio a arrancar y falla con codigo != 0 si no vuelve.
+check_url() {
+  local url="$1"
+  local intentos="${2:-15}"
+  local code=""
+  for i in $(seq 1 "$intentos"); do
+    code=$(curl -ks -o /dev/null -w "%{http_code}" "$url" || true)
+    if [ "$code" = "200" ]; then
+      echo "200  $url"
+      return 0
+    fi
+    sleep 2
+  done
+  echo "ERROR: $url responde $code después de $intentos intentos."
+  return 1
+}
 
-# El sitio de tarjetas vive en /var/www/bertika/tarjetas y no sale del dist:
-# si un deploy lo dejara en 404, hay que revisar los excludes de arriba.
-tarjetas_code=$(curl -ks -o /dev/null -w "%{http_code}" "https://bertika.com/tarjetas/" || true)
-if [ "$tarjetas_code" != "200" ]; then
-  echo "ERROR: https://bertika.com/tarjetas/ responde $tarjetas_code. Revisar /var/www/bertika/tarjetas y /tarjetas-src."
-  exit 1
-fi
+check_url "https://bertika.com/" || exit 1
+check_url "https://bertika.com/tarjetas/" || exit 1
+check_url "https://bertika.com/api/health" || exit 1
+check_url "https://bertika.com/api/public/stats" || exit 1
+check_url "https://srv1981179.hstgr.cloud/" || exit 1
+
+echo "Deploy verificado: frontend, tarjetas y API responden 200."
+

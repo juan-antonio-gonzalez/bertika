@@ -12,6 +12,12 @@ export const pool = new Pool({
   connectionTimeoutMillis: 10000,
 });
 
+pool.on('error', (err) => { console.error('[db] error inesperado del pool:', err.message); });
+
+export async function closePool() {
+  await pool.end();
+}
+
 export async function query(text, params) {
   const r = await pool.query(text, params);
   return r.rows;
