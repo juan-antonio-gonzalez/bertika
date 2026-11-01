@@ -804,7 +804,7 @@ listasRouter.post('/listas/:id/registros/:rid/comentarios', authRequired, async 
     `INSERT INTO lista_comentarios (id, lista_id, registro_id, autor, texto, menciones)
      VALUES ($1,$2,$3,$4,$5,$6::jsonb)
      RETURNING id, autor, texto, menciones, creado_en`,
-    [id, lista.id, registro.id, req.user.email, texto, emails]
+    [id, lista.id, registro.id, req.user.email, texto, JSON.stringify(emails)]
   );
   for (const email of emails) {
     const u = await one('SELECT email FROM usuarios WHERE LOWER(email) = $1 AND activo = true', [email]);

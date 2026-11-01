@@ -1428,7 +1428,7 @@ details[open] > .cz-summary::after { content: ' –'; }
 /* ---------- Calendario y galería ---------- */
 .listas-calendar { background: #fff; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
 .calendar-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--bg-3); }
-.calendar-head b { text-transform: capitalize; color: var(--navy); }
+.calendar-head b { color: var(--navy); }
 .calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
 .calendar-dow { padding: 7px 6px; font-size: 10px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); text-align: center; border-bottom: 1px solid var(--line); }
 .calendar-cell { min-height: 96px; padding: 6px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; }
@@ -1447,3 +1447,8 @@ details[open] > .cz-summary::after { content: ' –'; }
 .gallery-meta { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; color: var(--text); }
 .gallery-meta small { color: var(--muted); }
 @media (max-width: 720px) { .calendar-cell { min-height: 72px; } .calendar-event { font-size: 9.5px; } }
+
+
+.lista-version-datos { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 4px 10px; margin: 7px 0; }
+.lista-version-datos span { display: flex; flex-direction: column; gap: 1px; font-size: 11.5px; color: var(--text); background: var(--bg-3); border-radius: 5px; padding: 4px 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lista-version-datos small { color: var(--muted); font-size: 9px; text-transform: uppercase; letter-spacing: .4px; }
