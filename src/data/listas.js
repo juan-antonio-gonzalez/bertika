@@ -61,6 +61,7 @@ export const TIPOS_CAMPO = [
   { tipo: 'url', etiqueta: 'Enlace' },
   { tipo: 'persona', etiqueta: 'Persona' },
   { tipo: 'adjunto', etiqueta: 'Adjunto' },
+  { tipo: 'imagen', etiqueta: 'Imagen' },
   { tipo: 'relacion', etiqueta: 'Relación con otra lista' },
   { tipo: 'calculado', etiqueta: 'Campo calculado' },
 ];
@@ -228,13 +229,16 @@ export function validarRegistro(campos, datos, { parcial = false } = {}) {
       salida[id] = texto;
       continue;
     }
-    if (tipo === 'adjunto') {
+    if (tipo === 'adjunto' || tipo === 'imagen') {
       if (!esObjeto(valor) || !valor.url) return { ok: false, error: `“${campo.nombre}”: subí un archivo válido.` };
       const url = String(valor.url).slice(0, 1000);
       if (!/^(https?:\/\/|\/uploads\/)/.test(url)) return { ok: false, error: `“${campo.nombre}”: el archivo no es válido.` };
+      if (tipo === 'imagen' && !String(valor.mime || '').startsWith('image/')) {
+        return { ok: false, error: `“${campo.nombre}”: subí una imagen válida.` };
+      }
       salida[id] = {
         url,
-        nombre: String(valor.nombre || 'Adjunto').slice(0, 160),
+        nombre: String(valor.nombre || (tipo === 'imagen' ? 'Imagen' : 'Adjunto')).slice(0, 160),
         mime: String(valor.mime || '').slice(0, 100),
         size: Number(valor.size) || 0,
       };
@@ -269,6 +273,7 @@ export function valorVisible(campo, valor) {
     return Number.isNaN(d.getTime()) ? String(valor) : d.toLocaleDateString('es-AR');
   }
   if (campo?.tipo === 'adjunto') return String(valor?.nombre || 'Adjunto');
+  if (campo?.tipo === 'imagen') return String(valor?.nombre || 'Imagen');
   if (campo?.tipo === 'relacion') return String(valor?.etiqueta || valor?.id || '');
   if (campo?.tipo === 'calculado') {
     const n = Number(valor);

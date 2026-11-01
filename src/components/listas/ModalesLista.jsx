@@ -144,7 +144,7 @@ export function NuevaVistaModal({ campos, busy, onGuardar, onClose }) {
   const selects = (campos || []).filter((c) => c.tipo === 'seleccion');
   const fechas = (campos || []).filter((c) => c.tipo === 'fecha');
   const titulos = (campos || []).filter((c) => c.tipo === 'texto');
-  const adjuntos = (campos || []).filter((c) => c.tipo === 'adjunto');
+  const adjuntos = (campos || []).filter((c) => c.tipo === 'adjunto' || c.tipo === 'imagen');
 
   const guardar = (e) => {
     e.preventDefault();
@@ -185,6 +185,7 @@ export function NuevaVistaModal({ campos, busy, onGuardar, onClose }) {
               <option value="kanban">Kanban</option>
               <option value="calendar">Calendario</option>
               <option value="gallery">Galería</option>
+              <option value="form">Formulario</option>
             </select>
           </div>
           {tipo === 'kanban' && (
@@ -240,6 +241,26 @@ export function NuevaVistaModal({ campos, busy, onGuardar, onClose }) {
 export function NuevaListaModal({ area, busy, onGuardar, onClose }) {
   const [nombre, setNombre] = useState('');
   const [descripcion, setDescripcion] = useState('');
+  const [plantillas, setPlantillas] = useState([]);
+  const [plantilla, setPlantilla] = useState('');
+  const seleccionada = plantillas.find((p) => p.clave === plantilla);
+
+  useEffect(() => {
+    let vivo = true;
+    api('/listas/plantillas')
+      .then((r) => { if (vivo) setPlantillas((Array.isArray(r) ? r : []).filter((p) => p.area_id === area?.id)); })
+      .catch(() => { if (vivo) setPlantillas([]); });
+    return () => { vivo = false; };
+  }, [area?.id]);
+
+  const elegirPlantilla = (clave) => {
+    setPlantilla(clave);
+    const t = plantillas.find((p) => p.clave === clave);
+    if (t) {
+      setNombre(t.nombre);
+      setDescripcion(t.descripcion || '');
+    }
+  };
   return (
     <Modal
       size="sm"
@@ -256,8 +277,16 @@ export function NuevaListaModal({ area, busy, onGuardar, onClose }) {
         </>
       )}
     >
-      <form id="form-nueva-lista" onSubmit={(e) => { e.preventDefault(); if (nombre.trim().length >= 2) onGuardar({ nombre: nombre.trim(), descripcion: descripcion.trim() }); }}>
+      <form id="form-nueva-lista" onSubmit={(e) => { e.preventDefault(); if (nombre.trim().length >= 2) onGuardar({ nombre: nombre.trim(), descripcion: descripcion.trim(), plantilla: plantilla || null }); }}>
         <FormGrid cols={1}>
+          <div className="field">
+            <label>Empezar desde</label>
+            <select className="input" value={plantilla} onChange={(e) => elegirPlantilla(e.target.value)}>
+              <option value="">Lista vacía</option>
+              {plantillas.map((p) => <option key={p.clave} value={p.clave}>{p.nombre} · {p.campos} campos</option>)}
+            </select>
+            {seleccionada && <small className="ayuda">{seleccionada.descripcion} · {seleccionada.campos} campos y {seleccionada.vistas} vista(s).</small>}
+          </div>
           <div className="field">
             <label>Nombre *</label>
             <input className="input" value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Ej.: Materiales, Herramientas, Prospectos" data-autofocus />

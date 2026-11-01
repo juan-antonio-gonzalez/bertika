@@ -15,6 +15,15 @@ import BusquedaGlobal from './BusquedaGlobal';
 // desde el buscador: no engorda el bundle inicial de la plataforma.
 const OrdenDetalle = lazy(() => import('../OrdenDetalle'));
 
+const leerMenuLS = (clave, porDefecto) => {
+  try {
+    const valor = JSON.parse(localStorage.getItem(clave) || 'null');
+    return valor ?? porDefecto;
+  } catch {
+    return porDefecto;
+  }
+};
+
 // Shell de la plataforma: sidebar fijo por rol + topbar con las acciones
 // globales. Reemplaza a la barra superior vieja (Shell de ui.jsx) y envuelve
 // TODAS las rutas autenticadas.
@@ -157,7 +166,10 @@ export default function AppShell({ children }) {
   const [altas, setAltas] = useState(false);
   const [buscar, setBuscar] = useState(false);
   const [ordenAbierta, setOrdenAbierta] = useState(null);
-  const [gruposCerrados, setGruposCerrados] = useState({});
+  const [gruposCerrados, setGruposCerrados] = useState(() => leerMenuLS('bertika-menu-grupos', {}));
+  const [favoritos, setFavoritos] = useState(() => leerMenuLS('bertika-menu-favs', []));
+  const [recientes, setRecientes] = useState(() => leerMenuLS('bertika-menu-recientes', []));
+  const [qMenu, setQMenu] = useState('');
 
   const ruta = CANONICO[location.pathname] || location.pathname;
   const esAdmin = user?.rol === 'admin';
@@ -207,7 +219,80 @@ export default function AppShell({ children }) {
     return salida;
   }, [grupos, data.areas, user]);
 
+  useEffect(() => { localStorage.setItem('bertika-menu-grupos', JSON.stringify(gruposCerrados)); }, [gruposCerrados]);
+  useEffect(() => { localStorage.setItem('bertika-menu-favs', JSON.stringify(favoritos)); }, [favoritos]);
+  useEffect(() => { localStorage.setItem('bertika-menu-recientes', JSON.stringify(recientes)); }, [recientes]);
+
+  const itemsMenu = useMemo(() => {
+    const salida = [];
+    for (const g of gruposConAreas) {
+      for (const it of g.items) {
+        salida.push({ ...it, _grupo: g.grupo });
+        for (const sub of it.subitems || []) salida.push({ ...sub, _grupo: g.grupo, _padre: it.label });
+      }
+    }
+    return salida;
+  }, [gruposConAreas]);
+
+  useEffect(() => {
+    if (!user) return;
+    const item = itemsMenu.find((i) => i.to === location.pathname || (i.to !== '/' && location.pathname.startsWith(`${i.to}/`)));
+    if (!item) return;
+    setRecientes((prev) => {
+      const siguiente = [item.to, ...prev.filter((x) => x !== item.to)].slice(0, 5);
+      localStorage.setItem('bertika-menu-recientes', JSON.stringify(siguiente));
+      return siguiente;
+    });
+  }, [location.pathname, user, itemsMenu]);
+
   const toggleGrupo = (nombre) => setGruposCerrados((prev) => ({ ...prev, [nombre]: !prev[nombre] }));
+  const toggleFavorito = (to) => setFavoritos((prev) => (prev.includes(to) ? prev.filter((x) => x !== to) : [...prev, to]));
+  const itemsFavoritos = favoritos.map((to) => itemsMenu.find((i) => i.to === to)).filter(Boolean);
+  const itemsRecientes = recientes.map((to) => itemsMenu.find((i) => i.to === to)).filter(Boolean);
+  const gruposFiltrados = useMemo(() => {
+    const q = qMenu.trim().toLowerCase();
+    if (!q) return gruposConAreas;
+    return gruposConAreas.map((g) => {
+      const items = g.items.map((it) => {
+        const coincidePadre = String(it.label || '').toLowerCase().includes(q);
+        const subitems = (it.subitems || []).filter((sub) => String(sub.label || '').toLowerCase().includes(q));
+        if (!coincidePadre && subitems.length === 0) return null;
+        return { ...it, subitems: coincidePadre ? it.subitems : subitems };
+      }).filter(Boolean);
+      return { ...g, items };
+    }).filter((g) => g.items.length > 0);
+  }, [gruposConAreas, qMenu]);
+
+  const renderItemMenu = (it, prefijo) => (
+    <div key={`${prefijo}-${it.to}`}>
+      <div className="shell-item-wrap">
+        <Link to={it.to} className={`shell-item${esActivo(it) ? ' on' : ''}`}>
+          <Icon name={it.icon} size={15} />
+          <span className="shell-item-l">{it.label}</span>
+          {it.contador > 0 && <span className="shell-count">{it.contador}</span>}
+        </Link>
+        <button
+          type="button"
+          className={`shell-fav${favoritos.includes(it.to) ? ' on' : ''}`}
+          onClick={() => toggleFavorito(it.to)}
+          title={favoritos.includes(it.to) ? 'Quitar de favoritos' : 'Agregar a favoritos'}
+          aria-label={favoritos.includes(it.to) ? 'Quitar de favoritos' : 'Agregar a favoritos'}
+        >
+          ★
+        </button>
+      </div>
+      {it.subitems?.length > 0 && (
+        <div className="shell-subitems">
+          {it.subitems.map((sub) => (
+            <Link key={sub.to} to={sub.to} className={`shell-subitem${ruta === sub.to ? ' on' : ''}`}>
+              <Icon name={sub.icon} size={12} />
+              <span>{sub.label}</span>
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
+  );
   const { grupo, label } = tituloDe(ruta, gruposConAreas);
 
   // El drawer se cierra al cambiar de pantalla y con Escape.
@@ -262,8 +347,33 @@ export default function AppShell({ children }) {
         </div>
 
         <nav className="shell-nav">
-          {gruposConAreas.map((g) => {
-            const cerrado = Boolean(gruposCerrados[g.grupo]);
+          <div className="shell-menu-search">
+            <Icon name="search" size={14} />
+            <input
+              value={qMenu}
+              onChange={(e) => setQMenu(e.target.value)}
+              placeholder="Buscar en el menú..."
+              aria-label="Buscar en el menú"
+            />
+            {qMenu && <button type="button" onClick={() => setQMenu('')} aria-label="Limpiar búsqueda">✕</button>}
+          </div>
+
+          {!qMenu && itemsFavoritos.length > 0 && (
+            <div className="shell-grupo shell-grupo-fav">
+              <div className="shell-grupo-t">Favoritos</div>
+              {itemsFavoritos.map((it) => renderItemMenu(it, 'fav'))}
+            </div>
+          )}
+
+          {!qMenu && itemsRecientes.length > 0 && (
+            <div className="shell-grupo">
+              <div className="shell-grupo-t">Recientes</div>
+              {itemsRecientes.map((it) => renderItemMenu(it, 'rec'))}
+            </div>
+          )}
+
+          {gruposFiltrados.map((g) => {
+            const cerrado = !qMenu && Boolean(gruposCerrados[g.grupo]);
             return (
               <div className="shell-grupo" key={g.grupo}>
                 <button
@@ -276,28 +386,14 @@ export default function AppShell({ children }) {
                   <span>{g.grupo}</span>
                   <span className="shell-chevron">{cerrado ? '+' : '−'}</span>
                 </button>
-                {!cerrado && g.items.map((it) => (
-                  <div key={it.to}>
-                    <Link to={it.to} className={`shell-item${esActivo(it) ? ' on' : ''}`}>
-                      <Icon name={it.icon} size={15} />
-                      <span className="shell-item-l">{it.label}</span>
-                      {it.contador > 0 && <span className="shell-count">{it.contador}</span>}
-                    </Link>
-                    {it.subitems?.length > 0 && (
-                      <div className="shell-subitems">
-                        {it.subitems.map((sub) => (
-                          <Link key={sub.to} to={sub.to} className={`shell-subitem${ruta === sub.to ? ' on' : ''}`}>
-                            <Icon name={sub.icon} size={12} />
-                            <span>{sub.label}</span>
-                          </Link>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))}
+                {!cerrado && g.items.map((it) => renderItemMenu(it, g.grupo))}
               </div>
             );
           })}
+
+          {qMenu && gruposFiltrados.length === 0 && (
+            <div className="shell-menu-empty">No hay opciones para “{qMenu}”.</div>
+          )}
           {/* Acceso directo a la nube de archivos (OpenCloud). Es un enlace
               externo: no suma una seccion de permisos porque los permisos
               reales los aplica OpenCloud con el usuario de cada persona. */}

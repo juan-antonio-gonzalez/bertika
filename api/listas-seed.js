@@ -6,6 +6,7 @@ import { query, tx } from './db.js';
 const id = (prefijo) => `${prefijo}_${randomUUID()}`;
 
 const PROSPECTOS = {
+  clave: 'prospectos',
   nombre: 'Prospectos',
   descripcion: 'Contactos comerciales que todavía no son clientes del taller.',
   icono: 'users',
@@ -27,6 +28,7 @@ const PROSPECTOS = {
 };
 
 const OPORTUNIDADES = {
+  clave: 'oportunidades',
   nombre: 'Oportunidades',
   descripcion: 'Pipeline comercial: etapas, montos y próximos cierres.',
   icono: 'dollar',
@@ -48,6 +50,7 @@ const OPORTUNIDADES = {
 };
 
 const ACTIVIDADES = {
+  clave: 'actividades',
   nombre: 'Actividades',
   descripcion: 'Llamadas, mensajes, reuniones y visitas del equipo comercial.',
   icono: 'calendar',
@@ -69,6 +72,7 @@ const ACTIVIDADES = {
 const LISTAS_VENTAS = [PROSPECTOS, OPORTUNIDADES, ACTIVIDADES];
 
 const MATERIALES = {
+  clave: 'materiales',
   nombre: 'Materiales',
   descripcion: 'Materiales y repuestos del taller, con stock y ubicación.',
   icono: 'box',
@@ -90,6 +94,7 @@ const MATERIALES = {
 };
 
 const HERRAMIENTAS = {
+  clave: 'herramientas',
   nombre: 'Herramientas',
   descripcion: 'Herramientas del taller, responsables y estado de uso.',
   icono: 'tools',
@@ -110,6 +115,7 @@ const HERRAMIENTAS = {
 };
 
 const INSUMOS = {
+  clave: 'insumos',
   nombre: 'Insumos',
   descripcion: 'Insumos consumibles, precios y puntos de reposición.',
   icono: 'droplet',
@@ -131,6 +137,39 @@ const INSUMOS = {
 
 const LISTAS_TALLER = [MATERIALES, HERRAMIENTAS, INSUMOS];
 
+async function insertarDefinicion(client, def, areaId, nombre, usuario, orden) {
+  const listaId = id('lst');
+  await client.query(
+    `INSERT INTO listas (id, area_id, nombre, descripcion, icono, orden, creada_por)
+     VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+    [listaId, areaId, nombre || def.nombre, def.descripcion, def.icono, orden, usuario]
+  );
+  const campos = {};
+  let ordenCampo = 0;
+  for (const campo of def.campos || []) {
+    ordenCampo += 10;
+    const campoId = id('cam');
+    campos[campo.nombre] = campoId;
+    await client.query(
+      `INSERT INTO lista_campos (id, lista_id, nombre, tipo, config, requerido, unico, orden)
+       VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8)`,
+      [campoId, listaId, campo.nombre, campo.tipo, campo.config || {}, campo.requerido === true, campo.unico === true, ordenCampo]
+    );
+  }
+  let primera = true;
+  for (const vista of def.vistas || []) {
+    const config = typeof vista.config === 'function' ? vista.config(campos) : (vista.config || {});
+    const predeterminada = vista.predeterminada === true || (primera && !def.vistas.some((v) => v.predeterminada));
+    await client.query(
+      `INSERT INTO lista_vistas (id, lista_id, nombre, tipo, config, visibilidad, creada_por, predeterminada)
+       VALUES ($1,$2,$3,$4,$5::jsonb,'compartida',$6,$7)`,
+      [id('vis'), listaId, vista.nombre, vista.tipo || 'grid', config, usuario, predeterminada]
+    );
+    primera = false;
+  }
+  return listaId;
+}
+
 async function sembrarArea(areaId, defs) {
   const [uso] = await query('SELECT count(*)::int AS n FROM listas WHERE area_id = $1', [areaId]);
   if (Number(uso?.n) > 0) return { creadas: 0 };
@@ -138,39 +177,26 @@ async function sembrarArea(areaId, defs) {
   let creadas = 0;
   await tx(async (client) => {
     for (const def of defs) {
-      const listaId = id('lst');
-      await client.query(
-        `INSERT INTO listas (id, area_id, nombre, descripcion, icono, orden, creada_por)
-         VALUES ($1,$2,$3,$4,$5,$6,'sistema')`,
-        [listaId, areaId, def.nombre, def.descripcion, def.icono, (creadas + 1) * 10]
-      );
-      const campos = {};
-      let orden = 0;
-      for (const campo of def.campos || []) {
-        orden += 10;
-        const campoId = id('cam');
-        campos[campo.nombre] = campoId;
-        await client.query(
-          `INSERT INTO lista_campos (id, lista_id, nombre, tipo, config, requerido, unico, orden)
-           VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8)`,
-          [campoId, listaId, campo.nombre, campo.tipo, campo.config || {}, campo.requerido === true, campo.unico === true, orden]
-        );
-      }
-      let primera = true;
-      for (const vista of def.vistas || []) {
-        const config = typeof vista.config === 'function' ? vista.config(campos) : (vista.config || {});
-        const predeterminada = vista.predeterminada === true || (primera && !def.vistas.some((v) => v.predeterminada));
-        await client.query(
-          `INSERT INTO lista_vistas (id, lista_id, nombre, tipo, config, visibilidad, creada_por, predeterminada)
-           VALUES ($1,$2,$3,$4,$5::jsonb,'compartida','sistema',$6)`,
-          [id('vis'), listaId, vista.nombre, vista.tipo || 'grid', config, predeterminada]
-        );
-        primera = false;
-      }
+      await insertarDefinicion(client, def, areaId, def.nombre, 'sistema', (creadas + 1) * 10);
       creadas += 1;
     }
   });
   return { creadas };
+}
+
+export const PLANTILLAS = [
+  ...LISTAS_VENTAS.map((d) => ({ ...d, area_id: 'area_ventas' })),
+  ...LISTAS_TALLER.map((d) => ({ ...d, area_id: 'area_taller' })),
+];
+
+export async function crearListaDesdePlantilla({ clave, areaId, nombre, usuario }) {
+  const def = PLANTILLAS.find((p) => p.clave === clave && p.area_id === areaId);
+  if (!def) return null;
+  let listaId;
+  await tx(async (client) => {
+    listaId = await insertarDefinicion(client, def, areaId, nombre || def.nombre, usuario || 'sistema', 0);
+  });
+  return { id: listaId, def };
 }
 
 export async function sembrarListasVentas() {

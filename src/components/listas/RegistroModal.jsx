@@ -61,7 +61,7 @@ function RelacionInput({ campo, value, onChange }) {
   );
 }
 
-function AdjuntoInput({ listaId, value, onChange }) {
+function AdjuntoInput({ listaId, value, onChange, soloImagen = false }) {
   const [subiendo, setSubiendo] = useState(false);
   const [error, setError] = useState('');
 
@@ -96,14 +96,14 @@ function AdjuntoInput({ listaId, value, onChange }) {
         <input
           className="input"
           type="file"
-          accept="image/jpeg,image/png,image/webp,image/gif,application/pdf"
+          accept={soloImagen ? 'image/jpeg,image/png,image/webp,image/gif' : 'image/jpeg,image/png,image/webp,image/gif,application/pdf'}
           onChange={(e) => subir(e.target.files?.[0])}
           disabled={subiendo}
         />
       )}
       {subiendo && <small className="muted">Subiendo...</small>}
       {error && <small className="pass-error">{error}</small>}
-      <small className="ayuda">Imagen o PDF, hasta 8 MB.</small>
+      <small className="ayuda">{soloImagen ? 'Imagen JPG, PNG, WebP o GIF, hasta 8 MB.' : 'Imagen o PDF, hasta 8 MB.'}</small>
     </div>
   );
 }
@@ -138,7 +138,7 @@ function PersonaInput({ value, onChange }) {
   );
 }
 
-function CampoInput({ campo, value, onChange, listaId }) {
+export function CampoInput({ campo, value, onChange, listaId }) {
   const opciones = Array.isArray(campo.config?.opciones) ? campo.config.opciones : [];
   const ayuda = campo.config?.ayuda;
   const placeholder = campo.config?.placeholder || '';
@@ -190,8 +190,8 @@ function CampoInput({ campo, value, onChange, listaId }) {
         <span>{placeholder || 'Sí'}</span>
       </label>
     );
-  } else if (tipo === 'adjunto') {
-    control = <AdjuntoInput listaId={listaId} value={value} onChange={onChange} />;
+  } else if (tipo === 'adjunto' || tipo === 'imagen') {
+    control = <AdjuntoInput listaId={listaId} value={value} onChange={onChange} soloImagen={tipo === 'imagen'} />;
   } else if (tipo === 'relacion') {
     control = <RelacionInput campo={campo} value={value} onChange={onChange} />;
   } else if (tipo === 'calculado') {

@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Icon, Modal, FormGrid } from '../ui';
 import { etiquetaTipo } from '../../data/listas';
+import { api } from '../../store/api';
 
 export default function ListaConfigModal({
   lista, busy, onGuardarLista, onNuevoCampo, onEditarCampo, onEliminarCampo, onArchivarLista, onDuplicar, onPapelera, onReglas, onFormulario, onAuditoria, onClose,
@@ -12,7 +13,17 @@ export default function ListaConfigModal({
   const [verFilas, setVerFilas] = useState(lista.ver_filas || 'todos');
   const [verCampo, setVerCampo] = useState(lista.ver_campo || '');
   const [requiereAprobacion, setRequiereAprobacion] = useState(lista.requiere_aprobacion === true);
+  const [categorias, setCategorias] = useState([]);
+  const [restringirAcceso, setRestringirAcceso] = useState(Array.isArray(lista.acceso_categorias) && lista.acceso_categorias.length > 0);
+  const [categoriasAcceso, setCategoriasAcceso] = useState(Array.isArray(lista.acceso_categorias) ? lista.acceso_categorias : []);
   const campos = lista.campos || [];
+  useEffect(() => {
+    let vivo = true;
+    api('/listas/categorias')
+      .then((r) => { if (vivo) setCategorias(Array.isArray(r) ? r : []); })
+      .catch(() => { if (vivo) setCategorias([]); });
+    return () => { vivo = false; };
+  }, []);
 
   return (
     <Modal
@@ -28,7 +39,7 @@ export default function ListaConfigModal({
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          if (nombre.trim().length >= 2) onGuardarLista({ nombre: nombre.trim(), descripcion: descripcion.trim(), permiso_filas: permisoFilas, permiso_campo: permisoCampo || null, ver_filas: verFilas, ver_campo: verCampo || null, requiere_aprobacion: requiereAprobacion });
+          if (nombre.trim().length >= 2) onGuardarLista({ nombre: nombre.trim(), descripcion: descripcion.trim(), permiso_filas: permisoFilas, permiso_campo: permisoCampo || null, ver_filas: verFilas, ver_campo: verCampo || null, requiere_aprobacion: requiereAprobacion, acceso_categorias: restringirAcceso ? categoriasAcceso : [] });
         }}
         className="col"
         style={{ gap: 12 }}
@@ -82,7 +93,33 @@ export default function ListaConfigModal({
           )}
           <small className="ayuda">El servidor valida esta regla también al editar, archivar y restaurar.</small>
         </div>
-        <button type="submit" className="btn sm" disabled={busy || nombre.trim().length < 2} style={{ alignSelf: 'flex-start' }}>
+        <div className="field">
+          <label>Acceso a esta lista</label>
+          <select className="input" value={restringirAcceso ? 'restringido' : 'todos'} onChange={(e) => setRestringirAcceso(e.target.value === 'restringido')}>
+            <option value="todos">Todo el equipo con acceso al área</option>
+            <option value="restringido">Solo categorías seleccionadas</option>
+          </select>
+          {restringirAcceso && (
+            <div className="col" style={{ gap: 4, marginTop: 6, border: '1px solid var(--line)', borderRadius: 8, padding: 8, maxHeight: 160, overflow: 'auto' }}>
+              {categorias.length === 0 && <small className="muted">No se pudieron cargar las categorías.</small>}
+              {categorias.map((c) => (
+                <label key={c.id} className="check-line" style={{ textTransform: 'none', letterSpacing: 0 }}>
+                  <input
+                    type="checkbox"
+                    checked={categoriasAcceso.includes(c.id)}
+                    onChange={(e) => setCategoriasAcceso((prev) => (e.target.checked ? [...prev, c.id] : prev.filter((x) => x !== c.id)))}
+                  />
+                  <span>{c.nombre}</span>
+                </label>
+              ))}
+            </div>
+          )}
+          <small className="ayuda">Una lista restringida no aparece en el menú ni por API para las categorías no seleccionadas. Si te sacás tu propia categoría, un administrador tiene que recuperarla.</small>
+        </div>
+        {restringirAcceso && categoriasAcceso.length === 0 && (
+          <div className="banner-red"><div><Icon name="x" size={15} /> Elegí al menos una categoría para restringir el acceso.</div></div>
+        )}
+        <button type="submit" className="btn sm" disabled={busy || nombre.trim().length < 2 || (restringirAcceso && categoriasAcceso.length === 0)} style={{ alignSelf: 'flex-start' }}>
           <Icon name="check" size={13} /> Guardar datos de la lista
         </button>
       </form>

@@ -14,6 +14,7 @@ import ReglasModal from '../components/listas/ReglasModal';
 import FormularioPublicoModal from '../components/listas/FormularioPublicoModal';
 import AprobacionesPendientesModal from '../components/listas/AprobacionesPendientesModal';
 import AuditoriaListaModal from '../components/listas/AuditoriaListaModal';
+import VistaFormulario from '../components/listas/VistaFormulario';
 import {
   FiltrosModal, ColumnasModal, NuevaVistaModal, NuevaListaModal, ImportarModal, DuplicarListaModal, FormatoModal,
   PapeleraListasModal, PapeleraRegistrosModal,
@@ -335,7 +336,10 @@ function AreaDetalle({ area }) {
   const crear = async (payload) => {
     setBusy(true);
     try {
-      const res = await api('/listas', { method: 'POST', body: { area_id: area.id, ...payload } });
+      const { plantilla, ...resto } = payload;
+      const res = plantilla
+        ? await api(`/listas/plantillas/${encodeURIComponent(plantilla)}`, { method: 'POST', body: { area_id: area.id, ...resto } })
+        : await api('/listas', { method: 'POST', body: { area_id: area.id, ...resto } });
       await cargarAreas();
       setNueva(false);
       toastShow('Lista creada', 'ok');
@@ -462,7 +466,7 @@ function ListaDetalle({ listaId, area }) {
     ? (campos.find((c) => c.id === vistaActiva.config?.calendario) || campos.find((c) => c.tipo === 'fecha'))
     : null;
   const galleryImage = vistaActiva?.tipo === 'gallery'
-    ? (campos.find((c) => c.id === vistaActiva.config?.galeria) || campos.find((c) => c.tipo === 'adjunto'))
+    ? (campos.find((c) => c.id === vistaActiva.config?.galeria) || campos.find((c) => c.tipo === 'adjunto' || c.tipo === 'imagen'))
     : null;
   const tarjetaTitulo = campos.find((c) => c.id === vistaActiva?.config?.titulo)
     || campos.find((c) => c.tipo === 'texto')
@@ -648,6 +652,21 @@ function ListaDetalle({ listaId, area }) {
       toastShow('Vista creada', 'ok');
     } catch (e) {
       toastShow(e.message, 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const crearRegistroInline = async (datos) => {
+    setBusy(true);
+    try {
+      await api(`/listas/${lista.id}/registros`, { method: 'POST', body: { datos } });
+      toastShow('Registro creado', 'ok');
+      await recargarRegistros();
+      return true;
+    } catch (e) {
+      toastShow(e.message, 'error');
+      return false;
     } finally {
       setBusy(false);
     }
@@ -1020,6 +1039,14 @@ function ListaDetalle({ listaId, area }) {
               <Icon name="shield" size={15} />
               <span>No tenés permiso para ver los registros de esta lista.</span>
             </div>
+          ) : vistaActiva?.tipo === 'form' ? (
+            <VistaFormulario
+              lista={lista}
+              campos={campos}
+              puedeCrear={Boolean(puede.crear_registros)}
+              busy={busy}
+              onGuardar={crearRegistroInline}
+            />
           ) : vistaActiva?.tipo === 'kanban' ? (
             (!kanbanCampo || kanbanOpciones.length === 0) ? (
               <div className="banner-info">
@@ -1224,7 +1251,7 @@ function ListaDetalle({ listaId, area }) {
                             const valor = registro.datos?.[campo.id];
                             return (
                               <td key={campo.id}>
-                                {campo.tipo === 'adjunto' && valor?.url ? (
+                                {(campo.tipo === 'adjunto' || campo.tipo === 'imagen') && valor?.url ? (
                                   <a
                                     className="listas-cell"
                                     href={valor.url}

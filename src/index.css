@@ -1497,3 +1497,19 @@ details[open] > .cz-summary::after { content: ' –'; }
 .lista-audit-row { display: flex; align-items: flex-start; gap: 8px; border-bottom: 1px solid var(--line); padding: 7px 0; }
 .lista-audit-row:last-child { border-bottom: 0; }
 .lista-audit-ico { width: 24px; height: 24px; border-radius: 50%; background: var(--bg-3); display: grid; place-items: center; color: var(--muted); flex: 0 0 auto; }
+
+.vista-formulario { max-width: 900px; }
+.vista-form-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; margin-bottom: 12px; }
+.vista-form-head p { margin: 3px 0 0; font-size: 12px; }
+
+/* ---------- Menú: buscador, favoritos y recientes ---------- */
+.shell-menu-search { display: flex; align-items: center; gap: 6px; margin: 4px 10px 8px; padding: 6px 8px; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.08); border-radius: 8px; color: rgba(255,255,255,.55); }
+.shell-menu-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: #fff; font: inherit; font-size: 12px; }
+.shell-menu-search input::placeholder { color: rgba(255,255,255,.45); }
+.shell-menu-search button { border: 0; background: transparent; color: rgba(255,255,255,.6); cursor: pointer; font-size: 11px; }
+.shell-item-wrap { display: flex; align-items: center; position: relative; }
+.shell-item-wrap .shell-item { flex: 1; min-width: 0; padding-right: 26px; }
+.shell-fav { position: absolute; right: 4px; border: 0; background: transparent; color: rgba(255,255,255,.25); cursor: pointer; font-size: 13px; padding: 2px 4px; opacity: 0; transition: opacity .12s; }
+.shell-item-wrap:hover .shell-fav, .shell-fav.on { opacity: 1; }
+.shell-fav.on { color: var(--brand-amber); }
+.shell-menu-empty { padding: 10px 12px; color: rgba(255,255,255,.55); font-size: 12px; }

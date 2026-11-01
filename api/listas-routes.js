@@ -12,6 +12,7 @@ import { authRequired } from './middleware/auth.js';
 import { auditar } from './auditoria.js';
 import { encolar } from './outbox.js';
 import { normalizarBooleano } from './validaciones.js';
+import { PLANTILLAS, crearListaDesdePlantilla } from './listas-seed.js';
 import {
   CLAVES_AREA, TIPOS, normalizarOpciones, permisosArea, validarRegistro, evaluarFormula,
 } from './listas.js';
@@ -184,7 +185,7 @@ async function areasVisibles(user) {
   if (!user || user.rol === 'cliente') return [];
   const areas = await query('SELECT id, slug, nombre, descripcion, icono, orden FROM areas WHERE activo = true ORDER BY orden, nombre');
   const listas = await query(`
-    SELECT id, area_id, nombre, descripcion, icono, orden
+    SELECT id, area_id, nombre, descripcion, icono, orden, acceso_categorias
       FROM listas
      WHERE archivada = false
      ORDER BY orden, lower(nombre)
@@ -194,20 +195,30 @@ async function areasVisibles(user) {
     .map((a) => ({
       ...a,
       puede: user.rol === 'admin' ? TODAS : permisosArea(user.areas, a.id),
-      listas: listas.filter((l) => l.area_id === a.id),
+      listas: listas.filter((l) => l.area_id === a.id && listaAccesible(user, l)),
     }));
 }
 
 // Se exporta para que /api/estado arme el menú dinámico en el mismo request.
-export { areasVisibles };
+export { areasVisibles, listaAccesible };
 
-async function listaConArea(id) {
-  return one(`
+function listaAccesible(user, lista) {
+  if (!user) return true;
+  if (user.rol === 'admin') return true;
+  const categorias = Array.isArray(lista.acceso_categorias) ? lista.acceso_categorias : [];
+  if (!categorias.length) return true;
+  return Boolean(user.categoria_id) && categorias.includes(user.categoria_id);
+}
+
+async function listaConArea(id, user = null) {
+  const lista = await one(`
     SELECT l.*, a.slug AS area_slug, a.nombre AS area_nombre
       FROM listas l
       JOIN areas a ON a.id = l.area_id
      WHERE l.id = $1 AND l.archivada = false
   `, [id]);
+  if (lista && user && !listaAccesible(user, lista)) return null;
+  return lista;
 }
 
 async function camposDe(listaId) {
@@ -391,13 +402,13 @@ listasRouter.get('/listas/archivadas', authRequired, async (req, res) => {
   }
   const filas = await query(`
     SELECT l.id, l.area_id, l.nombre, l.descripcion, l.icono, l.archivada_en, l.archivada_por,
-           a.nombre AS area_nombre
+           l.acceso_categorias, a.nombre AS area_nombre
       FROM listas l JOIN areas a ON a.id = l.area_id
      WHERE l.archivada = true ${where.length ? `AND ${where.join(' AND ')}` : ''}
      ORDER BY l.archivada_en DESC NULLS LAST
      LIMIT 200
   `, params);
-  return res.json(filas);
+  return res.json(filas.filter((l) => listaAccesible(req.user, l)));
 });
 
 listasRouter.patch('/listas/:id/restaurar', authRequired, async (req, res) => {
@@ -405,7 +416,7 @@ listasRouter.patch('/listas/:id/restaurar', authRequired, async (req, res) => {
     SELECT l.*, a.slug AS area_slug FROM listas l JOIN areas a ON a.id = l.area_id
      WHERE l.id = $1 AND l.archivada = true
   `, [req.params.id]);
-  if (!lista) return res.status(404).json({ error: 'Lista archivada no encontrada' });
+  if (!lista || !listaAccesible(req.user, lista)) return res.status(404).json({ error: 'Lista archivada no encontrada' });
   if (!capacidades(req, lista.area_id).borrar_listas) return sinPermiso(res);
   try {
     await query('UPDATE listas SET archivada = false, archivada_en = NULL, archivada_por = NULL, actualizado_en = now() WHERE id = $1', [lista.id]);
@@ -444,7 +455,7 @@ async function formularioPorToken(token) {
 
 // ---------- Formularios públicos ----------
 listasRouter.get('/listas/:id/formulario', authRequired, async (req, res) => {
-  const lista = await listaConArea(req.params.id);
+  const lista = await listaConArea(req.params.id, req.user);
   if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
   if (!capacidades(req, lista.area_id).editar_listas) return sinPermiso(res);
   const form = await one('SELECT * FROM lista_formularios WHERE lista_id = $1', [lista.id]);
@@ -456,7 +467,7 @@ listasRouter.get('/listas/:id/formulario', authRequired, async (req, res) => {
 });
 
 listasRouter.put('/listas/:id/formulario', authRequired, async (req, res) => {
-  const lista = await listaConArea(req.params.id);
+  const lista = await listaConArea(req.params.id, req.user);
   if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
   if (!capacidades(req, lista.area_id).editar_listas) return sinPermiso(res);
   const todos = await camposDe(lista.id);
@@ -482,7 +493,7 @@ listasRouter.put('/listas/:id/formulario', authRequired, async (req, res) => {
 });
 
 listasRouter.delete('/listas/:id/formulario', authRequired, async (req, res) => {
-  const lista = await listaConArea(req.params.id);
+  const lista = await listaConArea(req.params.id, req.user);
   if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
   if (!capacidades(req, lista.area_id).editar_listas) return sinPermiso(res);
   await query('DELETE FROM lista_formularios WHERE lista_id = $1', [lista.id]);
@@ -554,6 +565,44 @@ listasRouter.post('/public/formulario/:token', publicFormLimiter, async (req, re
   return res.status(201).json({ ok: true, aprobacion_estado: estadoAprobacion });
 });
 
+// Catálogo de plantillas de listas.
+listasRouter.get('/listas/plantillas', authRequired, async (req, res) => {
+  if (!req.user || req.user.rol === 'cliente') return sinPermiso(res);
+  return res.json(PLANTILLAS.map((p) => ({
+    clave: p.clave,
+    nombre: p.nombre,
+    descripcion: p.descripcion,
+    icono: p.icono,
+    area_id: p.area_id,
+    campos: (p.campos || []).length,
+    vistas: (p.vistas || []).length,
+  })));
+});
+
+listasRouter.post('/listas/plantillas/:clave', authRequired, async (req, res) => {
+  const areaId = limStr(req.body?.area_id, 60);
+  const area = await one('SELECT id FROM areas WHERE id = $1 AND activo = true', [areaId]);
+  if (!area) return res.status(400).json({ error: 'Elegí un área válida.' });
+  if (!capacidades(req, areaId).crear_listas) return sinPermiso(res, 'No tenés permiso para crear listas en esta área.');
+  const nombre = limStr(req.body?.nombre, 80);
+  try {
+    const creada = await crearListaDesdePlantilla({ clave: req.params.clave, areaId, nombre, usuario: req.user.email });
+    if (!creada) return res.status(400).json({ error: 'La plantilla no corresponde a esta área.' });
+    await auditar({ req, tabla: 'listas', registroId: creada.id, accion: 'crear', detalle: `plantilla ${req.params.clave}` });
+    return res.status(201).json({ id: creada.id });
+  } catch (e) {
+    if (e.code === '23505') return res.status(400).json({ error: 'Ya existe una lista con ese nombre en el área.' });
+    throw e;
+  }
+});
+
+// Categorías disponibles para configurar el acceso a una lista.
+listasRouter.get('/listas/categorias', authRequired, async (req, res) => {
+  if (!req.user || req.user.rol === 'cliente') return sinPermiso(res);
+  const filas = await query('SELECT id, nombre, descripcion FROM categorias_acceso ORDER BY lower(nombre)');
+  return res.json(filas);
+});
+
 // Equipo interno para los campos de tipo Persona (sin datos sensibles).
 listasRouter.get('/equipo', authRequired, async (req, res) => {
   if (!req.user || req.user.rol === 'cliente') return sinPermiso(res);
@@ -567,9 +616,28 @@ listasRouter.get('/equipo', authRequired, async (req, res) => {
   return res.json(filas);
 });
 
+// Historial de la estructura de la lista (lista, campos, vistas, reglas y formularios).
+listasRouter.get('/listas/:id/auditoria-estructura', authRequired, async (req, res) => {
+  const lista = await listaConArea(req.params.id, req.user);
+  if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
+  if (!capacidades(req, lista.area_id).editar_listas) return sinPermiso(res);
+  const columnas = 'a.id, a.fecha, a.actor, a.rol, a.tabla, a.accion, a.campos, a.detalle, a.antes, a.despues';
+  const [propia, campos, vistas, reglas, formularios] = await Promise.all([
+    query(`SELECT ${columnas} FROM auditoria a WHERE a.tabla = 'listas' AND a.registro_id = $1 ORDER BY a.fecha DESC LIMIT 30`, [lista.id]),
+    query(`SELECT ${columnas} FROM auditoria a JOIN lista_campos c ON c.id = a.registro_id WHERE a.tabla = 'lista_campos' AND c.lista_id = $1 ORDER BY a.fecha DESC LIMIT 50`, [lista.id]),
+    query(`SELECT ${columnas} FROM auditoria a JOIN lista_vistas v ON v.id = a.registro_id WHERE a.tabla = 'lista_vistas' AND v.lista_id = $1 ORDER BY a.fecha DESC LIMIT 50`, [lista.id]),
+    query(`SELECT ${columnas} FROM auditoria a JOIN lista_reglas r ON r.id = a.registro_id WHERE a.tabla = 'lista_reglas' AND r.lista_id = $1 ORDER BY a.fecha DESC LIMIT 50`, [lista.id]),
+    query(`SELECT ${columnas} FROM auditoria a JOIN lista_formularios f ON f.id = a.registro_id WHERE a.tabla = 'lista_formularios' AND f.lista_id = $1 ORDER BY a.fecha DESC LIMIT 30`, [lista.id]),
+  ]);
+  const filas = [...propia, ...campos, ...vistas, ...reglas, ...formularios]
+    .sort((a, b) => new Date(b.fecha) - new Date(a.fecha))
+    .slice(0, 150);
+  return res.json(filas);
+});
+
 // Historial de actividad de los registros de una lista.
 listasRouter.get('/listas/:id/auditoria', authRequired, async (req, res) => {
-  const lista = await listaConArea(req.params.id);
+  const lista = await listaConArea(req.params.id, req.user);
   if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
   if (!capacidades(req, lista.area_id).editar_listas) return sinPermiso(res);
   const filas = await query(`
@@ -617,9 +685,9 @@ listasRouter.get('/listas/aprobaciones/pendientes', authRequired, async (req, re
   const cap = capacidades(req, areaId);
   if (!cap.ver || !cap.editar_listas) return sinPermiso(res, 'Solo quien administra las listas puede ver las aprobaciones pendientes.');
 
-  const filas = await query(`
+  let filas = await query(`
     SELECT a.id, a.lista_id, a.registro_id, a.solicitado_por, a.comentario, a.creado_en,
-           l.nombre AS lista_nombre, r.datos
+           l.nombre AS lista_nombre, l.acceso_categorias, r.datos
       FROM lista_aprobaciones a
       JOIN listas l ON l.id = a.lista_id
       JOIN lista_registros r ON r.id = a.registro_id
@@ -627,6 +695,8 @@ listasRouter.get('/listas/aprobaciones/pendientes', authRequired, async (req, re
      ORDER BY a.creado_en ASC
      LIMIT 300
   `, [areaId]);
+  filas = filas.filter((f) => listaAccesible(req.user, f));
+  listas = listas.filter((l) => listaAccesible(req.user, l));
 
   const campos = await query(`
     SELECT c.id, c.lista_id, c.nombre, c.tipo
@@ -665,7 +735,7 @@ listasRouter.get('/listas/resumen', authRequired, async (req, res) => {
   const verTodo = req.user.rol === 'admin' || capArea.editar_listas;
 
   let listas = await query(`
-    SELECT l.id, l.area_id, l.nombre, l.icono, l.ver_filas, l.ver_campo, count(r.id)::int AS registros,
+    SELECT l.id, l.area_id, l.nombre, l.icono, l.ver_filas, l.ver_campo, l.acceso_categorias, count(r.id)::int AS registros,
            count(r.id) FILTER (WHERE r.creado_en >= now() - interval '7 days')::int AS nuevos
       FROM listas l
       LEFT JOIN lista_registros r ON r.lista_id = l.id AND r.archivado = false
@@ -698,6 +768,8 @@ listasRouter.get('/listas/resumen', authRequired, async (req, res) => {
     if (v && typeof v === 'object') return v.etiqueta || v.nombre || v.id || '';
     return v == null ? '' : String(v);
   };
+  const idsListas = new Set(listas.map((l) => l.id));
+  recientes = recientes.filter((r) => idsListas.has(r.lista_id));
 
   if (!verTodo) {
     const filasArea = await query(`
@@ -760,7 +832,7 @@ listasRouter.get('/listas/resumen', authRequired, async (req, res) => {
 });
 
 listasRouter.get('/listas/:id', authRequired, async (req, res) => {
-  const lista = await listaConArea(req.params.id);
+  const lista = await listaConArea(req.params.id, req.user);
   if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
   const cap = capacidades(req, lista.area_id);
   if (!cap.ver) return sinPermiso(res, 'No tenés acceso a esta área.');
@@ -800,7 +872,7 @@ listasRouter.post('/listas', authRequired, async (req, res) => {
 });
 
 listasRouter.patch('/listas/:id', authRequired, async (req, res) => {
-  const lista = await listaConArea(req.params.id);
+  const lista = await listaConArea(req.params.id, req.user);
   if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
   if (!capacidades(req, lista.area_id).editar_listas) return sinPermiso(res);
   const sets = [];
@@ -826,6 +898,16 @@ listasRouter.patch('/listas/:id', authRequired, async (req, res) => {
     } else {
       sets.push('permiso_campo = NULL');
     }
+  }
+  if (req.body?.acceso_categorias !== undefined) {
+    const ids = Array.isArray(req.body.acceso_categorias)
+      ? [...new Set(req.body.acceso_categorias.map((x) => limStr(x, 80)).filter(Boolean))]
+      : [];
+    if (ids.length) {
+      const validas = await query('SELECT id FROM categorias_acceso WHERE id = ANY($1)', [ids]);
+      if (validas.length !== ids.length) return res.status(400).json({ error: 'Una de las categorías seleccionadas no existe.' });
+    }
+    params.push(JSON.stringify(ids)); sets.push(`acceso_categorias = $${params.length}::jsonb`);
   }
   if (req.body?.requiere_aprobacion !== undefined) {
     params.push(normalizarBooleano(req.body.requiere_aprobacion) === true);
@@ -858,7 +940,7 @@ listasRouter.patch('/listas/:id', authRequired, async (req, res) => {
 // Duplicar una lista copia SU ESTRUCTURA (campos y vistas), no los registros.
 // Sirve como plantilla: Materiales, Herramientas, Insumos, etc.
 listasRouter.post('/listas/:id/duplicar', authRequired, async (req, res) => {
-  const origen = await listaConArea(req.params.id);
+  const origen = await listaConArea(req.params.id, req.user);
   if (!origen) return res.status(404).json({ error: 'Lista no encontrada' });
   if (!capacidades(req, origen.area_id).crear_listas) return sinPermiso(res, 'No tenés permiso para crear listas en esta área.');
   const nombre = limStr(req.body?.nombre, 80);
@@ -867,9 +949,9 @@ listasRouter.post('/listas/:id/duplicar', authRequired, async (req, res) => {
   try {
     await tx(async (client) => {
       await client.query(
-        `INSERT INTO listas (id, area_id, nombre, descripcion, icono, creada_por, permiso_filas, ver_filas, requiere_aprobacion)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-        [nuevoId, origen.area_id, nombre, origen.descripcion, origen.icono, req.user.email, origen.permiso_filas || 'todos', origen.ver_filas || 'todos', origen.requiere_aprobacion === true]
+        `INSERT INTO listas (id, area_id, nombre, descripcion, icono, creada_por, permiso_filas, ver_filas, requiere_aprobacion, acceso_categorias)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb)`,
+        [nuevoId, origen.area_id, nombre, origen.descripcion, origen.icono, req.user.email, origen.permiso_filas || 'todos', origen.ver_filas || 'todos', origen.requiere_aprobacion === true, JSON.stringify(Array.isArray(origen.acceso_categorias) ? origen.acceso_categorias : [])]
       );
       const campos = await client.query(
         'SELECT * FROM lista_campos WHERE lista_id = $1 AND activo = true ORDER BY orden, lower(nombre)',
@@ -946,7 +1028,7 @@ listasRouter.post('/listas/:id/duplicar', authRequired, async (req, res) => {
 });
 
 listasRouter.delete('/listas/:id', authRequired, async (req, res) => {
-  const lista = await listaConArea(req.params.id);
+  const lista = await listaConArea(req.params.id, req.user);
   if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
   if (!capacidades(req, lista.area_id).borrar_listas) return sinPermiso(res);
   await query(
@@ -959,7 +1041,7 @@ listasRouter.delete('/listas/:id', authRequired, async (req, res) => {
 
 // ---------- Campos ----------
 listasRouter.post('/listas/:id/campos', authRequired, async (req, res) => {
-  const lista = await listaConArea(req.params.id);
+  const lista = await listaConArea(req.params.id, req.user);
   if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
   if (!capacidades(req, lista.area_id).editar_listas) return sinPermiso(res);
   const nombre = limStr(req.body?.nombre, 80);
@@ -1005,7 +1087,7 @@ listasRouter.post('/listas/:id/campos', authRequired, async (req, res) => {
 listasRouter.patch('/lista-campos/:id', authRequired, async (req, res) => {
   const campo = await one('SELECT * FROM lista_campos WHERE id = $1 AND activo = true', [req.params.id]);
   if (!campo) return res.status(404).json({ error: 'Campo no encontrado' });
-  const lista = await listaConArea(campo.lista_id);
+  const lista = await listaConArea(campo.lista_id, req.user);
   if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
   if (!capacidades(req, lista.area_id).editar_listas) return sinPermiso(res);
   const sets = [];
@@ -1066,7 +1148,7 @@ listasRouter.patch('/lista-campos/:id', authRequired, async (req, res) => {
 listasRouter.delete('/lista-campos/:id', authRequired, async (req, res) => {
   const campo = await one('SELECT * FROM lista_campos WHERE id = $1 AND activo = true', [req.params.id]);
   if (!campo) return res.status(404).json({ error: 'Campo no encontrado' });
-  const lista = await listaConArea(campo.lista_id);
+  const lista = await listaConArea(campo.lista_id, req.user);
   if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
   if (!capacidades(req, lista.area_id).editar_listas) return sinPermiso(res);
   await query('UPDATE lista_campos SET activo = false, actualizado_en = now() WHERE id = $1', [campo.id]);
@@ -1076,7 +1158,7 @@ listasRouter.delete('/lista-campos/:id', authRequired, async (req, res) => {
 
 // ---------- Vistas ----------
 listasRouter.post('/listas/:id/vistas', authRequired, async (req, res) => {
-  const lista = await listaConArea(req.params.id);
+  const lista = await listaConArea(req.params.id, req.user);
   if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
   if (!capacidades(req, lista.area_id).administrar_vistas) return sinPermiso(res);
   const nombre = limStr(req.body?.nombre, 80);
@@ -1101,7 +1183,7 @@ listasRouter.post('/listas/:id/vistas', authRequired, async (req, res) => {
 listasRouter.patch('/lista-vistas/:id', authRequired, async (req, res) => {
   const vista = await one('SELECT * FROM lista_vistas WHERE id = $1', [req.params.id]);
   if (!vista) return res.status(404).json({ error: 'Vista no encontrada' });
-  const lista = await listaConArea(vista.lista_id);
+  const lista = await listaConArea(vista.lista_id, req.user);
   if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
   if (!capacidades(req, lista.area_id).administrar_vistas) return sinPermiso(res);
   if (vista.visibilidad === 'personal' && vista.creada_por !== req.user.email && req.user.rol !== 'admin') {
@@ -1139,7 +1221,7 @@ listasRouter.patch('/lista-vistas/:id', authRequired, async (req, res) => {
 listasRouter.delete('/lista-vistas/:id', authRequired, async (req, res) => {
   const vista = await one('SELECT * FROM lista_vistas WHERE id = $1', [req.params.id]);
   if (!vista) return res.status(404).json({ error: 'Vista no encontrada' });
-  const lista = await listaConArea(vista.lista_id);
+  const lista = await listaConArea(vista.lista_id, req.user);
   if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
   if (!capacidades(req, lista.area_id).administrar_vistas) return sinPermiso(res);
   if (vista.visibilidad === 'personal' && vista.creada_por !== req.user.email && req.user.rol !== 'admin') {
@@ -1152,7 +1234,7 @@ listasRouter.delete('/lista-vistas/:id', authRequired, async (req, res) => {
 
 // ---------- Registros ----------
 listasRouter.get('/listas/:id/registros', authRequired, async (req, res) => {
-  const lista = await listaConArea(req.params.id);
+  const lista = await listaConArea(req.params.id, req.user);
   if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
   if (!capacidades(req, lista.area_id).ver_registros) return sinPermiso(res);
   const q = limStr(req.query?.q, 120);
@@ -1174,7 +1256,7 @@ listasRouter.get('/listas/:id/registros', authRequired, async (req, res) => {
 });
 
 listasRouter.post('/listas/:id/registros', authRequired, async (req, res) => {
-  const lista = await listaConArea(req.params.id);
+  const lista = await listaConArea(req.params.id, req.user);
   if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
   if (!capacidades(req, lista.area_id).crear_registros) return sinPermiso(res, 'No tenés permiso para crear registros en esta lista.');
   const campos = await camposDe(lista.id);
@@ -1210,7 +1292,7 @@ listasRouter.post('/listas/:id/registros', authRequired, async (req, res) => {
 listasRouter.patch('/lista-registros/:id', authRequired, async (req, res) => {
   const registro = await one('SELECT * FROM lista_registros WHERE id = $1 AND archivado = false', [req.params.id]);
   if (!registro) return res.status(404).json({ error: 'Registro no encontrado' });
-  const lista = await listaConArea(registro.lista_id);
+  const lista = await listaConArea(registro.lista_id, req.user);
   if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
   if (!capacidades(req, lista.area_id).editar_registros) return sinPermiso(res, 'No tenés permiso para editar registros en esta lista.');
   if (!puedeEditarRegistro(req, lista, registro)) return sinPermiso(res, 'Este registro está reservado para su creador o responsable.');
@@ -1286,7 +1368,7 @@ function normalizarRegla(body, campos) {
 }
 
 listasRouter.get('/listas/:id/reglas', authRequired, async (req, res) => {
-  const lista = await listaConArea(req.params.id);
+  const lista = await listaConArea(req.params.id, req.user);
   if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
   if (!capacidades(req, lista.area_id).editar_listas) return sinPermiso(res);
   const reglas = await query('SELECT * FROM lista_reglas WHERE lista_id = $1 ORDER BY creado_en DESC', [lista.id]);
@@ -1294,7 +1376,7 @@ listasRouter.get('/listas/:id/reglas', authRequired, async (req, res) => {
 });
 
 listasRouter.post('/listas/:id/reglas', authRequired, async (req, res) => {
-  const lista = await listaConArea(req.params.id);
+  const lista = await listaConArea(req.params.id, req.user);
   if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
   if (!capacidades(req, lista.area_id).editar_listas) return sinPermiso(res);
   const campos = await camposDe(lista.id);
@@ -1313,7 +1395,7 @@ listasRouter.post('/listas/:id/reglas', authRequired, async (req, res) => {
 listasRouter.patch('/lista-reglas/:id', authRequired, async (req, res) => {
   const regla = await one('SELECT * FROM lista_reglas WHERE id = $1', [req.params.id]);
   if (!regla) return res.status(404).json({ error: 'Regla no encontrada' });
-  const lista = await listaConArea(regla.lista_id);
+  const lista = await listaConArea(regla.lista_id, req.user);
   if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
   if (!capacidades(req, lista.area_id).editar_listas) return sinPermiso(res);
   const campos = await camposDe(lista.id);
@@ -1331,7 +1413,7 @@ listasRouter.patch('/lista-reglas/:id', authRequired, async (req, res) => {
 listasRouter.delete('/lista-reglas/:id', authRequired, async (req, res) => {
   const regla = await one('SELECT * FROM lista_reglas WHERE id = $1', [req.params.id]);
   if (!regla) return res.status(404).json({ error: 'Regla no encontrada' });
-  const lista = await listaConArea(regla.lista_id);
+  const lista = await listaConArea(regla.lista_id, req.user);
   if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
   if (!capacidades(req, lista.area_id).editar_listas) return sinPermiso(res);
   await query('DELETE FROM lista_reglas WHERE id = $1', [regla.id]);
@@ -1381,7 +1463,7 @@ async function avisarAprobadores(lista, aprobacion, solicitante, decision = fals
 
 // ---------- Aprobaciones de registros ----------
 listasRouter.get('/listas/:id/registros/:rid/aprobaciones', authRequired, async (req, res) => {
-  const lista = await listaConArea(req.params.id);
+  const lista = await listaConArea(req.params.id, req.user);
   if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
   if (!capacidades(req, lista.area_id).ver_registros) return sinPermiso(res);
   const registro = await one('SELECT * FROM lista_registros WHERE id = $1 AND lista_id = $2 AND archivado = false', [req.params.rid, lista.id]);
@@ -1395,7 +1477,7 @@ listasRouter.get('/listas/:id/registros/:rid/aprobaciones', authRequired, async 
 });
 
 listasRouter.post('/listas/:id/registros/:rid/aprobaciones', authRequired, async (req, res) => {
-  const lista = await listaConArea(req.params.id);
+  const lista = await listaConArea(req.params.id, req.user);
   if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
   if (!capacidades(req, lista.area_id).editar_registros) return sinPermiso(res);
   const registro = await one('SELECT * FROM lista_registros WHERE id = $1 AND lista_id = $2 AND archivado = false', [req.params.rid, lista.id]);
@@ -1422,7 +1504,7 @@ listasRouter.post('/listas/:id/registros/:rid/aprobaciones', authRequired, async
 listasRouter.patch('/lista-aprobaciones/:id', authRequired, async (req, res) => {
   const aprobacion = await one('SELECT * FROM lista_aprobaciones WHERE id = $1', [req.params.id]);
   if (!aprobacion) return res.status(404).json({ error: 'Aprobación no encontrada' });
-  const lista = await listaConArea(aprobacion.lista_id);
+  const lista = await listaConArea(aprobacion.lista_id, req.user);
   if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
   if (!capacidades(req, lista.area_id).editar_listas) return sinPermiso(res, 'Solo quien administra la lista puede aprobar o rechazar.');
   if (aprobacion.estado !== 'pendiente') return res.status(400).json({ error: 'Esta aprobación ya fue decidida.' });
@@ -1443,7 +1525,7 @@ listasRouter.patch('/lista-aprobaciones/:id', authRequired, async (req, res) => 
 });
 
 listasRouter.get('/listas/:id/registros/:rid/comentarios', authRequired, async (req, res) => {
-  const lista = await listaConArea(req.params.id);
+  const lista = await listaConArea(req.params.id, req.user);
   if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
   if (!capacidades(req, lista.area_id).ver_registros) return sinPermiso(res);
   const registro = await one('SELECT * FROM lista_registros WHERE id = $1 AND lista_id = $2 AND archivado = false', [req.params.rid, lista.id]);
@@ -1460,7 +1542,7 @@ listasRouter.get('/listas/:id/registros/:rid/comentarios', authRequired, async (
 });
 
 listasRouter.post('/listas/:id/registros/:rid/comentarios', authRequired, async (req, res) => {
-  const lista = await listaConArea(req.params.id);
+  const lista = await listaConArea(req.params.id, req.user);
   if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
   if (!capacidades(req, lista.area_id).ver_registros) return sinPermiso(res);
   const registro = await one('SELECT * FROM lista_registros WHERE id = $1 AND lista_id = $2 AND archivado = false', [req.params.rid, lista.id]);
@@ -1496,7 +1578,7 @@ listasRouter.post('/listas/:id/registros/:rid/comentarios', authRequired, async 
 });
 
 listasRouter.get('/listas/:id/registros/:rid/historial', authRequired, async (req, res) => {
-  const lista = await listaConArea(req.params.id);
+  const lista = await listaConArea(req.params.id, req.user);
   if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
   if (!capacidades(req, lista.area_id).ver_registros) return sinPermiso(res);
   const registro = await one('SELECT * FROM lista_registros WHERE id = $1 AND lista_id = $2', [req.params.rid, lista.id]);
@@ -1515,7 +1597,7 @@ listasRouter.get('/listas/:id/registros/:rid/historial', authRequired, async (re
 listasRouter.patch('/lista-registros/:id/historial/:histId/restaurar', authRequired, async (req, res) => {
   const registro = await one('SELECT * FROM lista_registros WHERE id = $1 AND archivado = false', [req.params.id]);
   if (!registro) return res.status(404).json({ error: 'Registro no encontrado' });
-  const lista = await listaConArea(registro.lista_id);
+  const lista = await listaConArea(registro.lista_id, req.user);
   if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
   if (!capacidades(req, lista.area_id).editar_registros) return sinPermiso(res);
   if (!puedeEditarRegistro(req, lista, registro)) return sinPermiso(res, 'Este registro está reservado para su creador o responsable.');
@@ -1532,7 +1614,7 @@ listasRouter.patch('/lista-registros/:id/historial/:histId/restaurar', authRequi
 });
 
 listasRouter.get('/listas/:id/registros-archivados', authRequired, async (req, res) => {
-  const lista = await listaConArea(req.params.id);
+  const lista = await listaConArea(req.params.id, req.user);
   if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
   if (!capacidades(req, lista.area_id).borrar_registros && !capacidades(req, lista.area_id).editar_registros) {
     return sinPermiso(res);
@@ -1550,7 +1632,7 @@ listasRouter.get('/listas/:id/registros-archivados', authRequired, async (req, r
 listasRouter.patch('/lista-registros/:id/restaurar', authRequired, async (req, res) => {
   const registro = await one('SELECT * FROM lista_registros WHERE id = $1 AND archivado = true', [req.params.id]);
   if (!registro) return res.status(404).json({ error: 'Registro archivado no encontrado' });
-  const lista = await listaConArea(registro.lista_id);
+  const lista = await listaConArea(registro.lista_id, req.user);
   if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
   if (!capacidades(req, lista.area_id).borrar_registros) return sinPermiso(res);
   if (!puedeEditarRegistro(req, lista, registro)) return sinPermiso(res, 'Este registro está reservado para su creador o responsable.');
@@ -1562,7 +1644,7 @@ listasRouter.patch('/lista-registros/:id/restaurar', authRequired, async (req, r
 listasRouter.delete('/lista-registros/:id', authRequired, async (req, res) => {
   const registro = await one('SELECT * FROM lista_registros WHERE id = $1 AND archivado = false', [req.params.id]);
   if (!registro) return res.status(404).json({ error: 'Registro no encontrado' });
-  const lista = await listaConArea(registro.lista_id);
+  const lista = await listaConArea(registro.lista_id, req.user);
   if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
   if (!capacidades(req, lista.area_id).borrar_registros) return sinPermiso(res, 'No tenés permiso para archivar registros en esta lista.');
   if (!puedeEditarRegistro(req, lista, registro)) return sinPermiso(res, 'Este registro está reservado para su creador o responsable.');

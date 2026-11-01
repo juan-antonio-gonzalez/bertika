@@ -14,7 +14,7 @@ import { query, one, tx } from './db.js';
 import { nextId } from './ids.js';
 import { signToken, authRequired, requireRol, permisoRequerido, SECRET } from './middleware/auth.js';
 import { PERMISOS, COLUMNAS, agruparPermisos, permisosPorDefecto, normalizarPermisos, permisosEfectivos, puedeVer, tienePermiso } from './permisos.js';
-import { listasRouter, areasVisibles } from './listas-routes.js';
+import { listasRouter, areasVisibles, listaAccesible } from './listas-routes.js';
 import { sembrarListasVentas, sembrarListasTaller } from './listas-seed.js';
 import { normalizarAreas, permisosArea } from './listas.js';
 import { canTransition, ORDEN_ESTADOS, ESTADO_LABEL, MIN_CAPACIDAD_PCT, esEstadoCerrado , puedeTrabajarEnOrden } from './reglas.js';
@@ -578,6 +578,7 @@ async function asegurarCodigos() {
   await query('ALTER TABLE listas ADD COLUMN IF NOT EXISTS ver_campo TEXT');
   await query('ALTER TABLE listas ADD COLUMN IF NOT EXISTS requiere_aprobacion BOOLEAN DEFAULT FALSE');
   await query("ALTER TABLE lista_registros ADD COLUMN IF NOT EXISTS aprobacion_estado TEXT DEFAULT 'no_requiere'");
+  await query("ALTER TABLE listas ADD COLUMN IF NOT EXISTS acceso_categorias JSONB DEFAULT '[]'::jsonb");
   // Fase 3: formularios públicos por lista (token no adivinable).
   await query(`CREATE TABLE IF NOT EXISTS lista_formularios (
     id TEXT PRIMARY KEY,
@@ -2046,11 +2047,14 @@ app.get('/api/estado', authRequired, async (req, res) => {
   for (const [tabla, seccion] of Object.entries({ clientes: 'clientes', tecnicos: 'tecnicos', insumos: 'inventario', bajas: 'baja' })) {
     if (!puedeVer(req.user, seccion)) out[tabla] = [];
   }
-  // El taller solo ve clientes con al menos una orden. El admin ve toda la
-  // cartera y puede abrir la pestaña "Sin órdenes" desde el panel.
+  // El taller ve clientes con al menos una orden o una batería/equipo
+  // registrado. El admin ve toda la cartera y puede abrir la pestaña "Sin relación".
   if (rol !== 'admin' && rol !== 'cliente' && puedeVer(req.user, 'clientes')) {
-    const conOrden = new Set(out.ordenes.map((o) => o.cliente_id));
-    out.clientes = out.clientes.filter((c) => conOrden.has(c.id));
+    const conRelacion = new Set([
+      ...out.ordenes.map((o) => o.cliente_id),
+      ...out.baterias.map((b) => b.cliente_id),
+    ].filter(Boolean));
+    out.clientes = out.clientes.filter((c) => conRelacion.has(c.id));
   }
   if (rol === 'cliente') {
     const propias = out.ordenes.filter((o) => o.cliente_id === req.user.cliente_id);
@@ -2760,7 +2764,10 @@ app.get('/api/clientes', authRequired, permisoRequerido('clientes'), async (req,
     return res.json(await query(`
       SELECT c.* FROM clientes c
        WHERE c.deleted_at IS NULL
-         AND EXISTS (SELECT 1 FROM ordenes o WHERE o.cliente_id = c.id)
+         AND (
+           EXISTS (SELECT 1 FROM ordenes o WHERE o.cliente_id = c.id)
+           OR EXISTS (SELECT 1 FROM baterias b WHERE b.cliente_id = c.id)
+         )
        ORDER BY c.nombre
     `));
   }
@@ -2769,6 +2776,7 @@ app.get('/api/clientes', authRequired, permisoRequerido('clientes'), async (req,
       SELECT c.* FROM clientes c
        WHERE c.deleted_at IS NULL
          AND NOT EXISTS (SELECT 1 FROM ordenes o WHERE o.cliente_id = c.id)
+         AND NOT EXISTS (SELECT 1 FROM baterias b WHERE b.cliente_id = c.id)
        ORDER BY c.nombre
     `));
   }
@@ -3317,7 +3325,7 @@ app.post('/api/listas/:id/registros/:rid/convertir', authRequired, async (req, r
       FROM listas l JOIN areas a ON a.id = l.area_id
      WHERE l.id = $1 AND l.archivada = false
   `, [req.params.id]);
-  if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
+  if (!lista || !listaAccesible(req.user, lista)) return res.status(404).json({ error: 'Lista no encontrada' });
   if (lista.area_slug !== 'ventas') return res.status(400).json({ error: 'La conversión solo está disponible en el área Ventas.' });
   const caps = esAdmin(req) ? { convertir_prospecto: true } : permisosArea(req.user.areas, lista.area_id);
   if (!caps.convertir_prospecto) {
@@ -5544,7 +5552,7 @@ const uploadAdjunto = multer({
 
 app.post('/api/listas/:id/adjuntos', authRequired, uploadAdjunto.single('archivo'), async (req, res) => {
   const lista = await one('SELECT * FROM listas WHERE id = $1 AND archivada = false', [req.params.id]);
-  if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
+  if (!lista || !listaAccesible(req.user, lista)) return res.status(404).json({ error: 'Lista no encontrada' });
   const caps = esAdmin(req) ? { crear_registros: true, editar_registros: true } : permisosArea(req.user.areas, lista.area_id);
   if (!caps.crear_registros && !caps.editar_registros) {
     return res.status(403).json({ error: 'No tenés permiso para adjuntar archivos en esta lista.' });

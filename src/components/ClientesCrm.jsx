@@ -398,12 +398,15 @@ export default function ClientesCrm({ onAbrirOrden }) {
     }
   };
 
-  const conOrden = useMemo(() => new Set((data.ordenes || []).map((o) => o.cliente_id)), [data.ordenes]);
+  const conRelacion = useMemo(() => new Set([
+    ...(data.ordenes || []).map((o) => o.cliente_id),
+    ...(data.baterias || []).map((b) => b.cliente_id),
+  ].filter(Boolean)), [data.ordenes, data.baterias]);
   const clientesBase = useMemo(() => {
     const todos = data.clientes || [];
-    if (vista === 'sin_ordenes' && esAdmin) return todos.filter((c) => !conOrden.has(c.id));
-    return todos.filter((c) => conOrden.has(c.id));
-  }, [data.clientes, conOrden, vista, esAdmin]);
+    if (vista === 'sin_ordenes' && esAdmin) return todos.filter((c) => !conRelacion.has(c.id));
+    return todos.filter((c) => conRelacion.has(c.id));
+  }, [data.clientes, conRelacion, vista, esAdmin]);
   const { filas, totales } = useMemo(
     () => resumenClientes(clientesBase, data),
     [clientesBase, data.ordenes, data.baterias] // eslint-disable-line react-hooks/exhaustive-deps
@@ -412,7 +415,7 @@ export default function ClientesCrm({ onAbrirOrden }) {
 
   const seleccionado = abierto ? data.clientes.find((c) => c.id === abierto) || null : null;
   const hayClientes = clientesBase.length > 0;
-  const nCon = (data.clientes || []).filter((c) => conOrden.has(c.id)).length;
+  const nCon = (data.clientes || []).filter((c) => conRelacion.has(c.id)).length;
   const nSin = (data.clientes || []).length - nCon;
 
   return (
@@ -425,7 +428,7 @@ export default function ClientesCrm({ onAbrirOrden }) {
           className={`tab${vista === 'con_ordenes' ? ' active' : ''}`}
           onClick={() => setVista('con_ordenes')}
         >
-          Con órdenes ({nCon})
+          Con relación ({nCon})
         </button>
         {esAdmin && (
           <button
@@ -435,7 +438,7 @@ export default function ClientesCrm({ onAbrirOrden }) {
             className={`tab${vista === 'sin_ordenes' ? ' active' : ''}`}
             onClick={() => setVista('sin_ordenes')}
           >
-            Sin órdenes ({nSin})
+            Sin relación ({nSin})
           </button>
         )}
       </div>
@@ -474,12 +477,12 @@ export default function ClientesCrm({ onAbrirOrden }) {
           <div className="empty">
             <div className="big"><Icon name="users" size={30} /></div>
             {vista === 'sin_ordenes'
-              ? 'No hay clientes sin órdenes.'
-              : 'Todavía no hay clientes con órdenes.'}
+              ? 'No hay clientes sin relación.'
+              : 'Todavía no hay clientes con órdenes o equipos.'}
             <p className="muted" style={{ marginTop: 6, fontSize: 12.5 }}>
               {vista === 'sin_ordenes'
-                ? 'Acá quedan las fichas viejas que todavía no tienen ninguna orden. No se borran.'
-                : 'Cuando una orden se cree para un cliente, aparece acá con sus equipos y garantías.'}
+                ? 'Acá quedan las fichas sin órdenes ni equipos registrados. No se borran.'
+                : 'Cuando un cliente tenga una orden o un equipo registrado, aparece acá.'}
             </p>
           </div>
         )}

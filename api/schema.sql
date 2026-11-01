@@ -308,7 +308,8 @@ CREATE TABLE IF NOT EXISTS listas (
   permiso_campo TEXT,
   ver_filas TEXT DEFAULT 'todos',
   ver_campo TEXT,
-  requiere_aprobacion BOOLEAN DEFAULT FALSE
+  requiere_aprobacion BOOLEAN DEFAULT FALSE,
+  acceso_categorias JSONB DEFAULT '[]'::jsonb
 );
 CREATE INDEX IF NOT EXISTS idx_listas_area ON listas (area_id, archivada, orden);
 CREATE UNIQUE INDEX IF NOT EXISTS listas_area_nombre_uniq ON listas (area_id, lower(nombre)) WHERE archivada = false;
