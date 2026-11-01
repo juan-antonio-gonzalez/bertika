@@ -395,10 +395,17 @@ listasRouter.post('/listas/:id/duplicar', authRequired, async (req, res) => {
       for (const c of campos.rows) {
         const nuevo = idNuevo('cam');
         mapa.set(c.id, nuevo);
+        let configCampo = c.config || {};
+        if (c.tipo === 'calculado' && configCampo.formula) {
+          configCampo = {
+            ...configCampo,
+            formula: String(configCampo.formula).replace(/\{([^}]+)\}/g, (m, idCampo) => (mapa.has(idCampo) ? `{${mapa.get(idCampo)}}` : m)),
+          };
+        }
         await client.query(
           `INSERT INTO lista_campos (id, lista_id, nombre, tipo, config, requerido, unico, orden)
            VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8)`,
-          [nuevo, nuevoId, c.nombre, c.tipo, c.config || {}, c.requerido, c.unico, c.orden]
+          [nuevo, nuevoId, c.nombre, c.tipo, configCampo, c.requerido, c.unico, c.orden]
         );
       }
       const vistas = await client.query('SELECT * FROM lista_vistas WHERE lista_id = $1 ORDER BY creado_en', [origen.id]);
@@ -412,6 +419,9 @@ listasRouter.post('/listas/:id/duplicar', authRequired, async (req, res) => {
         if (Array.isArray(config.filtros)) config = { ...config, filtros: config.filtros.map((f) => ({ ...f, campo: mapa.get(f.campo) || f.campo })) };
         if (config.orden?.campo && mapa.has(config.orden.campo)) config = { ...config, orden: { ...config.orden, campo: mapa.get(config.orden.campo) } };
         if (config.agrupar && mapa.has(config.agrupar)) config = { ...config, agrupar: mapa.get(config.agrupar) };
+        if (config.calendario && mapa.has(config.calendario)) config = { ...config, calendario: mapa.get(config.calendario) };
+        if (config.galeria && mapa.has(config.galeria)) config = { ...config, galeria: mapa.get(config.galeria) };
+        if (Array.isArray(config.formato)) config = { ...config, formato: config.formato.map((f) => ({ ...f, campo: mapa.get(f.campo) || f.campo })) };
         await client.query(
           `INSERT INTO lista_vistas (id, lista_id, nombre, tipo, config, visibilidad, creada_por, predeterminada)
            VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8)`,
