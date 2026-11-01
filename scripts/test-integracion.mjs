@@ -982,6 +982,22 @@ async function main() {
     assert.equal(tec.status, 403);
   });
 
+  await test('el admin cambia su propia contraseña desde Usuarios y conserva la sesión', async () => {
+    const me = await pedir('/auth/me', { token: tokenAdmin });
+    assert.equal(me.status, 200);
+    const res = await pedir(`/usuarios/${me.json.id}`, {
+      method: 'PATCH', token: tokenAdmin,
+      body: { password: 'NuevaClaveSegura-2026!' },
+    });
+    assert.equal(res.status, 200, res.texto);
+    assert.ok(res.json.token);
+    const viejo = await pedir('/auth/me', { token: tokenAdmin });
+    assert.equal(viejo.status, 401, 'el token anterior deja de servir');
+    const nuevo = await pedir('/auth/me', { token: res.json.token });
+    assert.equal(nuevo.status, 200, 'el token nuevo mantiene la sesión');
+    tokenAdmin = res.json.token;
+  });
+
   await test('la salud ve la cola con el envío fallido', async () => {
     const r = await pedir('/salud', { token: tokenAdmin });
     assert.equal(r.status, 200);

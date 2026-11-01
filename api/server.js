@@ -2897,6 +2897,12 @@ app.patch('/api/usuarios/:id', authRequired, permisoRequerido('editar_usuarios')
     detalle: passwordCambiada ? 'incluye cambio de contraseña' : null,
   });
   if (passwordCambiada) await avisarPasswordCambiada(antes, req);
+  // Si el admin cambia su propia clave desde Usuarios, la sesión actual debe
+  // seguir viva: se devuelve un token con el token_version nuevo.
+  if (passwordCambiada && req.user.sub === antes.id) {
+    const actualizado = await one('SELECT token_version FROM usuarios WHERE id = $1', [antes.id]);
+    return res.json({ ok: true, token: signToken({ ...antes, token_version: actualizado.token_version }) });
+  }
   return res.json({ ok: true });
 });
 

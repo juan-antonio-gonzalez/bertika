@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Icon, Modal, ConfirmDialog, FormGrid, fmtFecha } from '../components/ui';
 import PageHeader from '../components/layout/PageHeader';
-import { api } from '../store/api';
+import { api, setToken } from '../store/api';
 import { useStore, usePermiso } from '../store/store';
 import MatrizPermisos from '../components/MatrizPermisos';
 import MatrizAreas from '../components/MatrizAreas';
@@ -147,7 +147,7 @@ function FormUsuariosModal({ mode, user, tecnicos, clientes, categorias, busy, o
               {!edicionPropia && rolFinal === 'tecnico' && <small className="ayuda">Incluye técnicos y administrativos. Elegí una categoría o plantilla abajo.</small>}
             </div>
 
-            {!edicionPropia && (!esEdicion || soyAdmin) && (
+            {(!esEdicion || soyAdmin) && (
               <PasswordPair
                 password={password}
                 setPassword={setPassword}
@@ -433,8 +433,9 @@ export default function Usuarios() {
         await api('/usuarios', { method: 'POST', body: payload });
         toastShow('Usuario creado', 'ok');
       } else {
-        await api(`/usuarios/${modal.user.id}`, { method: 'PATCH', body: payload });
-        toastShow('Cambios guardados', 'ok');
+        const res = await api(`/usuarios/${modal.user.id}`, { method: 'PATCH', body: payload });
+        if (res?.token) setToken(res.token);
+        toastShow(payload.password ? 'Contraseña actualizada. La sesión sigue abierta.' : 'Cambios guardados', 'ok');
       }
       setModal(null);
       await Promise.all([cargar(), cargarCategorias()]);
