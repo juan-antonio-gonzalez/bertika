@@ -1513,3 +1513,12 @@ details[open] > .cz-summary::after { content: ' –'; }
 .shell-item-wrap:hover .shell-fav, .shell-fav.on { opacity: 1; }
 .shell-fav.on { color: var(--brand-amber); }
 .shell-menu-empty { padding: 10px 12px; color: rgba(255,255,255,.55); font-size: 12px; }
+
+.busqueda-listas { margin-bottom: 14px; padding: 10px 12px; }
+.busqueda-listas-form { display: flex; align-items: center; gap: 8px; color: var(--muted); }
+.busqueda-listas-form input { flex: 1; }
+.busqueda-listas-res { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 5px; margin-top: 9px; }
+.busqueda-lista-item { display: flex; flex-direction: column; gap: 2px; text-align: left; border: 1px solid var(--line); background: var(--bg-3); border-radius: 7px; padding: 7px 9px; cursor: pointer; font: inherit; }
+.busqueda-lista-item:hover { border-color: var(--amber); }
+.busqueda-lista-item b { font-size: 12px; color: var(--navy); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.busqueda-lista-item span { font-size: 10.5px; color: var(--muted); }

@@ -48,6 +48,7 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, 'uploads');
+const PRIVATE_UPLOAD_DIR = process.env.PRIVATE_UPLOAD_DIR || path.join(__dirname, 'uploads-private');
 const PUBLIC_URL = process.env.PUBLIC_URL || 'http://localhost:5173';
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || PUBLIC_URL).split(',').map((s) => s.trim());
 const VERSION = (() => {
@@ -617,6 +618,17 @@ async function asegurarCodigos() {
     creado_en TIMESTAMPTZ DEFAULT now()
   )`);
   await query('CREATE INDEX IF NOT EXISTS idx_lista_notificaciones_usuario ON lista_notificaciones (usuario_email, leida, creado_en DESC)');
+  await query(`CREATE TABLE IF NOT EXISTS lista_adjuntos (
+    id TEXT PRIMARY KEY,
+    lista_id TEXT NOT NULL,
+    archivo TEXT NOT NULL,
+    nombre TEXT,
+    mime TEXT,
+    size INTEGER DEFAULT 0,
+    subido_por TEXT,
+    creado_en TIMESTAMPTZ DEFAULT now()
+  )`);
+  await query('CREATE INDEX IF NOT EXISTS idx_lista_adjuntos_lista ON lista_adjuntos (lista_id, creado_en DESC)');
   await query("ALTER TABLE lista_reglas ADD COLUMN IF NOT EXISTS accion TEXT DEFAULT 'email'");
   await query('ALTER TABLE lista_reglas ADD COLUMN IF NOT EXISTS campo_destino TEXT');
   await query('ALTER TABLE lista_reglas ADD COLUMN IF NOT EXISTS mensaje TEXT');
@@ -5505,6 +5517,7 @@ app.post('/api/whatsapp/webhook', async (req, res) => {
 // ---------- Fotos de diagnostico ----------
 import { mkdirSync, writeFileSync } from 'node:fs';
 mkdirSync(UPLOAD_DIR, { recursive: true });
+mkdirSync(PRIVATE_UPLOAD_DIR, { recursive: true });
 app.use('/uploads', express.static(UPLOAD_DIR));
 
 // Validacion por magic bytes: la extension final siempre deriva del tipo
@@ -5560,15 +5573,34 @@ app.post('/api/listas/:id/adjuntos', authRequired, uploadAdjunto.single('archivo
   if (!req.file?.buffer?.length) return res.status(400).json({ error: 'No se recibió ningún archivo.' });
   const ext = detectImg(req.file.buffer) || (req.file.buffer.subarray(0, 4).toString('latin1') === '%PDF' ? '.pdf' : null);
   if (!ext) return res.status(400).json({ error: 'El archivo no es una imagen o PDF válido.' });
-  const nombre = `lista-${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
-  writeFileSync(path.join(UPLOAD_DIR, nombre), req.file.buffer);
-  await auditar({ req, tabla: 'lista_campos', registroId: lista.id, accion: 'adjuntar', detalle: nombre });
+  const id = `adj_${randomUUID()}`;
+  const archivo = `${id}${ext}`;
+  const nombreOriginal = limStr(req.file.originalname, 160) || `archivo${ext}`;
+  writeFileSync(path.join(PRIVATE_UPLOAD_DIR, archivo), req.file.buffer);
+  await query(
+    `INSERT INTO lista_adjuntos (id, lista_id, archivo, nombre, mime, size, subido_por)
+     VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+    [id, lista.id, archivo, nombreOriginal, req.file.mimetype, req.file.size, req.user.email]
+  );
+  await auditar({ req, tabla: 'lista_adjuntos', registroId: id, accion: 'adjuntar', detalle: lista.id });
   return res.status(201).json({
-    url: `${PUBLIC_URL}/uploads/${nombre}`,
-    nombre: limStr(req.file.originalname, 160) || `archivo${ext}`,
+    url: `/api/lista-adjuntos/${id}`,
+    nombre: nombreOriginal,
     mime: req.file.mimetype,
     size: req.file.size,
   });
+});
+
+app.get('/api/lista-adjuntos/:id', authRequired, async (req, res) => {
+  const adjunto = await one('SELECT * FROM lista_adjuntos WHERE id = $1', [req.params.id]);
+  if (!adjunto) return res.status(404).json({ error: 'Adjunto no encontrado' });
+  const lista = await one('SELECT * FROM listas WHERE id = $1 AND archivada = false', [adjunto.lista_id]);
+  if (!lista || !listaAccesible(req.user, lista)) return res.status(404).json({ error: 'Adjunto no encontrado' });
+  const caps = esAdmin(req) ? { ver_registros: true } : permisosArea(req.user.areas, lista.area_id);
+  if (!caps.ver_registros) return res.status(403).json({ error: 'No tenés acceso a este adjunto.' });
+  res.setHeader('Content-Type', adjunto.mime || 'application/octet-stream');
+  res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(adjunto.nombre || 'adjunto')}`);
+  return res.sendFile(path.join(PRIVATE_UPLOAD_DIR, adjunto.archivo));
 });
 
 app.post('/api/diagnostico/:orden_id/fotos', authRequired, upload.array('fotos', 6), async (req, res) => {

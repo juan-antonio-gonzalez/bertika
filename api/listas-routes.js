@@ -565,6 +565,49 @@ listasRouter.post('/public/formulario/:token', publicFormLimiter, async (req, re
   return res.status(201).json({ ok: true, aprobacion_estado: estadoAprobacion });
 });
 
+// Búsqueda global de registros en las listas visibles para el usuario.
+listasRouter.get('/listas/buscar', authRequired, async (req, res) => {
+  if (!req.user || req.user.rol === 'cliente') return sinPermiso(res);
+  const q = limStr(req.query?.q, 80);
+  if (q.length < 2) return res.json({ q, resultados: [] });
+  const patron = `%${q.replace(/[\\%_]/g, (m) => `\\${m}`)}%`;
+  const areas = await areasVisibles(req.user);
+  const resultados = [];
+  for (const area of areas) {
+    for (const meta of area.listas || []) {
+      const lista = await listaConArea(meta.id, req.user);
+      if (!lista) continue;
+      const campos = await camposDe(lista.id);
+      const tituloCampo = campos.find((c) => c.tipo === 'texto') || campos[0] || null;
+      const filas = await query(`
+        SELECT id, lista_id, datos, creado_por, creado_en
+          FROM lista_registros
+         WHERE lista_id = $1 AND archivado = false AND datos::text ILIKE $2
+         ORDER BY creado_en DESC
+         LIMIT 10
+      `, [lista.id, patron]);
+      for (const fila of filas) {
+        if (!puedeVerRegistro(req, lista, fila)) continue;
+        const valor = fila.datos?.[tituloCampo?.id];
+        const titulo = valor && typeof valor === 'object'
+          ? (valor.etiqueta || valor.nombre || valor.id || 'Sin título')
+          : (valor == null || valor === '' ? 'Sin título' : String(valor));
+        resultados.push({
+          area_slug: area.slug,
+          area_nombre: area.nombre,
+          lista_id: lista.id,
+          lista_nombre: lista.nombre,
+          registro_id: fila.id,
+          titulo: String(titulo).slice(0, 180),
+          creado_en: fila.creado_en,
+        });
+        if (resultados.length >= 25) return res.json({ q, resultados });
+      }
+    }
+  }
+  return res.json({ q, resultados });
+});
+
 // Catálogo de plantillas de listas.
 listasRouter.get('/listas/plantillas', authRequired, async (req, res) => {
   if (!req.user || req.user.rol === 'cliente') return sinPermiso(res);

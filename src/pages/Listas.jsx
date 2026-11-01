@@ -15,6 +15,7 @@ import FormularioPublicoModal from '../components/listas/FormularioPublicoModal'
 import AprobacionesPendientesModal from '../components/listas/AprobacionesPendientesModal';
 import AuditoriaListaModal from '../components/listas/AuditoriaListaModal';
 import VistaFormulario from '../components/listas/VistaFormulario';
+import { AdjuntoLink, AdjuntoImg } from '../components/listas/AdjuntoLink';
 import {
   FiltrosModal, ColumnasModal, NuevaVistaModal, NuevaListaModal, ImportarModal, DuplicarListaModal, FormatoModal,
   PapeleraListasModal, PapeleraRegistrosModal,
@@ -85,6 +86,62 @@ function TarjetaLista({ lista, areaSlug }) {
       <p>{lista.descripcion || 'Sin descripción'}</p>
       <span className="muted" style={{ fontSize: 11.5 }}>Abrir lista</span>
     </Link>
+  );
+}
+
+function BusquedaListas() {
+  const navigate = useNavigate();
+  const [q, setQ] = useState('');
+  const [resultados, setResultados] = useState([]);
+  const [buscando, setBuscando] = useState(false);
+  const [hecho, setHecho] = useState(false);
+  const [error, setError] = useState('');
+
+  const buscar = async (e) => {
+    e.preventDefault();
+    const texto = q.trim();
+    if (texto.length < 2) { setResultados([]); setHecho(false); return; }
+    setBuscando(true);
+    setError('');
+    try {
+      const r = await api(`/listas/buscar?q=${encodeURIComponent(texto)}`);
+      setResultados(Array.isArray(r.resultados) ? r.resultados : []);
+      setHecho(true);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBuscando(false);
+    }
+  };
+
+  return (
+    <div className="card busqueda-listas">
+      <form onSubmit={buscar} className="busqueda-listas-form">
+        <Icon name="search" size={16} />
+        <input
+          className="input"
+          value={q}
+          onChange={(e) => { setQ(e.target.value); if (!e.target.value.trim()) { setResultados([]); setHecho(false); } }}
+          placeholder="Buscar registros en todas las listas..."
+          aria-label="Buscar registros en todas las listas"
+        />
+        <button type="submit" className="btn primary sm" disabled={buscando || q.trim().length < 2}>
+          {buscando ? 'Buscando...' : 'Buscar'}
+        </button>
+      </form>
+      {error && <small className="pass-error">{error}</small>}
+      {hecho && resultados.length === 0 && <p className="muted" style={{ margin: '9px 0 0', fontSize: 12 }}>No encontramos registros con “{q.trim()}”.</p>}
+      {resultados.length > 0 && (
+        <div className="busqueda-listas-res">
+          {resultados.map((r) => (
+            <button type="button" className="busqueda-lista-item" key={r.registro_id} onClick={() => navigate(`/listas/${r.area_slug}/${r.lista_id}`)}>
+              <b>{r.titulo}</b>
+              <span>{r.area_nombre} · {r.lista_nombre} · {fmtFecha(r.creado_en)}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -191,6 +248,7 @@ function AreasHome({ areas, cargando }) {
         ) : null}
       />
 
+      <BusquedaListas />
       <ResumenGlobal areas={areas} />
       {papelera && (
         <PapeleraListasModal
@@ -657,11 +715,16 @@ function ListaDetalle({ listaId, area }) {
     }
   };
 
-  const crearRegistroInline = async (datos) => {
+  const guardarRegistroInline = async (datos, registroId = null) => {
     setBusy(true);
     try {
-      await api(`/listas/${lista.id}/registros`, { method: 'POST', body: { datos } });
-      toastShow('Registro creado', 'ok');
+      if (registroId) {
+        await api(`/lista-registros/${registroId}`, { method: 'PATCH', body: { datos } });
+        toastShow('Registro actualizado', 'ok');
+      } else {
+        await api(`/listas/${lista.id}/registros`, { method: 'POST', body: { datos } });
+        toastShow('Registro creado', 'ok');
+      }
       await recargarRegistros();
       return true;
     } catch (e) {
@@ -1043,9 +1106,11 @@ function ListaDetalle({ listaId, area }) {
             <VistaFormulario
               lista={lista}
               campos={campos}
+              registros={filtrados}
               puedeCrear={Boolean(puede.crear_registros)}
+              puedeEditar={Boolean(puede.editar_registros)}
               busy={busy}
-              onGuardar={crearRegistroInline}
+              onGuardar={guardarRegistroInline}
             />
           ) : vistaActiva?.tipo === 'kanban' ? (
             (!kanbanCampo || kanbanOpciones.length === 0) ? (
@@ -1184,7 +1249,7 @@ function ListaDetalle({ listaId, area }) {
                     key={r.id}
                     onClick={() => { if (puedeEditarFila(r)) setModal({ tipo: 'registro', registro: r }); }}
                   >
-                    {img?.url ? <img src={img.url} alt={img.nombre || titulo} className="gallery-img" /> : <div className="gallery-img gallery-noimg"><Icon name="clipboard" size={24} /></div>}
+                    {img?.url ? <AdjuntoImg url={img.url} alt={img.nombre || titulo} className="gallery-img" /> : <div className="gallery-img gallery-noimg"><Icon name="clipboard" size={24} /></div>}
                     <b>{titulo}</b>
                     {extras.map((c) => (
                       <span className="gallery-meta" key={c.id}><small>{c.nombre}</small>{valorVisible(c, r.datos?.[c.id]) || '—'}</span>
@@ -1252,15 +1317,9 @@ function ListaDetalle({ listaId, area }) {
                             return (
                               <td key={campo.id}>
                                 {(campo.tipo === 'adjunto' || campo.tipo === 'imagen') && valor?.url ? (
-                                  <a
-                                    className="listas-cell"
-                                    href={valor.url}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    onClick={(e) => e.stopPropagation()}
-                                  >
+                                  <AdjuntoLink className="listas-cell" url={valor.url} nombre={valor.nombre}>
                                     <Icon name="folder" size={12} /> {valor.nombre || 'Adjunto'}
-                                  </a>
+                                  </AdjuntoLink>
                                 ) : campo.tipo === 'checkbox'
                                   ? <span className={`badge ${valor ? 'green' : 'gray'}`}>{valor ? 'Sí' : 'No'}</span>
                                   : (vacio(valor) ? <span className="muted">—</span> : (

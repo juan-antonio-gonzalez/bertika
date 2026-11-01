@@ -4,6 +4,7 @@ import { api } from '../../store/api';
 import ComentariosModal from './ComentariosModal';
 import HistorialModal from './HistorialModal';
 import AprobacionesModal from './AprobacionesModal';
+import { AdjuntoLink } from './AdjuntoLink';
 import { validarRegistro, etiquetaTipo, valorVisible } from '../../data/listas';
 
 function RelacionInput({ campo, value, onChange }) {
@@ -85,9 +86,9 @@ function AdjuntoInput({ listaId, value, onChange, soloImagen = false }) {
     <div className="col" style={{ gap: 5 }}>
       {value?.url ? (
         <div className="lista-adjunto">
-          <a href={value.url} target="_blank" rel="noreferrer">
+          <AdjuntoLink url={value.url} nombre={value.nombre}>
             <Icon name="folder" size={14} /> {value.nombre || 'Ver adjunto'}
-          </a>
+          </AdjuntoLink>
           <button type="button" className="btn icon sm danger" onClick={() => onChange(null)} title="Quitar adjunto">
             <Icon name="x" size={12} />
           </button>
