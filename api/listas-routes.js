@@ -541,6 +541,22 @@ listasRouter.post('/public/formulario/:token', publicFormLimiter, async (req, re
   return res.status(201).json({ ok: true, aprobacion_estado: estadoAprobacion });
 });
 
+// Historial de actividad de los registros de una lista.
+listasRouter.get('/listas/:id/auditoria', authRequired, async (req, res) => {
+  const lista = await listaConArea(req.params.id);
+  if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
+  if (!capacidades(req, lista.area_id).editar_listas) return sinPermiso(res);
+  const filas = await query(`
+    SELECT a.id, a.fecha, a.actor, a.rol, a.accion, a.campos, a.detalle, a.antes, a.despues
+      FROM auditoria a
+      JOIN lista_registros r ON r.id = a.registro_id
+     WHERE r.lista_id = $1 AND a.tabla = 'lista_registros'
+     ORDER BY a.fecha DESC
+     LIMIT 100
+  `, [lista.id]);
+  return res.json(filas);
+});
+
 // ---------- Notificaciones internas de listas ----------
 listasRouter.get('/listas/notificaciones', authRequired, async (req, res) => {
   const filas = await query(`

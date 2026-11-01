@@ -1493,3 +1493,7 @@ details[open] > .cz-summary::after { content: ' –'; }
 .lista-aprobacion p { margin: 0; font-size: 12px; white-space: pre-wrap; }
 
 .resumen-global { margin-bottom: 16px; }
+
+.lista-audit-row { display: flex; align-items: flex-start; gap: 8px; border-bottom: 1px solid var(--line); padding: 7px 0; }
+.lista-audit-row:last-child { border-bottom: 0; }
+.lista-audit-ico { width: 24px; height: 24px; border-radius: 50%; background: var(--bg-3); display: grid; place-items: center; color: var(--muted); flex: 0 0 auto; }

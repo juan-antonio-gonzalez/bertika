@@ -13,6 +13,7 @@ import ConvertirModal from '../components/listas/ConvertirModal';
 import ReglasModal from '../components/listas/ReglasModal';
 import FormularioPublicoModal from '../components/listas/FormularioPublicoModal';
 import AprobacionesPendientesModal from '../components/listas/AprobacionesPendientesModal';
+import AuditoriaListaModal from '../components/listas/AuditoriaListaModal';
 import {
   FiltrosModal, ColumnasModal, NuevaVistaModal, NuevaListaModal, ImportarModal, DuplicarListaModal, FormatoModal,
   PapeleraListasModal, PapeleraRegistrosModal,
@@ -403,6 +404,7 @@ function ListaDetalle({ listaId, area }) {
   const [columnas, setColumnas] = useState([]);
   const [orden, setOrden] = useState(null);
   const [filtros, setFiltros] = useState([]);
+  const [soloPendientes, setSoloPendientes] = useState(false);
   const [agrupar, setAgrupar] = useState(null);
   const [formato, setFormato] = useState([]);
   const [mes, setMes] = useState(() => new Date());
@@ -764,6 +766,7 @@ function ListaDetalle({ listaId, area }) {
           .some((v) => valor.includes(String(v).toLowerCase()));
       });
     }
+    if (soloPendientes) out = out.filter((r) => r.aprobacion_estado === 'pendiente');
     const q = busqueda.trim().toLowerCase();
     if (q) {
       out = out.filter((r) => campos.some((c) => texto(r.datos?.[c.id]).includes(q)));
@@ -775,7 +778,7 @@ function ListaDetalle({ listaId, area }) {
       }));
     }
     return ordenarRegistros(out, campos, orden);
-  }, [registros, campos, busqueda, filtros, orden, vistaActiva, usuario]);
+  }, [registros, campos, busqueda, filtros, orden, vistaActiva, usuario, soloPendientes]);
 
   const grupos = useMemo(() => {
     if (!agrupar) return [{ key: '__todos', label: null, rows: filtrados }];
@@ -939,6 +942,16 @@ function ListaDetalle({ listaId, area }) {
               <button type="button" className={`btn sm${filtros.length ? ' primary' : ''}`} onClick={() => setModal({ tipo: 'filtros' })}>
                 <Icon name="filter" size={13} /> Filtros{filtros.length ? ` (${filtros.length})` : ''}
               </button>
+              {lista.requiere_aprobacion && (
+                <button
+                  type="button"
+                  className={`btn sm${soloPendientes ? ' primary' : ''}`}
+                  onClick={() => setSoloPendientes((v) => !v)}
+                  title="Mostrar solo filas pendientes de aprobación"
+                >
+                  <Icon name="check" size={13} /> Pendientes ({registros.filter((r) => r.aprobacion_estado === 'pendiente').length})
+                </button>
+              )}
               {vistaActiva?.tipo === 'grid' && (
                 <button type="button" className="btn sm" onClick={() => setModal({ tipo: 'columnas' })}>
                   <Icon name="grid" size={13} /> Columnas
@@ -1252,6 +1265,10 @@ function ListaDetalle({ listaId, area }) {
         />
       )}
 
+      {modal?.tipo === 'auditoria' && (
+        <AuditoriaListaModal lista={lista} onClose={() => setModal(null)} />
+      )}
+
       {modal?.tipo === 'formulario' && (
         <FormularioPublicoModal lista={lista} onClose={() => setModal(null)} />
       )}
@@ -1300,6 +1317,7 @@ function ListaDetalle({ listaId, area }) {
           onPapelera={puede.borrar_registros ? () => setModal({ tipo: 'papeleraRegistros' }) : null}
           onReglas={puede.editar_listas ? () => setModal({ tipo: 'reglas' }) : null}
           onFormulario={puede.editar_listas ? () => setModal({ tipo: 'formulario' }) : null}
+          onAuditoria={puede.editar_listas ? () => setModal({ tipo: 'auditoria' }) : null}
           onClose={() => setModal(null)}
         />
       )}

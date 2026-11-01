@@ -3,7 +3,7 @@ import { Icon, Modal, FormGrid } from '../ui';
 import { etiquetaTipo } from '../../data/listas';
 
 export default function ListaConfigModal({
-  lista, busy, onGuardarLista, onNuevoCampo, onEditarCampo, onEliminarCampo, onArchivarLista, onDuplicar, onPapelera, onReglas, onFormulario, onClose,
+  lista, busy, onGuardarLista, onNuevoCampo, onEditarCampo, onEliminarCampo, onArchivarLista, onDuplicar, onPapelera, onReglas, onFormulario, onAuditoria, onClose,
 }) {
   const [nombre, setNombre] = useState(lista.nombre || '');
   const [descripcion, setDescripcion] = useState(lista.descripcion || '');
@@ -133,6 +133,11 @@ export default function ListaConfigModal({
           {onFormulario && (
             <button type="button" className="btn sm" onClick={onFormulario}>
               <Icon name="link" size={13} /> Formulario público
+            </button>
+          )}
+          {onAuditoria && (
+            <button type="button" className="btn sm" onClick={onAuditoria}>
+              <Icon name="clock" size={13} /> Actividad
             </button>
           )}
           {onPapelera && (
