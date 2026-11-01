@@ -1,7 +1,7 @@
 // Pruebas del motor de listas: normalización de áreas y validación de datos.
 import assert from 'node:assert/strict';
 import {
-  AREAS_SEMILLA, normalizarAreas, permisosArea, validarRegistro, valorVisible,
+  AREAS_SEMILLA, normalizarAreas, permisosArea, validarRegistro, valorVisible, evaluarFormula, validarFormula,
 } from '../src/data/listas.js';
 
 let ok = 0;
@@ -78,6 +78,15 @@ prueba('valorVisible formatea moneda, fecha y checkbox', () => {
   assert.match(valorVisible({ tipo: 'moneda' }, 1500), /1.500/);
   assert.equal(valorVisible({ tipo: 'checkbox' }, true), 'Sí');
   assert.match(valorVisible({ tipo: 'fecha' }, '2026-10-29'), /29.10.2026|2026/);
+});
+
+
+prueba('evalúa fórmulas solo con operaciones seguras', () => {
+  assert.equal(evaluarFormula('{a} + {b} * 2', { a: 10, b: 3 }), 16);
+  assert.equal(evaluarFormula('({a} + {b}) / 2', { a: 10, b: 4 }), 7);
+  assert.equal(evaluarFormula('', {}), 0);
+  assert.ok(validarFormula('alert(1)'));
+  assert.equal(validarFormula('{a} + 2'), null);
 });
 
 console.log(`\n${ok} pruebas de listas OK`);

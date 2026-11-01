@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { Icon, Modal, FormGrid } from '../ui';
-import { TIPOS_CAMPO, normalizarOpciones } from '../../data/listas';
+import { TIPOS_CAMPO, normalizarOpciones, validarFormula } from '../../data/listas';
 
-export default function CampoModal({ campo, listas = [], listaActual, busy, onGuardar, onClose }) {
+export default function CampoModal({ campo, listas = [], listaActual, camposActuales = [], busy, onGuardar, onClose }) {
   const [nombre, setNombre] = useState(campo?.nombre || '');
   const [tipo, setTipo] = useState(campo?.tipo || 'texto');
   const [opciones, setOpciones] = useState(() => (campo?.config?.opciones || []).join('\n'));
@@ -12,10 +12,13 @@ export default function CampoModal({ campo, listas = [], listaActual, busy, onGu
   const [max, setMax] = useState(campo?.config?.max ?? '');
   const [ayuda, setAyuda] = useState(campo?.config?.ayuda || '');
   const [relacionId, setRelacionId] = useState(campo?.config?.lista_id || '');
+  const [formula, setFormula] = useState(campo?.config?.formula || '');
   const [error, setError] = useState('');
   const esSeleccion = tipo === 'seleccion' || tipo === 'multiseleccion';
   const esNumero = tipo === 'numero' || tipo === 'moneda';
   const esRelacion = tipo === 'relacion';
+  const esCalculado = tipo === 'calculado';
+  const camposCalculables = (camposActuales || []).filter((c) => ['numero', 'moneda', 'calculado'].includes(c.tipo) && c.id !== campo?.id);
   const otrasListas = (listas || []).filter((l) => l.id !== listaActual?.id);
 
   const submit = (e) => {
@@ -34,9 +37,14 @@ export default function CampoModal({ campo, listas = [], listaActual, busy, onGu
       setError('Elegí la lista con la que se relaciona este campo.');
       return;
     }
+    if (esCalculado) {
+      const err = validarFormula(formula);
+      if (err) { setError(err); return; }
+    }
     const config = {};
     if (esSeleccion) config.opciones = ops;
     if (esRelacion) config.lista_id = relacionId;
+    if (esCalculado) config.formula = formula;
     if (esNumero) {
       if (min !== '') config.min = Number(min);
       if (max !== '') config.max = Number(max);
@@ -84,6 +92,32 @@ export default function CampoModal({ campo, listas = [], listaActual, busy, onGu
               {TIPOS_CAMPO.map((t) => <option key={t.tipo} value={t.tipo}>{t.etiqueta}</option>)}
             </select>
           </div>
+
+          {esCalculado && (
+            <div className="field" style={{ gridColumn: '1 / -1' }}>
+              <label>Fórmula *</label>
+              <input
+                className="input"
+                value={formula}
+                onChange={(e) => setFormula(e.target.value)}
+                placeholder="Ej.: {campo1} + {campo2} * 2"
+              />
+              <div className="row wrap" style={{ gap: 6, marginTop: 6 }}>
+                <select
+                  className="input"
+                  style={{ width: 240 }}
+                  value=""
+                  onChange={(e) => {
+                    if (e.target.value) setFormula((prev) => `${prev}${prev ? ' + ' : ''}{${e.target.value}}`);
+                  }}
+                >
+                  <option value="">Insertar campo numérico...</option>
+                  {camposCalculables.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                </select>
+              </div>
+              <small className="ayuda">Solo números y + - * / paréntesis. Los campos se insertan como {campo}.</small>
+            </div>
+          )}
 
           {esRelacion && (
             <div className="field" style={{ gridColumn: '1 / -1' }}>

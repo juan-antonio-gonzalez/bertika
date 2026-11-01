@@ -10,8 +10,9 @@ import RegistroModal from '../components/listas/RegistroModal';
 import CampoModal from '../components/listas/CampoModal';
 import ListaConfigModal from '../components/listas/ListaConfigModal';
 import ConvertirModal from '../components/listas/ConvertirModal';
+import ReglasModal from '../components/listas/ReglasModal';
 import {
-  FiltrosModal, ColumnasModal, NuevaVistaModal, NuevaListaModal, ImportarModal, DuplicarListaModal,
+  FiltrosModal, ColumnasModal, NuevaVistaModal, NuevaListaModal, ImportarModal, DuplicarListaModal, FormatoModal,
   PapeleraListasModal, PapeleraRegistrosModal,
 } from '../components/listas/ModalesLista';
 
@@ -211,6 +212,8 @@ function ListaDetalle({ listaId, area }) {
   const [orden, setOrden] = useState(null);
   const [filtros, setFiltros] = useState([]);
   const [agrupar, setAgrupar] = useState(null);
+  const [formato, setFormato] = useState([]);
+  const [mes, setMes] = useState(() => new Date());
   const [modal, setModal] = useState(null);
   const [confirmar, setConfirmar] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -230,6 +233,16 @@ function ListaDetalle({ listaId, area }) {
     || campos[0]
     || null;
   const kanbanOpciones = Array.isArray(kanbanCampo?.config?.opciones) ? kanbanCampo.config.opciones : [];
+  const calendarCampo = vistaActiva?.tipo === 'calendar'
+    ? (campos.find((c) => c.id === vistaActiva.config?.calendario) || campos.find((c) => c.tipo === 'fecha'))
+    : null;
+  const galleryImage = vistaActiva?.tipo === 'gallery'
+    ? (campos.find((c) => c.id === vistaActiva.config?.galeria) || campos.find((c) => c.tipo === 'adjunto'))
+    : null;
+  const tarjetaTitulo = campos.find((c) => c.id === vistaActiva?.config?.titulo)
+    || campos.find((c) => c.tipo === 'texto')
+    || campos[0]
+    || null;
   const camposTarjeta = campos
     .filter((c) => c.id !== kanbanCampo?.id && c.id !== kanbanTitulo?.id)
     .slice(0, 3);
@@ -240,6 +253,7 @@ function ListaDetalle({ listaId, area }) {
     filtros,
     orden,
     agrupar,
+    formato,
     q: busqueda,
   });
 
@@ -253,6 +267,7 @@ function ListaDetalle({ listaId, area }) {
     setOrden(elegida?.config?.orden || null);
     setFiltros(elegida?.config?.filtros || []);
     setAgrupar(elegida?.config?.agrupar || null);
+    setFormato(elegida?.config?.formato || []);
     setBusqueda(elegida?.config?.q || '');
     if (data.puede?.ver_registros) {
       const r = await api(`/listas/${data.id}/registros`);
@@ -276,6 +291,7 @@ function ListaDetalle({ listaId, area }) {
     setOrden(null);
     setFiltros([]);
     setAgrupar(null);
+    setFormato([]);
     setBusqueda('');
     cargarDetalle({ resetVista: true })
       .catch((e) => { if (vivo) setError(e.message || 'No se pudo abrir la lista.'); })
@@ -297,6 +313,7 @@ function ListaDetalle({ listaId, area }) {
     setOrden(v.config?.orden || null);
     setFiltros(v.config?.filtros || []);
     setAgrupar(v.config?.agrupar || null);
+    setFormato(v.config?.formato || []);
     setBusqueda(v.config?.q || '');
   };
 
@@ -376,12 +393,12 @@ function ListaDetalle({ listaId, area }) {
     }
   };
 
-  const crearVista = async ({ nombre, predeterminada }) => {
+  const crearVista = async ({ nombre, predeterminada, tipo = 'grid', extra = {} }) => {
     setBusy(true);
     try {
       const res = await api(`/listas/${lista.id}/vistas`, {
         method: 'POST',
-        body: { nombre, predeterminada, config: configVista() },
+        body: { nombre, predeterminada, tipo, config: { ...configVista(), ...extra } },
       });
       setModal(null);
       await cargarDetalle({ resetVista: false });
@@ -568,6 +585,20 @@ function ListaDetalle({ listaId, area }) {
     }));
   }, [filtrados, campos, agrupar]);
 
+  const COLORES_FORMATO = {
+    red: 'var(--red-bg)', amber: 'var(--amber-bg)', green: 'var(--green-bg)',
+    blue: 'var(--blue-bg)', gray: 'var(--bg-3)',
+  };
+  const estiloFila = (registro) => {
+    for (const regla of formato) {
+      const campo = campos.find((c) => c.id === regla.campo);
+      if (campo && cumpleFiltro(registro, campo, regla)) {
+        return { background: COLORES_FORMATO[regla.color] || COLORES_FORMATO.amber };
+      }
+    }
+    return undefined;
+  };
+
   const cambiarOrden = (campo) => {
     setOrden((prev) => (
       prev?.campo === campo.id
@@ -671,7 +702,7 @@ function ListaDetalle({ listaId, area }) {
               )}
             </div>
             <div className="listas-tools">
-              {vistaActiva?.tipo !== 'kanban' && (
+              {vistaActiva?.tipo === 'grid' && (
                 <select
                   className="input"
                   style={{ width: 155 }}
@@ -698,9 +729,14 @@ function ListaDetalle({ listaId, area }) {
               <button type="button" className={`btn sm${filtros.length ? ' primary' : ''}`} onClick={() => setModal({ tipo: 'filtros' })}>
                 <Icon name="filter" size={13} /> Filtros{filtros.length ? ` (${filtros.length})` : ''}
               </button>
-              {vistaActiva?.tipo !== 'kanban' && (
+              {vistaActiva?.tipo === 'grid' && (
                 <button type="button" className="btn sm" onClick={() => setModal({ tipo: 'columnas' })}>
                   <Icon name="grid" size={13} /> Columnas
+                </button>
+              )}
+              {vistaActiva?.tipo === 'grid' && (
+                <button type="button" className="btn sm" onClick={() => setModal({ tipo: 'formato' })}>
+                  <Icon name="filter" size={13} /> Formato
                 </button>
               )}
               {puede.ver_registros && (
@@ -795,6 +831,83 @@ function ListaDetalle({ listaId, area }) {
                 </div>
               </div>
             )
+          ) : vistaActiva?.tipo === 'calendar' ? (
+            !calendarCampo ? (
+              <div className="banner-info">
+                <Icon name="info" size={15} />
+                <span>Esta vista calendario no tiene un campo de fecha. Configurá una vista nueva con un campo de fecha.</span>
+              </div>
+            ) : (() => {
+              const year = mes.getFullYear();
+              const month = mes.getMonth();
+              const inicio = (new Date(year, month, 1).getDay() + 6) % 7;
+              const dias = new Date(year, month + 1, 0).getDate();
+              const celdas = [...Array(inicio).fill(null), ...Array.from({ length: dias }, (_, i) => i + 1)];
+              const nombreMes = mes.toLocaleDateString('es-AR', { month: 'long', year: 'numeric' });
+              return (
+                <div className="listas-calendar">
+                  <div className="calendar-head">
+                    <button type="button" className="btn icon sm" onClick={() => setMes(new Date(year, month - 1, 1))} title="Mes anterior">‹</button>
+                    <b>{nombreMes.charAt(0).toUpperCase() + nombreMes.slice(1)}</b>
+                    <button type="button" className="btn icon sm" onClick={() => setMes(new Date(year, month + 1, 1))} title="Mes siguiente">›</button>
+                  </div>
+                  <div className="calendar-grid">
+                    {['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'].map((d) => <div className="calendar-dow" key={d}>{d}</div>)}
+                    {celdas.map((dia, i) => {
+                      if (!dia) return <div className="calendar-cell calendar-empty" key={`v-${i}`} />;
+                      const iso = `${year}-${String(month + 1).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
+                      const delDia = filtrados.filter((r) => String(r.datos?.[calendarCampo.id] || '').slice(0, 10) === iso);
+                      return (
+                        <div className="calendar-cell" key={iso}>
+                          <span className="calendar-day">{dia}</span>
+                          <div className="calendar-events">
+                            {delDia.slice(0, 4).map((r) => (
+                              <button
+                                type="button"
+                                className="calendar-event"
+                                key={r.id}
+                                onClick={() => { if (puede.editar_registros) setModal({ tipo: 'registro', registro: r }); }}
+                                title="Abrir registro"
+                              >
+                                {valorVisible(tarjetaTitulo, r.datos?.[tarjetaTitulo?.id]) || 'Sin título'}
+                              </button>
+                            ))}
+                            {delDia.length > 4 && <span className="muted" style={{ fontSize: 10 }}>+{delDia.length - 4} más</span>}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="listas-grid-foot">
+                    <span className="muted" style={{ fontSize: 11.5 }}>{filtrados.length} registro(s) en la vista</span>
+                  </div>
+                </div>
+              );
+            })()
+          ) : vistaActiva?.tipo === 'gallery' ? (
+            <div className="listas-gallery">
+              {filtrados.length === 0 ? (
+                <div className="empty"><Icon name="clipboard" size={26} /><b>No hay registros para mostrar</b></div>
+              ) : filtrados.map((r) => {
+                const img = galleryImage ? r.datos?.[galleryImage.id] : null;
+                const titulo = valorVisible(tarjetaTitulo, r.datos?.[tarjetaTitulo?.id]) || 'Sin título';
+                const extras = campos.filter((c) => c.id !== galleryImage?.id && c.id !== tarjetaTitulo?.id).slice(0, 3);
+                return (
+                  <button
+                    type="button"
+                    className="gallery-card"
+                    key={r.id}
+                    onClick={() => { if (puede.editar_registros) setModal({ tipo: 'registro', registro: r }); }}
+                  >
+                    {img?.url ? <img src={img.url} alt={img.nombre || titulo} className="gallery-img" /> : <div className="gallery-img gallery-noimg"><Icon name="clipboard" size={24} /></div>}
+                    <b>{titulo}</b>
+                    {extras.map((c) => (
+                      <span className="gallery-meta" key={c.id}><small>{c.nombre}</small>{valorVisible(c, r.datos?.[c.id]) || '—'}</span>
+                    ))}
+                  </button>
+                );
+              })}
+            </div>
           ) : (
             <div className="card listas-grid-card">
               {visibles.length === 0 ? (
@@ -844,6 +957,7 @@ function ListaDetalle({ listaId, area }) {
                         <tr
                           key={registro.id}
                           className={puede.editar_registros ? 'listas-row-click' : ''}
+                          style={estiloFila(registro)}
                           onClick={() => {
                             if (puede.editar_registros) setModal({ tipo: 'registro', registro });
                           }}
@@ -914,13 +1028,19 @@ function ListaDetalle({ listaId, area }) {
           lista={lista}
           registro={modal.registro}
           puedeBorrar={puede.borrar_registros}
+          puedeEditar={puede.editar_registros}
           puedeConvertir={puedeConvertir}
           busy={busy}
           onGuardar={guardarRegistro}
           onEliminar={(r) => confirmarArchivarRegistro(r)}
           onConvertir={(r) => setModal({ tipo: 'convertir', registro: r })}
+          onRecargar={recargarRegistros}
           onClose={() => setModal(null)}
         />
+      )}
+
+      {modal?.tipo === 'reglas' && (
+        <ReglasModal lista={lista} campos={campos} onClose={() => setModal(null)} />
       )}
 
       {modal?.tipo === 'papeleraRegistros' && (
@@ -961,6 +1081,7 @@ function ListaDetalle({ listaId, area }) {
           onArchivarLista={puede.borrar_listas ? archivarLista : null}
           onDuplicar={puede.crear_listas ? () => setModal({ tipo: 'duplicar' }) : null}
           onPapelera={puede.borrar_registros ? () => setModal({ tipo: 'papeleraRegistros' }) : null}
+          onReglas={puede.editar_listas ? () => setModal({ tipo: 'reglas' }) : null}
           onClose={() => setModal(null)}
         />
       )}
@@ -970,6 +1091,7 @@ function ListaDetalle({ listaId, area }) {
           campo={modal.campo}
           listas={area?.listas || []}
           listaActual={lista}
+          camposActuales={lista.campos || []}
           busy={busy}
           onGuardar={guardarCampo}
           onClose={() => setModal({ tipo: 'config' })}
@@ -977,7 +1099,16 @@ function ListaDetalle({ listaId, area }) {
       )}
 
       {modal?.tipo === 'nuevaVista' && (
-        <NuevaVistaModal busy={busy} onGuardar={crearVista} onClose={() => setModal(null)} />
+        <NuevaVistaModal campos={campos} busy={busy} onGuardar={crearVista} onClose={() => setModal(null)} />
+      )}
+
+      {modal?.tipo === 'formato' && (
+        <FormatoModal
+          campos={campos}
+          formato={formato}
+          onAplicar={(f) => { setFormato(f); setModal(null); }}
+          onClose={() => setModal(null)}
+        />
       )}
 
       {modal?.tipo === 'filtros' && (

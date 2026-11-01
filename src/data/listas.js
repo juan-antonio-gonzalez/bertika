@@ -62,6 +62,7 @@ export const TIPOS_CAMPO = [
   { tipo: 'persona', etiqueta: 'Persona' },
   { tipo: 'adjunto', etiqueta: 'Adjunto' },
   { tipo: 'relacion', etiqueta: 'Relación con otra lista' },
+  { tipo: 'calculado', etiqueta: 'Campo calculado' },
 ];
 
 export const TIPOS = TIPOS_CAMPO.map((t) => t.tipo);
@@ -160,6 +161,7 @@ export function validarRegistro(campos, datos, { parcial = false } = {}) {
       continue;
     }
     const tipo = campo.tipo;
+    if (tipo === 'calculado') { salida[id] = null; continue; }
     if (tipo === 'texto' || tipo === 'texto_largo' || tipo === 'persona') {
       const texto = String(valor).trim();
       const max = tipo === 'texto_largo' ? 5000 : 500;
@@ -268,5 +270,77 @@ export function valorVisible(campo, valor) {
   }
   if (campo?.tipo === 'adjunto') return String(valor?.nombre || 'Adjunto');
   if (campo?.tipo === 'relacion') return String(valor?.etiqueta || valor?.id || '');
+  if (campo?.tipo === 'calculado') {
+    const n = Number(valor);
+    return Number.isFinite(n) ? new Intl.NumberFormat('es-AR', { maximumFractionDigits: 2 }).format(n) : '';
+  }
   return String(valor);
+}
+
+// Evaluador seguro de fórmulas para campos calculados. Solo permite números,
+// referencias {campoId}, + - * / y paréntesis; nunca usa eval ni Function.
+export function evaluarFormula(formula, datos = {}) {
+  const expr = String(formula ?? '').replace(/\{([^}]+)\}/g, (_, id) => {
+    const n = Number(datos?.[id]);
+    return Number.isFinite(n) ? String(n) : '0';
+  });
+  if (!expr.trim()) return 0;
+  if (!/^[0-9+\-*/().\s]+$/.test(expr)) {
+    throw new Error('La fórmula solo puede usar campos numéricos, números, + - * / y paréntesis.');
+  }
+  let i = 0;
+  const salta = () => { while (i < expr.length && /\s/.test(expr[i])) i += 1; };
+  const factor = () => {
+    salta();
+    if (expr[i] === '+') { i += 1; return factor(); }
+    if (expr[i] === '-') { i += 1; return -factor(); }
+    if (expr[i] === '(') {
+      i += 1;
+      const v = expresion();
+      salta();
+      if (expr[i] !== ')') throw new Error('Faltan paréntesis en la fórmula.');
+      i += 1;
+      return v;
+    }
+    const inicio = i;
+    while (i < expr.length && /[0-9.]/.test(expr[i])) i += 1;
+    if (inicio === i) throw new Error('La fórmula tiene un valor inválido.');
+    return Number(expr.slice(inicio, i));
+  };
+  const termino = () => {
+    let v = factor();
+    salta();
+    while (expr[i] === '*' || expr[i] === '/') {
+      const op = expr[i]; i += 1;
+      const r = factor();
+      v = op === '*' ? v * r : (r === 0 ? 0 : v / r);
+      salta();
+    }
+    return v;
+  };
+  const expresion = () => {
+    let v = termino();
+    salta();
+    while (expr[i] === '+' || expr[i] === '-') {
+      const op = expr[i]; i += 1;
+      const r = termino();
+      v = op === '+' ? v + r : v - r;
+      salta();
+    }
+    return v;
+  };
+  const total = expresion();
+  salta();
+  if (i !== expr.length) throw new Error('La fórmula tiene un valor inválido.');
+  return Number.isFinite(total) ? Math.round(total * 100) / 100 : 0;
+}
+
+export function validarFormula(formula) {
+  try {
+    evaluarFormula(formula, {});
+    if (!String(formula || '').trim()) return 'Escribí una fórmula.';
+    return null;
+  } catch (e) {
+    return e.message;
+  }
 }

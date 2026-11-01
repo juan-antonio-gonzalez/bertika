@@ -3,7 +3,7 @@ import { Icon, Modal, FormGrid } from '../ui';
 import { etiquetaTipo } from '../../data/listas';
 
 export default function ListaConfigModal({
-  lista, busy, onGuardarLista, onNuevoCampo, onEditarCampo, onEliminarCampo, onArchivarLista, onDuplicar, onPapelera, onClose,
+  lista, busy, onGuardarLista, onNuevoCampo, onEditarCampo, onEliminarCampo, onArchivarLista, onDuplicar, onPapelera, onReglas, onClose,
 }) {
   const [nombre, setNombre] = useState(lista.nombre || '');
   const [descripcion, setDescripcion] = useState(lista.descripcion || '');
@@ -81,6 +81,11 @@ export default function ListaConfigModal({
           <Icon name="plus" size={13} /> Agregar campo
         </button>
         <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+          {onReglas && (
+            <button type="button" className="btn sm" onClick={onReglas}>
+              <Icon name="bell" size={13} /> Reglas y avisos
+            </button>
+          )}
           {onPapelera && (
             <button type="button" className="btn sm" onClick={onPapelera}>
               <Icon name="recycl" size={13} /> Papelera de registros

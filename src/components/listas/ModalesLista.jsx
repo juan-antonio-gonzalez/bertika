@@ -132,14 +132,34 @@ export function ColumnasModal({ campos, columnas, onAplicar, onClose }) {
   );
 }
 
-export function NuevaVistaModal({ busy, onGuardar, onClose }) {
+export function NuevaVistaModal({ campos, busy, onGuardar, onClose }) {
   const [nombre, setNombre] = useState('');
+  const [tipo, setTipo] = useState('grid');
   const [predeterminada, setPredeterminada] = useState(false);
+  const [grupo, setGrupo] = useState('');
+  const [fecha, setFecha] = useState('');
+  const [titulo, setTitulo] = useState('');
+  const [imagen, setImagen] = useState('');
+  const selects = (campos || []).filter((c) => c.tipo === 'seleccion');
+  const fechas = (campos || []).filter((c) => c.tipo === 'fecha');
+  const titulos = (campos || []).filter((c) => c.tipo === 'texto');
+  const adjuntos = (campos || []).filter((c) => c.tipo === 'adjunto');
+
+  const guardar = (e) => {
+    e.preventDefault();
+    if (!nombre.trim()) return;
+    const extra = {};
+    if (tipo === 'kanban') { extra.kanban = grupo || null; extra.titulo = titulo || null; }
+    if (tipo === 'calendar') { extra.calendario = fecha || null; extra.titulo = titulo || null; }
+    if (tipo === 'gallery') { extra.titulo = titulo || null; extra.galeria = imagen || null; }
+    onGuardar({ nombre: nombre.trim(), predeterminada, tipo, extra });
+  };
+
   return (
     <Modal
-      size="sm"
+      size="md"
       title="Nueva vista"
-      sub="Guarda la búsqueda, las columnas, el orden y los filtros actuales."
+      sub="Elegí cómo querés ver la lista. La configuración queda guardada."
       onClose={onClose}
       closeOnBackdrop={false}
       footer={(
@@ -151,11 +171,58 @@ export function NuevaVistaModal({ busy, onGuardar, onClose }) {
         </>
       )}
     >
-      <form id="form-nueva-vista" onSubmit={(e) => { e.preventDefault(); if (nombre.trim()) onGuardar({ nombre: nombre.trim(), predeterminada }); }}>
-        <div className="field">
-          <label>Nombre *</label>
-          <input className="input" value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Ej.: Mis oportunidades, Pendientes" data-autofocus />
-        </div>
+      <form id="form-nueva-vista" onSubmit={guardar}>
+        <FormGrid cols={2}>
+          <div className="field">
+            <label>Nombre *</label>
+            <input className="input" value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Ej.: Calendario, Galería" data-autofocus />
+          </div>
+          <div className="field">
+            <label>Tipo</label>
+            <select className="input" value={tipo} onChange={(e) => setTipo(e.target.value)}>
+              <option value="grid">Grilla</option>
+              <option value="kanban">Kanban</option>
+              <option value="calendar">Calendario</option>
+              <option value="gallery">Galería</option>
+            </select>
+          </div>
+          {tipo === 'kanban' && (
+            <div className="field">
+              <label>Agrupar por</label>
+              <select className="input" value={grupo} onChange={(e) => setGrupo(e.target.value)}>
+                <option value="">Elegir campo...</option>
+                {selects.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+              </select>
+            </div>
+          )}
+          {tipo === 'calendar' && (
+            <div className="field">
+              <label>Campo de fecha</label>
+              <select className="input" value={fecha} onChange={(e) => setFecha(e.target.value)}>
+                <option value="">Elegir campo...</option>
+                {fechas.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+              </select>
+            </div>
+          )}
+          {tipo === 'gallery' && (
+            <div className="field">
+              <label>Campo de imagen</label>
+              <select className="input" value={imagen} onChange={(e) => setImagen(e.target.value)}>
+                <option value="">Sin imagen</option>
+                {adjuntos.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+              </select>
+            </div>
+          )}
+          {tipo !== 'grid' && (
+            <div className="field">
+              <label>Título de la tarjeta</label>
+              <select className="input" value={titulo} onChange={(e) => setTitulo(e.target.value)}>
+                <option value="">Automático</option>
+                {titulos.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+              </select>
+            </div>
+          )}
+        </FormGrid>
         <label className="check-line" style={{ marginTop: 12, textTransform: 'none', letterSpacing: 0 }}>
           <input type="checkbox" checked={predeterminada} onChange={(e) => setPredeterminada(e.target.checked)} />
           <span>Usar como vista predeterminada</span>
@@ -479,6 +546,58 @@ export function PapeleraRegistrosModal({ lista, campos, onRestaurada, onClose })
               </button>
             </div>
           ))}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+
+export function FormatoModal({ campos, formato, onAplicar, onClose }) {
+  const [reglas, setReglas] = useState(() => (formato || []).map((r) => ({ ...r })));
+  const cambiar = (i, parcial) => setReglas((prev) => prev.map((r, idx) => (idx === i ? { ...r, ...parcial } : r)));
+  const agregar = () => setReglas((prev) => [...prev, { campo: campos[0]?.id || '', op: 'igual', valor: '', color: 'amber' }]);
+  const quitar = (i) => setReglas((prev) => prev.filter((_, idx) => idx !== i));
+  return (
+    <Modal
+      size="lg"
+      title="Formato condicional"
+      sub="Pintá las filas cuando se cumple una condición. Se guarda en la vista."
+      onClose={onClose}
+      footer={(
+        <>
+          <button type="button" className="btn izq" onClick={onClose}>Cancelar</button>
+          <button type="button" className="btn primary" onClick={() => onAplicar(reglas)}>
+            <Icon name="check" size={14} /> Aplicar formato
+          </button>
+        </>
+      )}
+    >
+      {campos.length === 0 ? <p className="muted">Primero agregá campos.</p> : (
+        <div className="col" style={{ gap: 8 }}>
+          {reglas.length === 0 && <p className="muted">No hay reglas de color. Agregá una.</p>}
+          {reglas.map((r, i) => (
+            <div className="lista-formato-row" key={`${r.campo}-${i}`}>
+              <select className="input" value={r.campo} onChange={(e) => cambiar(i, { campo: e.target.value, valor: '' })}>
+                {campos.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+              </select>
+              <select className="input" value={r.op} onChange={(e) => cambiar(i, { op: e.target.value })}>
+                {OPS.map((o) => <option key={o.op} value={o.op}>{o.label}</option>)}
+              </select>
+              {r.op !== 'vacio' && <input className="input" value={r.valor} onChange={(e) => cambiar(i, { valor: e.target.value })} placeholder="Valor" />}
+              <select className="input" value={r.color} onChange={(e) => cambiar(i, { color: e.target.value })}>
+                <option value="amber">Ámbar</option>
+                <option value="red">Rojo</option>
+                <option value="green">Verde</option>
+                <option value="blue">Azul</option>
+                <option value="gray">Gris</option>
+              </select>
+              <button type="button" className="btn icon sm danger" onClick={() => quitar(i)}><Icon name="x" size={13} /></button>
+            </div>
+          ))}
+          <button type="button" className="btn sm" onClick={agregar} style={{ alignSelf: 'flex-start' }}>
+            <Icon name="plus" size={13} /> Agregar regla de color
+          </button>
         </div>
       )}
     </Modal>

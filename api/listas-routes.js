@@ -4,13 +4,14 @@
 // sus filas en JSONB. Los permisos se resuelven SIEMPRE en el servidor contra
 // el area de la lista y la categoria del usuario: el frontend solo dibuja.
 import { Router } from 'express';
+import nodemailer from 'nodemailer';
 import { randomUUID } from 'node:crypto';
 import { query, one, tx } from './db.js';
 import { authRequired } from './middleware/auth.js';
 import { auditar } from './auditoria.js';
 import { normalizarBooleano } from './validaciones.js';
 import {
-  CLAVES_AREA, TIPOS, normalizarOpciones, permisosArea, validarRegistro,
+  CLAVES_AREA, TIPOS, normalizarOpciones, permisosArea, validarRegistro, evaluarFormula,
 } from './listas.js';
 
 export const listasRouter = Router();
@@ -19,6 +20,70 @@ const limStr = (v, max = 200) => String(v ?? '').trim().slice(0, max);
 const esObjeto = (v) => Boolean(v) && typeof v === 'object' && !Array.isArray(v);
 const idNuevo = (prefijo) => `${prefijo}_${randomUUID()}`;
 const TODAS = Object.fromEntries(CLAVES_AREA.map((k) => [k, true]));
+const PUBLIC_URL = String(process.env.PUBLIC_URL || 'https://bertika.com').replace(/\/+$/, '');
+const MAIL_FROM = process.env.MAIL_FROM || process.env.MAIL_USER || 'admin@bertika.com';
+const mailerListas = (process.env.MAIL_HOST && process.env.MAIL_USER && process.env.MAIL_PASS)
+  ? nodemailer.createTransport({
+      host: process.env.MAIL_HOST,
+      port: Number(process.env.MAIL_PORT || 465),
+      secure: String(process.env.MAIL_SECURE ?? 'true') === 'true',
+      auth: { user: process.env.MAIL_USER, pass: process.env.MAIL_PASS },
+    })
+  : null;
+
+function cumpleCondicion(datos, regla) {
+  const valor = datos?.[regla.campo];
+  const vacio = valor === null || valor === undefined || valor === '' || (Array.isArray(valor) && valor.length === 0);
+  if (regla.op === 'vacio') return vacio;
+  if (vacio) return false;
+  const a = String(Array.isArray(valor) ? valor.join(', ') : valor).toLowerCase();
+  const b = String(regla.valor ?? '').toLowerCase();
+  if (regla.op === 'contiene') return a.includes(b);
+  if (regla.op === 'igual') return a === b;
+  if (regla.op === 'distinto') return a !== b;
+  if (regla.op === 'mayor' || regla.op === 'menor') {
+    const na = Number(valor);
+    const nb = Number(regla.valor);
+    if (!Number.isFinite(na) || !Number.isFinite(nb)) return false;
+    return regla.op === 'mayor' ? na > nb : na < nb;
+  }
+  return false;
+}
+
+async function evaluarReglas(lista, campos, datos, evento, registroId, req) {
+  try {
+    const reglas = await query(
+      "SELECT * FROM lista_reglas WHERE lista_id = $1 AND activo = true AND evento IN ('ambos', $2)",
+      [lista.id, evento]
+    );
+    for (const regla of reglas) {
+      if (!cumpleCondicion(datos, regla)) continue;
+      const campo = (campos || []).find((c) => c.id === regla.campo);
+      const resumen = (campos || []).slice(0, 6)
+        .map((c) => `${c.nombre}: ${Array.isArray(datos?.[c.id]) ? datos[c.id].join(', ') : (datos?.[c.id] ?? '—')}`)
+        .join(' · ');
+      const link = `${PUBLIC_URL}/listas/${lista.area_slug}/${lista.id}`;
+      const texto = `Regla "${regla.nombre}" en ${lista.nombre}: ${campo?.nombre || 'campo'} ${regla.op} ${regla.valor || '(vacío)'}.\n${resumen}\n${link}`;
+      const html = `<p>Se cumplió la regla <b>${regla.nombre}</b> en la lista <b>${lista.nombre}</b>.</p>
+        <p>${campo?.nombre || 'Campo'}: ${resumen}</p><p><a href="${link}">Abrir la lista</a></p>`;
+      await avisarPorMail(regla.destinatario, regla.asunto || `Bertika · aviso de ${lista.nombre}`, texto, html);
+      await auditar({ req, tabla: 'lista_reglas', registroId: regla.id, accion: 'disparar', detalle: `registro ${registroId}` });
+    }
+  } catch (e) {
+    console.error('[listas] no se pudieron evaluar las reglas:', e.message);
+  }
+}
+
+async function avisarPorMail(destinatario, asunto, texto, html) {
+  if (!mailerListas || !destinatario) return false;
+  try {
+    await mailerListas.sendMail({ from: MAIL_FROM, to: destinatario, subject: asunto, text: texto, html });
+    return true;
+  } catch (e) {
+    console.error('[listas] no se pudo enviar el aviso:', e.message);
+    return false;
+  }
+}
 
 function capacidades(req, areaId) {
   if (req.user?.rol === 'admin') return TODAS;
@@ -80,6 +145,29 @@ async function vistasDe(listaId) {
   `, [listaId]);
 }
 
+function calcularCampos(campos, datos) {
+  const salida = { ...datos };
+  const calculados = (campos || []).filter((c) => c.tipo === 'calculado');
+  for (let pasada = 0; pasada < 3; pasada += 1) {
+    for (const campo of calculados) {
+      try {
+        salida[campo.id] = evaluarFormula(campo.config?.formula, salida);
+      } catch {
+        salida[campo.id] = 0;
+      }
+    }
+  }
+  return salida;
+}
+
+async function guardarHistorial(client, listaId, registroId, datos, usuario, accion = 'editar') {
+  await client.query(
+    `INSERT INTO lista_registros_historial (id, lista_id, registro_id, datos, usuario, accion)
+     VALUES ($1,$2,$3,$4::jsonb,$5,$6)`,
+    [idNuevo('hist'), listaId, registroId, datos || {}, usuario || null, accion]
+  );
+}
+
 async function validarRelaciones(campos, datos) {
   for (const campo of campos) {
     if (campo.tipo !== 'relacion') continue;
@@ -120,6 +208,7 @@ function normalizarConfigCampo(tipo, config) {
     if (entrada.max !== undefined && entrada.max !== null && entrada.max !== '') salida.max = Number(entrada.max);
   }
   if (tipo === 'relacion' && entrada.lista_id) salida.lista_id = limStr(entrada.lista_id, 80);
+  if (tipo === 'calculado' && entrada.formula) salida.formula = String(entrada.formula).slice(0, 1000);
   if (entrada.defecto !== undefined && entrada.defecto !== null && entrada.defecto !== '') {
     salida.defecto = entrada.defecto;
   }
@@ -152,7 +241,20 @@ function normalizarVistaConfig(valor) {
   const titulo = c.titulo ? String(c.titulo).trim() : null;
   const mis = ['creado_por', 'responsable'].includes(c.mis) ? c.mis : null;
   const responsable = c.responsable ? String(c.responsable).trim() : null;
-  return { columnas, filtros, orden, agrupar, q, kanban, titulo, mis, responsable };
+  const calendario = c.calendario ? String(c.calendario).trim() : null;
+  const galeria = c.galeria ? String(c.galeria).trim() : null;
+  const formato = Array.isArray(c.formato)
+    ? c.formato
+      .filter((f) => esObjeto(f) && f.campo)
+      .slice(0, 20)
+      .map((f) => ({
+        campo: String(f.campo).trim(),
+        op: ['contiene', 'igual', 'distinto', 'mayor', 'menor', 'vacio'].includes(f.op) ? f.op : 'igual',
+        valor: f.valor === undefined || f.valor === null ? '' : String(f.valor).slice(0, 200),
+        color: ['red', 'amber', 'green', 'blue', 'gray'].includes(f.color) ? f.color : 'amber',
+      }))
+    : [];
+  return { columnas, filtros, orden, agrupar, q, kanban, titulo, mis, responsable, formato, calendario, galeria };
 }
 
 // ---------- Navegación visible ----------
@@ -364,6 +466,10 @@ listasRouter.post('/listas/:id/campos', authRequired, async (req, res) => {
     if (!objetivo) return res.status(400).json({ error: 'La lista relacionada no existe.' });
     if (objetivo.area_id !== lista.area_id) return res.status(400).json({ error: 'La lista relacionada tiene que ser del mismo área.' });
   }
+  if (tipo === 'calculado') {
+    if (!config.formula) return res.status(400).json({ error: 'Escribí la fórmula del campo calculado.' });
+    try { evaluarFormula(config.formula, {}); } catch (e) { return res.status(400).json({ error: e.message }); }
+  }
   const requerido = normalizarBooleano(req.body?.requerido) === true;
   const unico = normalizarBooleano(req.body?.unico) === true;
   const [max] = await query('SELECT COALESCE(MAX(orden), 0)::int AS n FROM lista_campos WHERE lista_id = $1', [lista.id]);
@@ -421,6 +527,11 @@ listasRouter.patch('/lista-campos/:id', authRequired, async (req, res) => {
     if (!objetivo) return res.status(400).json({ error: 'La lista relacionada no existe.' });
     if (objetivo.area_id !== lista.area_id) return res.status(400).json({ error: 'La lista relacionada tiene que ser del mismo área.' });
   }
+  if ((req.body?.tipo || campo.tipo) === 'calculado') {
+    const formula = req.body?.config?.formula ?? campo.config?.formula;
+    if (!formula) return res.status(400).json({ error: 'Escribí la fórmula del campo calculado.' });
+    try { evaluarFormula(formula, {}); } catch (e) { return res.status(400).json({ error: e.message }); }
+  }
   params.push(new Date()); sets.push(`actualizado_en = $${params.length}`);
   params.push(campo.id);
   try {
@@ -451,7 +562,7 @@ listasRouter.post('/listas/:id/vistas', authRequired, async (req, res) => {
   if (!capacidades(req, lista.area_id).administrar_vistas) return sinPermiso(res);
   const nombre = limStr(req.body?.nombre, 80);
   if (!nombre) return res.status(400).json({ error: 'La vista necesita un nombre.' });
-  const tipo = ['grid', 'kanban', 'form'].includes(req.body?.tipo) ? req.body.tipo : 'grid';
+  const tipo = ['grid', 'kanban', 'form', 'calendar', 'gallery'].includes(req.body?.tipo) ? req.body.tipo : 'grid';
   const visibilidad = req.body?.visibilidad === 'personal' ? 'personal' : 'compartida';
   const config = normalizarVistaConfig(req.body?.config);
   const predeterminada = normalizarBooleano(req.body?.predeterminada) === true;
@@ -482,7 +593,7 @@ listasRouter.patch('/lista-vistas/:id', authRequired, async (req, res) => {
     params.push(nombre); sets.push(`nombre = $${params.length}`);
   }
   if (req.body?.tipo !== undefined) {
-    params.push(['grid', 'kanban', 'form'].includes(req.body.tipo) ? req.body.tipo : 'grid'); sets.push(`tipo = $${params.length}`);
+    params.push(['grid', 'kanban', 'form', 'calendar', 'gallery'].includes(req.body.tipo) ? req.body.tipo : 'grid'); sets.push(`tipo = $${params.length}`);
   }
   if (req.body?.config !== undefined) {
     params.push(normalizarVistaConfig(req.body.config)); sets.push(`config = $${params.length}::jsonb`);
@@ -541,17 +652,22 @@ listasRouter.post('/listas/:id/registros', authRequired, async (req, res) => {
   const campos = await camposDe(lista.id);
   const validado = validarRegistro(campos, req.body?.datos);
   if (!validado.ok) return res.status(400).json({ error: validado.error });
-  const relError = await validarRelaciones(campos, validado.datos);
+  const datosFinal = calcularCampos(campos, validado.datos);
+  const relError = await validarRelaciones(campos, datosFinal);
   if (relError) return res.status(400).json({ error: relError });
-  const conflicto = await conflictoUnico(lista.id, campos, validado.datos);
+  const conflicto = await conflictoUnico(lista.id, campos, datosFinal);
   if (conflicto) return res.status(400).json({ error: conflicto });
   const id = idNuevo('reg');
-  await query(
-    `INSERT INTO lista_registros (id, lista_id, datos, creado_por, actualizado_por)
-     VALUES ($1,$2,$3::jsonb,$4,$5)`,
-    [id, lista.id, validado.datos, req.user.email, req.user.email]
-  );
-  await auditar({ req, tabla: 'lista_registros', registroId: id, accion: 'crear', despues: { listaId: lista.id, datos: validado.datos } });
+  await tx(async (client) => {
+    await client.query(
+      `INSERT INTO lista_registros (id, lista_id, datos, creado_por, actualizado_por)
+       VALUES ($1,$2,$3::jsonb,$4,$5)`,
+      [id, lista.id, datosFinal, req.user.email, req.user.email]
+    );
+    await guardarHistorial(client, lista.id, id, datosFinal, req.user.email, 'crear');
+  });
+  await auditar({ req, tabla: 'lista_registros', registroId: id, accion: 'crear', despues: { listaId: lista.id, datos: datosFinal } });
+  evaluarReglas(lista, campos, datosFinal, 'crear', id, req);
   return res.status(201).json({ id });
 });
 
@@ -565,15 +681,173 @@ listasRouter.patch('/lista-registros/:id', authRequired, async (req, res) => {
   const combinados = { ...(esObjeto(registro.datos) ? registro.datos : {}), ...(esObjeto(req.body?.datos) ? req.body.datos : {}) };
   const validado = validarRegistro(campos, combinados);
   if (!validado.ok) return res.status(400).json({ error: validado.error });
-  const relError = await validarRelaciones(campos, validado.datos);
+  const datosFinal = calcularCampos(campos, validado.datos);
+  const relError = await validarRelaciones(campos, datosFinal);
   if (relError) return res.status(400).json({ error: relError });
-  const conflicto = await conflictoUnico(lista.id, campos, validado.datos, registro.id);
+  const conflicto = await conflictoUnico(lista.id, campos, datosFinal, registro.id);
   if (conflicto) return res.status(400).json({ error: conflicto });
-  await query(
-    'UPDATE lista_registros SET datos = $2::jsonb, actualizado_por = $3, actualizado_en = now() WHERE id = $1',
-    [registro.id, validado.datos, req.user.email]
+  await tx(async (client) => {
+    await client.query(
+      'UPDATE lista_registros SET datos = $2::jsonb, actualizado_por = $3, actualizado_en = now() WHERE id = $1',
+      [registro.id, datosFinal, req.user.email]
+    );
+    await guardarHistorial(client, lista.id, registro.id, datosFinal, req.user.email, 'editar');
+  });
+  await auditar({ req, tabla: 'lista_registros', registroId: registro.id, accion: 'editar', antes: registro.datos, despues: datosFinal });
+  evaluarReglas(lista, campos, datosFinal, 'editar', registro.id, req);
+  return res.json({ ok: true });
+});
+
+function normalizarRegla(body, campos) {
+  const nombre = limStr(body?.nombre, 80);
+  if (!nombre) return { error: 'La regla necesita un nombre.' };
+  const campoId = limStr(body?.campo, 80);
+  const campo = (campos || []).find((c) => c.id === campoId);
+  if (!campo) return { error: 'Elegí un campo válido para la regla.' };
+  const op = ['contiene', 'igual', 'distinto', 'mayor', 'menor', 'vacio'].includes(body?.op) ? body.op : 'igual';
+  const evento = ['crear', 'editar', 'ambos'].includes(body?.evento) ? body.evento : 'ambos';
+  const destinatario = limStr(body?.destinatario, 200);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(destinatario)) return { error: 'El email del aviso no es válido.' };
+  return {
+    nombre,
+    campo: campo.id,
+    op,
+    valor: op === 'vacio' ? '' : limStr(body?.valor, 200),
+    evento,
+    destinatario,
+    asunto: limStr(body?.asunto, 160) || null,
+    activo: body?.activo === undefined ? true : normalizarBooleano(body.activo),
+  };
+}
+
+listasRouter.get('/listas/:id/reglas', authRequired, async (req, res) => {
+  const lista = await listaConArea(req.params.id);
+  if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
+  if (!capacidades(req, lista.area_id).editar_listas) return sinPermiso(res);
+  const reglas = await query('SELECT * FROM lista_reglas WHERE lista_id = $1 ORDER BY creado_en DESC', [lista.id]);
+  return res.json(reglas);
+});
+
+listasRouter.post('/listas/:id/reglas', authRequired, async (req, res) => {
+  const lista = await listaConArea(req.params.id);
+  if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
+  if (!capacidades(req, lista.area_id).editar_listas) return sinPermiso(res);
+  const campos = await camposDe(lista.id);
+  const regla = normalizarRegla(req.body, campos);
+  if (regla.error) return res.status(400).json({ error: regla.error });
+  const id = idNuevo('regla');
+  const fila = await one(
+    `INSERT INTO lista_reglas (id, lista_id, nombre, activo, evento, campo, op, valor, destinatario, asunto, creada_por)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+    [id, lista.id, regla.nombre, regla.activo, regla.evento, regla.campo, regla.op, regla.valor, regla.destinatario, regla.asunto, req.user.email]
   );
-  await auditar({ req, tabla: 'lista_registros', registroId: registro.id, accion: 'editar', antes: registro.datos, despues: validado.datos });
+  await auditar({ req, tabla: 'lista_reglas', registroId: id, accion: 'crear', despues: fila });
+  return res.status(201).json(fila);
+});
+
+listasRouter.patch('/lista-reglas/:id', authRequired, async (req, res) => {
+  const regla = await one('SELECT * FROM lista_reglas WHERE id = $1', [req.params.id]);
+  if (!regla) return res.status(404).json({ error: 'Regla no encontrada' });
+  const lista = await listaConArea(regla.lista_id);
+  if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
+  if (!capacidades(req, lista.area_id).editar_listas) return sinPermiso(res);
+  const campos = await camposDe(lista.id);
+  const datos = normalizarRegla({ ...regla, ...req.body }, campos);
+  if (datos.error) return res.status(400).json({ error: datos.error });
+  const fila = await one(
+    `UPDATE lista_reglas SET nombre=$2, activo=$3, evento=$4, campo=$5, op=$6, valor=$7, destinatario=$8, asunto=$9
+      WHERE id=$1 RETURNING *`,
+    [regla.id, datos.nombre, datos.activo, datos.evento, datos.campo, datos.op, datos.valor, datos.destinatario, datos.asunto]
+  );
+  await auditar({ req, tabla: 'lista_reglas', registroId: regla.id, accion: 'editar', antes: regla, despues: fila });
+  return res.json(fila);
+});
+
+listasRouter.delete('/lista-reglas/:id', authRequired, async (req, res) => {
+  const regla = await one('SELECT * FROM lista_reglas WHERE id = $1', [req.params.id]);
+  if (!regla) return res.status(404).json({ error: 'Regla no encontrada' });
+  const lista = await listaConArea(regla.lista_id);
+  if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
+  if (!capacidades(req, lista.area_id).editar_listas) return sinPermiso(res);
+  await query('DELETE FROM lista_reglas WHERE id = $1', [regla.id]);
+  await auditar({ req, tabla: 'lista_reglas', registroId: regla.id, accion: 'borrar', antes: regla });
+  return res.json({ ok: true });
+});
+
+listasRouter.get('/listas/:id/registros/:rid/comentarios', authRequired, async (req, res) => {
+  const lista = await listaConArea(req.params.id);
+  if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
+  if (!capacidades(req, lista.area_id).ver_registros) return sinPermiso(res);
+  const registro = await one('SELECT id FROM lista_registros WHERE id = $1 AND lista_id = $2 AND archivado = false', [req.params.rid, lista.id]);
+  if (!registro) return res.status(404).json({ error: 'Registro no encontrado' });
+  const filas = await query(`
+    SELECT id, autor, texto, menciones, creado_en
+      FROM lista_comentarios
+     WHERE registro_id = $1
+     ORDER BY creado_en ASC
+     LIMIT 500
+  `, [registro.id]);
+  return res.json(filas);
+});
+
+listasRouter.post('/listas/:id/registros/:rid/comentarios', authRequired, async (req, res) => {
+  const lista = await listaConArea(req.params.id);
+  if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
+  if (!capacidades(req, lista.area_id).ver_registros) return sinPermiso(res);
+  const registro = await one('SELECT id, datos FROM lista_registros WHERE id = $1 AND lista_id = $2 AND archivado = false', [req.params.rid, lista.id]);
+  if (!registro) return res.status(404).json({ error: 'Registro no encontrado' });
+  const texto = limStr(req.body?.texto, 2000);
+  if (!texto) return res.status(400).json({ error: 'Escribí un comentario.' });
+  const emails = [...new Set((texto.match(/@[^\s@]+@[^\s@]+\.[^\s@]+/g) || []).map((m) => m.slice(1).toLowerCase()))].slice(0, 10);
+  const id = idNuevo('com');
+  const fila = await one(
+    `INSERT INTO lista_comentarios (id, lista_id, registro_id, autor, texto, menciones)
+     VALUES ($1,$2,$3,$4,$5,$6::jsonb)
+     RETURNING id, autor, texto, menciones, creado_en`,
+    [id, lista.id, registro.id, req.user.email, texto, emails]
+  );
+  for (const email of emails) {
+    const u = await one('SELECT email FROM usuarios WHERE LOWER(email) = $1 AND activo = true', [email]);
+    if (!u) continue;
+    const link = `${PUBLIC_URL}/listas/${lista.area_slug}/${lista.id}`;
+    const html = `<p><b>${req.user.email}</b> te mencionó en la lista <b>${lista.nombre}</b>.</p>
+      <blockquote>${texto.replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]))}</blockquote>
+      <p><a href="${link}">Abrir la lista</a></p>`;
+    await avisarPorMail(u.email, `Bertika · mención en ${lista.nombre}`, `${req.user.email} te mencionó: ${texto}`, html);
+  }
+  await auditar({ req, tabla: 'lista_comentarios', registroId: id, accion: 'crear', detalle: `registro ${registro.id}` });
+  return res.status(201).json(fila);
+});
+
+listasRouter.get('/listas/:id/registros/:rid/historial', authRequired, async (req, res) => {
+  const lista = await listaConArea(req.params.id);
+  if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
+  if (!capacidades(req, lista.area_id).ver_registros) return sinPermiso(res);
+  const registro = await one('SELECT id FROM lista_registros WHERE id = $1 AND lista_id = $2', [req.params.rid, lista.id]);
+  if (!registro) return res.status(404).json({ error: 'Registro no encontrado' });
+  const filas = await query(`
+    SELECT id, datos, usuario, accion, creado_en
+      FROM lista_registros_historial
+     WHERE registro_id = $1
+     ORDER BY creado_en DESC
+     LIMIT 100
+  `, [registro.id]);
+  return res.json(filas);
+});
+
+listasRouter.patch('/lista-registros/:id/historial/:histId/restaurar', authRequired, async (req, res) => {
+  const registro = await one('SELECT * FROM lista_registros WHERE id = $1 AND archivado = false', [req.params.id]);
+  if (!registro) return res.status(404).json({ error: 'Registro no encontrado' });
+  const lista = await listaConArea(registro.lista_id);
+  if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
+  if (!capacidades(req, lista.area_id).editar_registros) return sinPermiso(res);
+  const version = await one('SELECT * FROM lista_registros_historial WHERE id = $1 AND registro_id = $2', [req.params.histId, registro.id]);
+  if (!version) return res.status(404).json({ error: 'Versión no encontrada' });
+  await tx(async (client) => {
+    await client.query('UPDATE lista_registros SET datos = $2::jsonb, actualizado_por = $3, actualizado_en = now() WHERE id = $1', [registro.id, version.datos, req.user.email]);
+    await guardarHistorial(client, lista.id, registro.id, version.datos, req.user.email, 'restaurar');
+  });
+  await auditar({ req, tabla: 'lista_registros', registroId: registro.id, accion: 'restaurar_version', detalle: version.id });
   return res.json({ ok: true });
 });
 

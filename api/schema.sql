@@ -351,3 +351,42 @@ CREATE TABLE IF NOT EXISTS lista_vistas (
   predeterminada BOOLEAN DEFAULT FALSE
 );
 CREATE INDEX IF NOT EXISTS idx_lista_vistas_lista ON lista_vistas (lista_id, creado_en);
+
+-- Fase 2: comentarios, historial y reglas de las listas dinámicas.
+CREATE TABLE IF NOT EXISTS lista_comentarios (
+  id TEXT PRIMARY KEY,
+  lista_id TEXT NOT NULL,
+  registro_id TEXT NOT NULL,
+  autor TEXT,
+  texto TEXT NOT NULL,
+  menciones JSONB DEFAULT '[]'::jsonb,
+  creado_en TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_lista_comentarios_registro ON lista_comentarios (registro_id, creado_en);
+
+CREATE TABLE IF NOT EXISTS lista_registros_historial (
+  id TEXT PRIMARY KEY,
+  lista_id TEXT NOT NULL,
+  registro_id TEXT NOT NULL,
+  datos JSONB NOT NULL DEFAULT '{}'::jsonb,
+  usuario TEXT,
+  accion TEXT DEFAULT 'editar',
+  creado_en TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_lista_historial_registro ON lista_registros_historial (registro_id, creado_en DESC);
+
+CREATE TABLE IF NOT EXISTS lista_reglas (
+  id TEXT PRIMARY KEY,
+  lista_id TEXT NOT NULL,
+  nombre TEXT NOT NULL,
+  activo BOOLEAN DEFAULT TRUE,
+  evento TEXT DEFAULT 'ambos',
+  campo TEXT,
+  op TEXT DEFAULT 'igual',
+  valor TEXT,
+  destinatario TEXT,
+  asunto TEXT,
+  creada_por TEXT,
+  creado_en TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_lista_reglas_lista ON lista_reglas (lista_id, activo);

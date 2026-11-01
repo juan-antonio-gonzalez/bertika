@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Icon, Modal, FormGrid } from '../ui';
 import { api } from '../../store/api';
+import ComentariosModal from './ComentariosModal';
+import HistorialModal from './HistorialModal';
 import { validarRegistro, etiquetaTipo, valorVisible } from '../../data/listas';
 
 function RelacionInput({ campo, value, onChange }) {
@@ -160,6 +162,8 @@ function CampoInput({ campo, value, onChange, listaId }) {
     control = <AdjuntoInput listaId={listaId} value={value} onChange={onChange} />;
   } else if (tipo === 'relacion') {
     control = <RelacionInput campo={campo} value={value} onChange={onChange} />;
+  } else if (tipo === 'calculado') {
+    control = <input className="input" value={value ?? ''} disabled placeholder="Se calcula al guardar" />;
   } else {
     const inputType = tipo === 'numero' || tipo === 'moneda' ? 'number'
       : tipo === 'fecha' ? 'date'
@@ -191,7 +195,7 @@ function CampoInput({ campo, value, onChange, listaId }) {
   );
 }
 
-export default function RegistroModal({ lista, registro, puedeBorrar, puedeConvertir, busy, onGuardar, onEliminar, onConvertir, onClose }) {
+export default function RegistroModal({ lista, registro, puedeBorrar, puedeEditar, puedeConvertir, busy, onGuardar, onEliminar, onConvertir, onRecargar, onClose }) {
   const campos = lista.campos || [];
   const [datos, setDatos] = useState(() => {
     const salida = {};
@@ -211,6 +215,7 @@ export default function RegistroModal({ lista, registro, puedeBorrar, puedeConve
     return salida;
   });
   const [error, setError] = useState('');
+  const [panel, setPanel] = useState(null);
 
   const setCampo = (id, valor) => setDatos((prev) => ({ ...prev, [id]: valor }));
 
@@ -278,6 +283,31 @@ export default function RegistroModal({ lista, registro, puedeBorrar, puedeConve
           </FormGrid>
         )}
       </form>
+
+      {registro && (
+        <div className="row" style={{ gap: 6, marginTop: 14, flexWrap: 'wrap' }}>
+          <button type="button" className="btn sm" onClick={() => setPanel('comentarios')}>
+            <Icon name="mail" size={13} /> Comentarios
+          </button>
+          <button type="button" className="btn sm" onClick={() => setPanel('historial')}>
+            <Icon name="clock" size={13} /> Historial
+          </button>
+        </div>
+      )}
+
+      {panel === 'comentarios' && (
+        <ComentariosModal lista={lista} registro={registro} onClose={() => setPanel(null)} />
+      )}
+      {panel === 'historial' && (
+        <HistorialModal
+          lista={lista}
+          registro={registro}
+          campos={campos}
+          puedeEditar={Boolean(puedeEditar)}
+          onRestaurada={() => { onRecargar?.(); onClose(); }}
+          onClose={() => setPanel(null)}
+        />
+      )}
     </Modal>
   );
 }
