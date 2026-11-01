@@ -618,6 +618,23 @@ function ListaDetalle({ listaId, area }) {
     }
   };
 
+  const cambiarVisibilidadVista = async () => {
+    if (!vistaActiva) return;
+    const nueva = vistaActiva.visibilidad === 'personal' ? 'compartida' : 'personal';
+    if (nueva === 'personal' && !window.confirm('Esta vista dejará de ser visible para los demás. ¿Continuar?')) return;
+    setBusy(true);
+    try {
+      await api(`/lista-vistas/${vistaActiva.id}`, { method: 'PATCH', body: { visibilidad: nueva } });
+      await cargarDetalle({ resetVista: false });
+      setVistaId(vistaActiva.id);
+      toastShow(nueva === 'personal' ? 'Vista ahora es privada' : 'Vista compartida con el equipo', 'ok');
+    } catch (e) {
+      toastShow(e.message, 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const crearVista = async ({ nombre, predeterminada, tipo = 'grid', extra = {}, visibilidad = 'compartida' }) => {
     setBusy(true);
     try {
@@ -988,6 +1005,11 @@ function ListaDetalle({ listaId, area }) {
               {puede.administrar_vistas && vistaId && (
                 <button type="button" className="btn sm" onClick={guardarVista} disabled={busy}>
                   <Icon name="check" size={13} /> Guardar vista
+                </button>
+              )}
+              {puede.administrar_vistas && vistaActiva && (
+                <button type="button" className="btn sm" onClick={cambiarVisibilidadVista} disabled={busy} title="Cambiar visibilidad de la vista">
+                  <Icon name={vistaActiva.visibilidad === 'personal' ? 'eye-off' : 'eye'} size={13} /> {vistaActiva.visibilidad === 'personal' ? 'Compartir vista' : 'Hacer privada'}
                 </button>
               )}
             </div>
