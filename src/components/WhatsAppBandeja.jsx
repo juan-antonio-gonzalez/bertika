@@ -1317,26 +1317,6 @@ export default function WhatsAppBandeja() {
                 </button>
               </div>
 
-              <div className="wa-mensajes">
-                {hilo.mensajes.map((m) => (
-                  <div key={m.id} className={`wa-msg ${m.direccion}`}>
-                    {m.media_url && String(m.media_tipo || '').toLowerCase() === 'documento' ? (
-                      <a href={m.media_url} target="_blank" rel="noreferrer">📄 {m.media_nombre || 'Documento'}</a>
-                    ) : m.media_url ? (
-                      <a href={m.media_url} target="_blank" rel="noreferrer">
-                        <img src={m.media_url} alt={m.media_nombre || 'foto'} className="wa-foto" />
-                      </a>
-                    ) : null}
-                    {(m.texto && (!m.media_url || !String(m.texto).startsWith('['))) && <div>{m.texto}</div>}
-                    {!m.texto && !m.media_url && <div>—</div>}
-                    <div className="wa-meta">
-                      {fmtFecha(m.fecha)}{m.estado ? ` · ${m.estado}` : ''}{m.error ? ` · ${m.error}` : ''}
-                    </div>
-                  </div>
-                ))}
-                <div ref={finRef} />
-              </div>
-
               {/* Notas internas (no se le mandan al cliente) */}
               <div className="wa-notas">
                 <div className="row between wrap" style={{ gap: 8 }}>
@@ -1375,6 +1355,27 @@ export default function WhatsAppBandeja() {
 
               </div>
               )}
+
+              <div className="wa-mensajes">
+                {hilo.mensajes.map((m) => (
+                  <div key={m.id} className={`wa-msg ${m.direccion}`}>
+                    {m.media_url && String(m.media_tipo || '').toLowerCase() === 'documento' ? (
+                      <a href={m.media_url} target="_blank" rel="noreferrer">📄 {m.media_nombre || 'Documento'}</a>
+                    ) : m.media_url ? (
+                      <a href={m.media_url} target="_blank" rel="noreferrer">
+                        <img src={m.media_url} alt={m.media_nombre || 'foto'} className="wa-foto" />
+                      </a>
+                    ) : null}
+                    {(m.texto && (!m.media_url || !String(m.texto).startsWith('['))) && <div>{m.texto}</div>}
+                    {!m.texto && !m.media_url && <div>—</div>}
+                    <div className="wa-meta">
+                      {fmtFecha(m.fecha)}{m.estado ? ` · ${m.estado}` : ''}{m.error ? ` · ${m.error}` : ''}
+                    </div>
+                  </div>
+                ))}
+                <div ref={finRef} />
+              </div>
+
 
               <div className="wa-composer row" style={{ padding: 10, gap: 8, borderTop: '1px solid var(--line)', position: 'relative' }}>
                 {atajosAbiertos && (
