@@ -50,7 +50,7 @@ async function crear({ origenDato, origenId, titulo, clienteId, nombre, telefono
 async function main() {
   console.log(APLICAR ? '== Aplicando backfill ==' : '== Modo seco (usar --aplicar para escribir) ==');
 
-  const convs = await query('SELECT id, cliente_id, nombre_perfil, telefono, etapa, monto_estimado, asignado_a, oportunidad_id FROM wa_conversaciones ORDER BY creado_en');
+  const convs = await query('SELECT id, cliente_id, nombre_perfil, telefono, etapa, monto_estimado, asignado_a, oportunidad_id FROM wa_conversaciones ORDER BY ultima_fecha NULLS LAST');
   let nuevasConv = 0;
   for (const c of convs) {
     if (c.oportunidad_id) continue;
