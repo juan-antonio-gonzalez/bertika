@@ -139,7 +139,9 @@ Qué hace `scripts/deploy.sh`:
 3. `rsync api/` → `/var/www/bertika/api/` (excluye `node_modules`, `.env`, `uploads` y `uploads-private`).
 4. `rsync src/data/` → `/var/www/bertika/src/data/` (fuente del seed).
 5. En el VPS: `npm ci --omit=dev` + `systemctl restart bertika-api`.
-6. Verificación HTTP de `https://bertika.com`, `/api/public/stats` y el hostname del VPS.
+6. Snapshot previo en `/var/backups/bertika/deploy-pre-*.tgz` (sin uploads ni node_modules).
+7. Verificación HTTP estricta de `/`, `/tarjetas/`, `/api/health`, `/api/public/stats` y el hostname del VPS, con reintentos.
+8. Si falla el restart o la verificación, restaura el snapshot y reinicia la API.
 
 > En el primer despliegue a un VPS nuevo hay que: crear la BD (`createdb`), el usuario de BD,
 > escribir `/etc/bertika/bertika-api.env`, instalar `npm`, y correr `node api/seed.js` una vez.
