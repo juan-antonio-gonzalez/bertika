@@ -12,7 +12,6 @@ console.log(`[worker] outbox iniciada (cada ${intervalo} ms)`);
 
 // Mantener vivo el proceso aunque el timer de la outbox sea unref.
 const latido = setInterval(() => {}, 60 * 1000);
-latido.unref?.();
 
 let cerrando = false;
 async function apagar(senal) {
