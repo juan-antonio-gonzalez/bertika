@@ -846,7 +846,6 @@ listasRouter.get('/listas/aprobaciones/pendientes', authRequired, async (req, re
      LIMIT 300
   `, [areaId]);
   filas = filas.filter((f) => listaAccesible(req.user, f));
-  listas = listas.filter((l) => listaAccesible(req.user, l));
 
   const campos = await query(`
     SELECT c.id, c.lista_id, c.nombre, c.tipo
@@ -893,6 +892,7 @@ listasRouter.get('/listas/resumen', authRequired, async (req, res) => {
      GROUP BY l.id
      ORDER BY l.orden, lower(l.nombre)
   `, [areaId]);
+  listas = listas.filter((l) => listaAccesible(req.user, l));
 
   const campos = await query(`
     SELECT c.id, c.lista_id, c.nombre, c.tipo
@@ -1682,6 +1682,9 @@ listasRouter.patch('/lista-aprobaciones/:id', authRequired, async (req, res) => 
   const lista = await listaConArea(aprobacion.lista_id, req.user);
   if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
   if (!capacidades(req, lista.area_id).editar_listas) return sinPermiso(res, 'Solo quien administra la lista puede aprobar o rechazar.');
+  if (aprobacion.aprobador && req.user.rol !== 'admin' && req.user.email !== aprobacion.aprobador) {
+    return res.status(403).json({ error: `Esta aprobación está asignada a ${aprobacion.aprobador}.` });
+  }
   if (aprobacion.estado !== 'pendiente') return res.status(400).json({ error: 'Esta aprobación ya fue decidida.' });
   const estado = req.body?.estado === 'aprobado' ? 'aprobado' : req.body?.estado === 'rechazado' ? 'rechazado' : null;
   if (!estado) return res.status(400).json({ error: 'Elegí aprobar o rechazar.' });
