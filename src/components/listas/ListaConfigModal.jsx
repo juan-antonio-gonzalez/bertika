@@ -18,6 +18,7 @@ export default function ListaConfigModal({
   const [categorias, setCategorias] = useState([]);
   const [restringirAcceso, setRestringirAcceso] = useState(Array.isArray(lista.acceso_categorias) && lista.acceso_categorias.length > 0);
   const [categoriasAcceso, setCategoriasAcceso] = useState(Array.isArray(lista.acceso_categorias) ? lista.acceso_categorias : []);
+  const [soloLectura, setSoloLectura] = useState(Array.isArray(lista.acceso_solo_lectura) ? lista.acceso_solo_lectura : []);
   const campos = lista.campos || [];
   useEffect(() => {
     let vivo = true;
@@ -41,7 +42,7 @@ export default function ListaConfigModal({
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          if (nombre.trim().length >= 2) onGuardarLista({ nombre: nombre.trim(), descripcion: descripcion.trim(), permiso_filas: permisoFilas, permiso_campo: permisoCampo || null, ver_filas: verFilas, ver_campo: verCampo || null, requiere_aprobacion: requiereAprobacion, aprobador_email: aprobadorEmail.trim() || null, aprobacion_dias: Number(aprobacionDias) || 3, acceso_categorias: restringirAcceso ? categoriasAcceso : [] });
+          if (nombre.trim().length >= 2) onGuardarLista({ nombre: nombre.trim(), descripcion: descripcion.trim(), permiso_filas: permisoFilas, permiso_campo: permisoCampo || null, ver_filas: verFilas, ver_campo: verCampo || null, requiere_aprobacion: requiereAprobacion, aprobador_email: aprobadorEmail.trim() || null, aprobacion_dias: Number(aprobacionDias) || 3, acceso_categorias: restringirAcceso ? categoriasAcceso : [], acceso_solo_lectura: soloLectura });
         }}
         className="col"
         style={{ gap: 12 }}
@@ -131,6 +132,22 @@ export default function ListaConfigModal({
         {restringirAcceso && categoriasAcceso.length === 0 && (
           <div className="banner-red"><div><Icon name="x" size={15} /> Elegí al menos una categoría para restringir el acceso.</div></div>
         )}
+        <div className="field">
+          <label>Categorías de solo lectura</label>
+          <small className="ayuda">Pueden ver la lista y sus filas, pero no crear, editar, archivar ni administrar vistas.</small>
+          <div className="col" style={{ gap: 4, marginTop: 6, border: '1px solid var(--line)', borderRadius: 8, padding: 8, maxHeight: 160, overflow: 'auto' }}>
+            {categorias.map((c) => (
+              <label key={c.id} className="check-line" style={{ textTransform: 'none', letterSpacing: 0 }}>
+                <input
+                  type="checkbox"
+                  checked={soloLectura.includes(c.id)}
+                  onChange={(e) => setSoloLectura((prev) => (e.target.checked ? [...prev, c.id] : prev.filter((x) => x !== c.id)))}
+                />
+                <span>{c.nombre}</span>
+              </label>
+            ))}
+          </div>
+        </div>
         <button type="submit" className="btn sm" disabled={busy || nombre.trim().length < 2 || (restringirAcceso && categoriasAcceso.length === 0)} style={{ alignSelf: 'flex-start' }}>
           <Icon name="check" size={13} /> Guardar datos de la lista
         </button>

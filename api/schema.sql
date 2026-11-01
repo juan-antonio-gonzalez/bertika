@@ -311,7 +311,8 @@ CREATE TABLE IF NOT EXISTS listas (
   requiere_aprobacion BOOLEAN DEFAULT FALSE,
   acceso_categorias JSONB DEFAULT '[]'::jsonb,
   aprobador_email TEXT,
-  aprobacion_dias INTEGER DEFAULT 3
+  aprobacion_dias INTEGER DEFAULT 3,
+  acceso_solo_lectura JSONB DEFAULT '[]'::jsonb
 );
 CREATE INDEX IF NOT EXISTS idx_listas_area ON listas (area_id, archivada, orden);
 CREATE UNIQUE INDEX IF NOT EXISTS listas_area_nombre_uniq ON listas (area_id, lower(nombre)) WHERE archivada = false;
@@ -488,3 +489,18 @@ CREATE TABLE IF NOT EXISTS lista_plantillas_usuario (
   creado_en TIMESTAMPTZ DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_lista_plantillas_area ON lista_plantillas_usuario (area_id, creado_en DESC);
+
+
+-- Activos, equipos y arrancadores por cliente.
+CREATE TABLE IF NOT EXISTS activos (
+  id TEXT PRIMARY KEY,
+  cliente_id TEXT NOT NULL,
+  tipo TEXT DEFAULT 'equipo',
+  nombre TEXT NOT NULL,
+  serie TEXT,
+  estado TEXT DEFAULT 'activo',
+  notas TEXT,
+  archivado BOOLEAN DEFAULT FALSE,
+  creado_en TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_activos_cliente ON activos (cliente_id, archivado);

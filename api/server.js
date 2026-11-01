@@ -14,9 +14,9 @@ import { query, one, tx } from './db.js';
 import { nextId } from './ids.js';
 import { signToken, authRequired, requireRol, permisoRequerido, SECRET } from './middleware/auth.js';
 import { PERMISOS, COLUMNAS, agruparPermisos, permisosPorDefecto, normalizarPermisos, permisosEfectivos, puedeVer, tienePermiso } from './permisos.js';
-import { listasRouter, areasVisibles, listaAccesible } from './listas-routes.js';
+import { listasRouter, areasVisibles, listaAccesible, capacidadesLista } from './listas-routes.js';
 import { sembrarListasVentas, sembrarListasTaller } from './listas-seed.js';
-import { normalizarAreas, permisosArea } from './listas.js';
+import { normalizarAreas } from './listas.js';
 import { canTransition, ORDEN_ESTADOS, ESTADO_LABEL, MIN_CAPACIDAD_PCT, esEstadoCerrado , puedeTrabajarEnOrden } from './reglas.js';
 import { obtenerDolar } from './dolar.js';
 import { calcularVisita, normalizarConfig, CONFIG_DEFAULT, textoFueraCobertura } from '../src/data/cotizadorVisita.js';
@@ -582,6 +582,7 @@ async function asegurarCodigos() {
   await query("ALTER TABLE listas ADD COLUMN IF NOT EXISTS acceso_categorias JSONB DEFAULT '[]'::jsonb");
   await query('ALTER TABLE listas ADD COLUMN IF NOT EXISTS aprobador_email TEXT');
   await query('ALTER TABLE listas ADD COLUMN IF NOT EXISTS aprobacion_dias INTEGER DEFAULT 3');
+  await query("ALTER TABLE listas ADD COLUMN IF NOT EXISTS acceso_solo_lectura JSONB DEFAULT '[]'::jsonb");
   await query('ALTER TABLE lista_aprobaciones ADD COLUMN IF NOT EXISTS aprobador TEXT');
   await query('ALTER TABLE lista_aprobaciones ADD COLUMN IF NOT EXISTS fecha_limite TIMESTAMPTZ');
   // Fase 3: formularios públicos por lista (token no adivinable).
@@ -622,6 +623,19 @@ async function asegurarCodigos() {
     creado_en TIMESTAMPTZ DEFAULT now()
   )`);
   await query('CREATE INDEX IF NOT EXISTS idx_lista_notificaciones_usuario ON lista_notificaciones (usuario_email, leida, creado_en DESC)');
+  await query(`CREATE TABLE IF NOT EXISTS activos (
+    id TEXT PRIMARY KEY,
+    cliente_id TEXT NOT NULL,
+    tipo TEXT DEFAULT 'equipo',
+    nombre TEXT NOT NULL,
+    serie TEXT,
+    estado TEXT DEFAULT 'activo',
+    notas TEXT,
+    archivado BOOLEAN DEFAULT FALSE,
+    creado_en TIMESTAMPTZ DEFAULT now()
+  )`);
+  await query('CREATE INDEX IF NOT EXISTS idx_activos_cliente ON activos (cliente_id, archivado)');
+
   await query(`CREATE TABLE IF NOT EXISTS lista_adjuntos (
     id TEXT PRIMARY KEY,
     lista_id TEXT NOT NULL,
@@ -2067,7 +2081,7 @@ app.patch('/api/auth/2fa', authRequired, async (req, res) => {
 // asignadas (+ no asignadas en recepcion); cliente ve solo sus datos.
 app.get('/api/estado', authRequired, async (req, res) => {
   const rol = req.user.rol;
-  const deps = ['tecnicos', 'clientes', 'baterias', 'insumos', 'ordenes', 'bajas', 'notificaciones'];
+  const deps = ['tecnicos', 'clientes', 'baterias', 'activos', 'insumos', 'ordenes', 'bajas', 'notificaciones'];
   const out = {};
   for (const t of deps) {
     if (rol === 'cliente' && (t === 'insumos' || t === 'bajas')) { out[t] = []; continue; }
@@ -2087,6 +2101,7 @@ app.get('/api/estado', authRequired, async (req, res) => {
     const conRelacion = new Set([
       ...out.ordenes.map((o) => o.cliente_id),
       ...out.baterias.map((b) => b.cliente_id),
+      ...out.activos.map((a) => a.cliente_id),
     ].filter(Boolean));
     out.clientes = out.clientes.filter((c) => conRelacion.has(c.id));
   }
@@ -2096,6 +2111,7 @@ app.get('/api/estado', authRequired, async (req, res) => {
     out.ordenes = propias;
     out.clientes = out.clientes.filter((c) => c.id === req.user.cliente_id);
     out.baterias = out.baterias.filter((b) => b.cliente_id === req.user.cliente_id || series.has(b.numero_serie));
+    out.activos = out.activos.filter((a) => a.cliente_id === req.user.cliente_id);
     out.tecnicos = out.tecnicos.map((t) => ({ id: t.id, nombre: t.nombre }));
     out.notificaciones = out.notificaciones.filter((n) => propias.some((o) => o.id === n.orden_id));
   }
@@ -2789,6 +2805,59 @@ app.get('/api/insumos/:id/movimientos', authRequired, permisoRequerido('inventar
 
 // ---------- Clientes ----------
 // Listado normal (sin los dados de baja) y papelera (solo admin).
+// ---------- Activos y arrancadores por cliente ----------
+app.get('/api/activos', authRequired, permisoRequerido('clientes'), async (req, res) => {
+  const clienteId = limStr(req.query?.cliente_id, 80);
+  const filas = await query(
+    `SELECT * FROM activos WHERE archivado = false ${clienteId ? 'AND cliente_id = $1' : ''} ORDER BY creado_en DESC`,
+    clienteId ? [clienteId] : []
+  );
+  return res.json(filas);
+});
+
+app.post('/api/activos', authRequired, permisoRequerido('editar_clientes', 'crear_clientes'), async (req, res) => {
+  const clienteId = limStr(req.body?.cliente_id, 80);
+  const nombre = limStr(req.body?.nombre, 120);
+  const tipo = ['equipo', 'bateria', 'arrancador', 'otro'].includes(req.body?.tipo) ? req.body.tipo : 'equipo';
+  if (!clienteId || !nombre) return res.status(400).json({ error: 'Elegí el cliente y poné un nombre.' });
+  const cliente = await one('SELECT id FROM clientes WHERE id = $1 AND deleted_at IS NULL', [clienteId]);
+  if (!cliente) return res.status(400).json({ error: 'Cliente inválido.' });
+  const id = `act_${randomUUID()}`;
+  const fila = await one(
+    `INSERT INTO activos (id, cliente_id, tipo, nombre, serie, estado, notas)
+     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+    [id, clienteId, tipo, nombre, limStr(req.body?.serie, 120) || null, limStr(req.body?.estado, 40) || 'activo', limStr(req.body?.notas, 500) || null]
+  );
+  await auditar({ req, tabla: 'activos', registroId: id, accion: 'crear', despues: fila });
+  return res.status(201).json(fila);
+});
+
+app.patch('/api/activos/:id', authRequired, permisoRequerido('editar_clientes'), async (req, res) => {
+  const antes = await one('SELECT * FROM activos WHERE id = $1 AND archivado = false', [req.params.id]);
+  if (!antes) return res.status(404).json({ error: 'Activo no encontrado' });
+  const sets = [];
+  const params = [];
+  for (const [col, max] of [['nombre', 120], ['serie', 120], ['estado', 40], ['notas', 500]]) {
+    if (req.body?.[col] !== undefined) { params.push(limStr(req.body[col], max) || null); sets.push(`${col} = $${params.length}`); }
+  }
+  if (req.body?.tipo !== undefined) {
+    params.push(['equipo', 'bateria', 'arrancador', 'otro'].includes(req.body.tipo) ? req.body.tipo : 'equipo'); sets.push(`tipo = $${params.length}`);
+  }
+  if (!sets.length) return res.status(400).json({ error: 'Sin cambios.' });
+  params.push(req.params.id);
+  const despues = await one(`UPDATE activos SET ${sets.join(', ')} WHERE id = $${params.length} RETURNING *`, params);
+  await auditar({ req, tabla: 'activos', registroId: antes.id, accion: 'editar', antes, despues });
+  return res.json(despues);
+});
+
+app.delete('/api/activos/:id', authRequired, permisoRequerido('editar_clientes'), async (req, res) => {
+  const antes = await one('SELECT * FROM activos WHERE id = $1 AND archivado = false', [req.params.id]);
+  if (!antes) return res.status(404).json({ error: 'Activo no encontrado' });
+  await query('UPDATE activos SET archivado = true WHERE id = $1', [antes.id]);
+  await auditar({ req, tabla: 'activos', registroId: antes.id, accion: 'archivar', antes });
+  return res.json({ ok: true });
+});
+
 app.get('/api/clientes', authRequired, permisoRequerido('clientes'), async (req, res) => {
   if (String(req.query?.papelera || '') === '1') {
     if (!esAdmin(req)) return res.status(403).json({ error: 'Solo un administrador puede ver la papelera' });
@@ -2801,6 +2870,7 @@ app.get('/api/clientes', authRequired, permisoRequerido('clientes'), async (req,
          AND (
            EXISTS (SELECT 1 FROM ordenes o WHERE o.cliente_id = c.id)
            OR EXISTS (SELECT 1 FROM baterias b WHERE b.cliente_id = c.id)
+           OR EXISTS (SELECT 1 FROM activos a WHERE a.cliente_id = c.id AND a.archivado = false)
          )
        ORDER BY c.nombre
     `));
@@ -2811,6 +2881,7 @@ app.get('/api/clientes', authRequired, permisoRequerido('clientes'), async (req,
        WHERE c.deleted_at IS NULL
          AND NOT EXISTS (SELECT 1 FROM ordenes o WHERE o.cliente_id = c.id)
          AND NOT EXISTS (SELECT 1 FROM baterias b WHERE b.cliente_id = c.id)
+         AND NOT EXISTS (SELECT 1 FROM activos a WHERE a.cliente_id = c.id AND a.archivado = false)
        ORDER BY c.nombre
     `));
   }
@@ -3378,7 +3449,7 @@ app.post('/api/listas/:id/registros/:rid/convertir', authRequired, async (req, r
   `, [req.params.id]);
   if (!lista || !listaAccesible(req.user, lista)) return res.status(404).json({ error: 'Lista no encontrada' });
   if (lista.area_slug !== 'ventas') return res.status(400).json({ error: 'La conversión solo está disponible en el área Ventas.' });
-  const caps = esAdmin(req) ? { convertir_prospecto: true } : permisosArea(req.user.areas, lista.area_id);
+  const caps = esAdmin(req) ? { convertir_prospecto: true } : capacidadesLista(req, lista);
   if (!caps.convertir_prospecto) {
     return res.status(403).json({ error: 'No tenés permiso para convertir prospectos en clientes.' });
   }
@@ -5605,7 +5676,7 @@ const uploadAdjunto = multer({
 app.post('/api/listas/:id/adjuntos', authRequired, uploadAdjunto.single('archivo'), async (req, res) => {
   const lista = await one('SELECT * FROM listas WHERE id = $1 AND archivada = false', [req.params.id]);
   if (!lista || !listaAccesible(req.user, lista)) return res.status(404).json({ error: 'Lista no encontrada' });
-  const caps = esAdmin(req) ? { crear_registros: true, editar_registros: true } : permisosArea(req.user.areas, lista.area_id);
+  const caps = esAdmin(req) ? { crear_registros: true, editar_registros: true } : capacidadesLista(req, lista);
   if (!caps.crear_registros && !caps.editar_registros) {
     return res.status(403).json({ error: 'No tenés permiso para adjuntar archivos en esta lista.' });
   }
@@ -5635,7 +5706,7 @@ app.get('/api/lista-adjuntos/:id', authRequired, async (req, res) => {
   if (!adjunto) return res.status(404).json({ error: 'Adjunto no encontrado' });
   const lista = await one('SELECT * FROM listas WHERE id = $1 AND archivada = false', [adjunto.lista_id]);
   if (!lista || !listaAccesible(req.user, lista)) return res.status(404).json({ error: 'Adjunto no encontrado' });
-  const caps = esAdmin(req) ? { ver_registros: true } : permisosArea(req.user.areas, lista.area_id);
+  const caps = esAdmin(req) ? { ver_registros: true } : capacidadesLista(req, lista);
   if (!caps.ver_registros) return res.status(403).json({ error: 'No tenés acceso a este adjunto.' });
   res.setHeader('Content-Type', adjunto.mime || 'application/octet-stream');
   res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(adjunto.nombre || 'adjunto')}`);

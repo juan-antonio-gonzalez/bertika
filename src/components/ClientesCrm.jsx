@@ -224,6 +224,30 @@ function Ficha({ cliente, datos, onAbrirOrden, onEditar, onBaja, onClose }) {
   const k = f.kpis;
   const comerciales = camposComercialesCargados(cliente);
   const wa = waNumero(cliente.telefono);
+  const puedeEditar = usePermiso('editar_clientes');
+  const sync = useStore((s) => s.sync);
+  const [nuevoActivo, setNuevoActivo] = useState(false);
+  const [activoForm, setActivoForm] = useState({ nombre: '', tipo: 'equipo', serie: '', estado: 'activo', notas: '' });
+  const [busyActivo, setBusyActivo] = useState(false);
+  const [errorActivo, setErrorActivo] = useState('');
+  const activos = (datos.activos || []).filter((a) => a.cliente_id === cliente.id && !a.archivado);
+
+  const guardarActivo = async (e) => {
+    e.preventDefault();
+    if (!activoForm.nombre.trim()) return;
+    setBusyActivo(true);
+    setErrorActivo('');
+    try {
+      await api('/activos', { method: 'POST', body: { ...activoForm, cliente_id: cliente.id, nombre: activoForm.nombre.trim() } });
+      await sync();
+      setActivoForm({ nombre: '', tipo: 'equipo', serie: '', estado: 'activo', notas: '' });
+      setNuevoActivo(false);
+    } catch (err) {
+      setErrorActivo(err.message);
+    } finally {
+      setBusyActivo(false);
+    }
+  };
   const abrir = (o) => { onClose(); onAbrirOrden?.(o); };
 
   return (
@@ -320,6 +344,38 @@ function Ficha({ cliente, datos, onAbrirOrden, onEditar, onBaja, onClose }) {
       </div>
 
       <div className="mt16">
+        <div className="row between wrap" style={{ gap: 8 }}>
+          <div className="card-title"><Icon name="box" size={14} /> Activos y equipos ({activos.length})</div>
+          {puedeEditar && <button type="button" className="btn sm" onClick={() => setNuevoActivo((v) => !v)}><Icon name="plus" size={12} /> Agregar</button>}
+        </div>
+        {errorActivo && <small className="pass-error">{errorActivo}</small>}
+        {activos.length === 0 ? <p className="muted" style={{ margin: '6px 0 0' }}>Sin activos registrados.</p> : (
+          <ul className="ulist">
+            {activos.map((a) => (
+              <li key={a.id}>
+                <span><b>{a.nombre}</b> <span className="muted">{a.tipo}{a.serie ? ` · ${a.serie}` : ''}</span></span>
+                <span className={`badge ${a.estado === 'activo' ? 'green' : 'gray'}`}>{a.estado || 'activo'}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        {nuevoActivo && puedeEditar && (
+          <form className="card" style={{ marginTop: 8 }} onSubmit={guardarActivo}>
+            <FormGrid cols={2}>
+              <div className="field"><label>Nombre *</label><input className="input" value={activoForm.nombre} onChange={(e) => setActivoForm((p) => ({ ...p, nombre: e.target.value }))} /></div>
+              <div className="field"><label>Tipo</label><select className="input" value={activoForm.tipo} onChange={(e) => setActivoForm((p) => ({ ...p, tipo: e.target.value }))}><option value="equipo">Equipo</option><option value="bateria">Batería</option><option value="arrancador">Arrancador</option><option value="otro">Otro</option></select></div>
+              <div className="field"><label>Serie</label><input className="input" value={activoForm.serie} onChange={(e) => setActivoForm((p) => ({ ...p, serie: e.target.value }))} /></div>
+              <div className="field"><label>Estado</label><input className="input" value={activoForm.estado} onChange={(e) => setActivoForm((p) => ({ ...p, estado: e.target.value }))} /></div>
+            </FormGrid>
+            <div className="row" style={{ gap: 6, marginTop: 8 }}>
+              <button type="submit" className="btn primary sm" disabled={busyActivo}><Icon name="check" size={12} /> {busyActivo ? 'Guardando...' : 'Guardar activo'}</button>
+              <button type="button" className="btn sm" onClick={() => setNuevoActivo(false)}>Cancelar</button>
+            </div>
+          </form>
+        )}
+      </div>
+
+      <div className="mt16">
         <div className="card-title"><Icon name="battery" size={14} /> Equipos ({f.baterias.length})</div>
         {f.baterias.length === 0 ? (
           <p className="muted" style={{ margin: '6px 0 0' }}>Sin baterías asociadas a su nombre.</p>
@@ -401,7 +457,8 @@ export default function ClientesCrm({ onAbrirOrden }) {
   const conRelacion = useMemo(() => new Set([
     ...(data.ordenes || []).map((o) => o.cliente_id),
     ...(data.baterias || []).map((b) => b.cliente_id),
-  ].filter(Boolean)), [data.ordenes, data.baterias]);
+    ...(data.activos || []).map((a) => a.cliente_id),
+  ].filter(Boolean)), [data.ordenes, data.baterias, data.activos]);
   const clientesBase = useMemo(() => {
     const todos = data.clientes || [];
     if (vista === 'sin_ordenes' && esAdmin) return todos.filter((c) => !conRelacion.has(c.id));
