@@ -1452,3 +1452,42 @@ details[open] > .cz-summary::after { content: ' –'; }
 .lista-version-datos { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 4px 10px; margin: 7px 0; }
 .lista-version-datos span { display: flex; flex-direction: column; gap: 1px; font-size: 11.5px; color: var(--text); background: var(--bg-3); border-radius: 5px; padding: 4px 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lista-version-datos small { color: var(--muted); font-size: 9px; text-transform: uppercase; letter-spacing: .4px; }
+
+/* ---------- Dashboard de área ---------- */
+.listas-resumen { margin-bottom: 16px; }
+.resumen-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-bottom: 10px; }
+.resumen-kpi { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; }
+.resumen-kpi span { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+.resumen-kpi b { font-size: 22px; color: var(--navy); }
+.resumen-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.resumen-card { margin: 0; }
+.resumen-bars { display: flex; flex-direction: column; gap: 7px; }
+.resumen-bar-row { display: grid; grid-template-columns: 110px minmax(0, 1fr) 30px; gap: 8px; align-items: center; border: 0; background: transparent; text-align: left; padding: 0; cursor: pointer; font: inherit; }
+.resumen-bar-name { font-size: 11.5px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.resumen-bar-track { height: 8px; background: var(--bg-3); border-radius: 20px; overflow: hidden; }
+.resumen-bar-track span { display: block; height: 100%; background: linear-gradient(90deg, var(--amber), #f7b733); border-radius: 20px; }
+.resumen-bar-row b { font-size: 11px; color: var(--navy); text-align: right; }
+.resumen-recientes { display: flex; flex-direction: column; gap: 2px; }
+.resumen-reciente { display: flex; flex-direction: column; gap: 2px; border: 0; border-bottom: 1px solid var(--line); background: transparent; text-align: left; padding: 6px 0; cursor: pointer; font: inherit; }
+.resumen-reciente:last-child { border-bottom: 0; }
+.resumen-reciente b { font-size: 12px; color: var(--navy); }
+.resumen-reciente span { font-size: 10.5px; color: var(--muted); }
+.resumen-alerta { display: flex; justify-content: space-between; gap: 8px; background: var(--amber-bg); border-radius: 7px; padding: 7px 8px; font-size: 11.5px; color: var(--navy); }
+@media (max-width: 800px) { .resumen-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .resumen-grid { grid-template-columns: 1fr; } }
+
+/* ---------- Formulario público ---------- */
+.lista-form-publica-campos { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 5px 12px; max-height: 220px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
+.form-publico-link { background: var(--bg-3); border: 1px solid var(--line); border-radius: 8px; padding: 8px; display: flex; flex-direction: column; gap: 4px; }
+.public-form-page { min-height: 100vh; padding: 90px 18px 50px; display: grid; place-items: start center; }
+.public-form-card { width: min(620px, 100%); background: #fff; color: var(--text); border-radius: 14px; padding: 26px; box-shadow: 0 20px 60px rgba(0,0,0,.25); }
+.public-form-brand { display: flex; align-items: center; gap: 8px; color: var(--navy); margin-bottom: 18px; }
+.public-form-brand .logo { width: 34px; height: 34px; }
+.public-form-card h1 { color: var(--navy); font-size: 25px; margin: 0 0 6px; }
+.public-form-ok { width: 54px; height: 54px; border-radius: 50%; display: inline-grid; place-items: center; background: var(--green-bg); color: var(--green); margin: 0 auto 10px; }
+.public-form-card .btn.primary { width: 100%; margin-top: 6px; }
+
+.lista-aprobacion { border: 1px solid var(--line); border-radius: 8px; padding: 9px; display: flex; flex-direction: column; gap: 5px; }
+.lista-aprobacion.pendiente { border-color: var(--amber); background: var(--amber-bg); }
+.lista-aprobacion.aprobado { border-color: rgba(22, 163, 74, .35); }
+.lista-aprobacion.rechazado { border-color: rgba(220, 38, 38, .35); }
+.lista-aprobacion p { margin: 0; font-size: 12px; white-space: pre-wrap; }

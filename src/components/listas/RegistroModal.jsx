@@ -3,6 +3,7 @@ import { Icon, Modal, FormGrid } from '../ui';
 import { api } from '../../store/api';
 import ComentariosModal from './ComentariosModal';
 import HistorialModal from './HistorialModal';
+import AprobacionesModal from './AprobacionesModal';
 import { validarRegistro, etiquetaTipo, valorVisible } from '../../data/listas';
 
 function RelacionInput({ campo, value, onChange }) {
@@ -196,7 +197,7 @@ function CampoInput({ campo, value, onChange, listaId }) {
   );
 }
 
-export default function RegistroModal({ lista, registro, puedeBorrar, puedeEditar, puedeConvertir, busy, onGuardar, onEliminar, onConvertir, onRecargar, onClose }) {
+export default function RegistroModal({ lista, registro, puedeBorrar, puedeEditar, puedeAprobar, puedeConvertir, busy, onGuardar, onEliminar, onConvertir, onRecargar, onClose }) {
   const campos = lista.campos || [];
   const [datos, setDatos] = useState(() => {
     const salida = {};
@@ -293,11 +294,23 @@ export default function RegistroModal({ lista, registro, puedeBorrar, puedeEdita
           <button type="button" className="btn sm" onClick={() => setPanel('historial')}>
             <Icon name="clock" size={13} /> Historial
           </button>
+          <button type="button" className="btn sm" onClick={() => setPanel('aprobaciones')}>
+            <Icon name="check" size={13} /> Aprobaciones
+          </button>
         </div>
       )}
 
       {panel === 'comentarios' && (
         <ComentariosModal lista={lista} registro={registro} onClose={() => setPanel(null)} />
+      )}
+      {panel === 'aprobaciones' && (
+        <AprobacionesModal
+          lista={lista}
+          registro={registro}
+          puedeSolicitar={Boolean(puedeEditar)}
+          puedeAprobar={Boolean(puedeAprobar)}
+          onClose={() => setPanel(null)}
+        />
       )}
       {panel === 'historial' && (
         <HistorialModal

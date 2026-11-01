@@ -3,10 +3,12 @@ import { Icon, Modal, FormGrid } from '../ui';
 import { etiquetaTipo } from '../../data/listas';
 
 export default function ListaConfigModal({
-  lista, busy, onGuardarLista, onNuevoCampo, onEditarCampo, onEliminarCampo, onArchivarLista, onDuplicar, onPapelera, onReglas, onClose,
+  lista, busy, onGuardarLista, onNuevoCampo, onEditarCampo, onEliminarCampo, onArchivarLista, onDuplicar, onPapelera, onReglas, onFormulario, onClose,
 }) {
   const [nombre, setNombre] = useState(lista.nombre || '');
   const [descripcion, setDescripcion] = useState(lista.descripcion || '');
+  const [permisoFilas, setPermisoFilas] = useState(lista.permiso_filas || 'todos');
+  const [permisoCampo, setPermisoCampo] = useState(lista.permiso_campo || '');
   const campos = lista.campos || [];
 
   return (
@@ -23,7 +25,7 @@ export default function ListaConfigModal({
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          if (nombre.trim().length >= 2) onGuardarLista({ nombre: nombre.trim(), descripcion: descripcion.trim() });
+          if (nombre.trim().length >= 2) onGuardarLista({ nombre: nombre.trim(), descripcion: descripcion.trim(), permiso_filas: permisoFilas, permiso_campo: permisoCampo || null });
         }}
         className="col"
         style={{ gap: 12 }}
@@ -38,6 +40,22 @@ export default function ListaConfigModal({
             <input className="input" value={descripcion} onChange={(e) => setDescripcion(e.target.value)} />
           </div>
         </FormGrid>
+        <div className="field">
+          <label>¿Quién puede editar o archivar filas?</label>
+          <select className="input" value={permisoFilas} onChange={(e) => { setPermisoFilas(e.target.value); if (e.target.value !== 'responsable') setPermisoCampo(''); }}>
+            <option value="todos">Todos los que tengan permiso en el área</option>
+            <option value="creador">Solo quien creó la fila</option>
+            <option value="responsable">Solo el responsable de la fila</option>
+            <option value="admin">Solo administradores</option>
+          </select>
+          {permisoFilas === 'responsable' && (
+            <select className="input" value={permisoCampo} onChange={(e) => setPermisoCampo(e.target.value)} style={{ marginTop: 6 }}>
+              <option value="">Elegir campo de persona...</option>
+              {campos.filter((c) => c.tipo === 'persona').map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+            </select>
+          )}
+          <small className="ayuda">El servidor valida esta regla también al editar, archivar y restaurar.</small>
+        </div>
         <button type="submit" className="btn sm" disabled={busy || nombre.trim().length < 2} style={{ alignSelf: 'flex-start' }}>
           <Icon name="check" size={13} /> Guardar datos de la lista
         </button>
@@ -84,6 +102,11 @@ export default function ListaConfigModal({
           {onReglas && (
             <button type="button" className="btn sm" onClick={onReglas}>
               <Icon name="bell" size={13} /> Reglas y avisos
+            </button>
+          )}
+          {onFormulario && (
+            <button type="button" className="btn sm" onClick={onFormulario}>
+              <Icon name="link" size={13} /> Formulario público
             </button>
           )}
           {onPapelera && (

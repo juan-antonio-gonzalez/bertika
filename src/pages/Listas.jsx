@@ -11,6 +11,7 @@ import CampoModal from '../components/listas/CampoModal';
 import ListaConfigModal from '../components/listas/ListaConfigModal';
 import ConvertirModal from '../components/listas/ConvertirModal';
 import ReglasModal from '../components/listas/ReglasModal';
+import FormularioPublicoModal from '../components/listas/FormularioPublicoModal';
 import {
   FiltrosModal, ColumnasModal, NuevaVistaModal, NuevaListaModal, ImportarModal, DuplicarListaModal, FormatoModal,
   PapeleraListasModal, PapeleraRegistrosModal,
@@ -133,6 +134,94 @@ function AreasHome({ areas, cargando }) {
   );
 }
 
+function ResumenArea({ area }) {
+  const navigate = useNavigate();
+  const [datos, setDatos] = useState(null);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    let vivo = true;
+    api(`/listas/resumen?area_id=${encodeURIComponent(area.id)}`)
+      .then((r) => { if (vivo) setDatos(r); })
+      .catch((e) => { if (vivo) setError(e.message); });
+    return () => { vivo = false; };
+  }, [area.id]);
+
+  if (error) return <div className="banner-red" style={{ marginBottom: 14 }}><div><Icon name="x" size={15} /> {error}</div></div>;
+  if (!datos) return <div className="card" style={{ marginBottom: 14 }}><p className="muted" style={{ margin: 0 }}>Cargando resumen del área...</p></div>;
+
+  const max = Math.max(1, ...datos.listas.map((l) => Number(l.registros || 0)));
+  const maxEtapa = Math.max(1, ...(datos.etapas || []).map((e) => e.total));
+  return (
+    <div className="listas-resumen">
+      <div className="resumen-kpis">
+        <div className="resumen-kpi"><span>Listas</span><b>{datos.listas.length}</b></div>
+        <div className="resumen-kpi"><span>Registros</span><b>{datos.total_registros}</b></div>
+        <div className="resumen-kpi"><span>Últimos 7 días</span><b>{datos.nuevos_7d}</b></div>
+        <div className="resumen-kpi"><span>Actividad</span><b>{datos.recientes.length}</b></div>
+      </div>
+
+      <div className="resumen-grid">
+        <div className="card resumen-card">
+          <h3 className="card-title"><Icon name="grid" size={15} /> Registros por lista</h3>
+          {datos.listas.length === 0 ? <p className="muted">Todavía no hay listas.</p> : (
+            <div className="resumen-bars">
+              {datos.listas.map((l) => (
+                <button type="button" className="resumen-bar-row" key={l.id} onClick={() => navigate(`/listas/${area.slug}/${l.id}`)}>
+                  <span className="resumen-bar-name">{l.nombre}</span>
+                  <span className="resumen-bar-track"><span style={{ width: `${Math.max(3, (Number(l.registros) / max) * 100)}%` }} /></span>
+                  <b>{l.registros}</b>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="card resumen-card">
+          <h3 className="card-title"><Icon name="clock" size={15} /> Actividad reciente</h3>
+          {datos.recientes.length === 0 ? <p className="muted">Sin registros recientes.</p> : (
+            <div className="resumen-recientes">
+              {datos.recientes.map((r) => (
+                <button type="button" className="resumen-reciente" key={r.id} onClick={() => navigate(`/listas/${area.slug}/${r.lista_id}`)}>
+                  <b>{r.titulo}</b>
+                  <span>{r.lista_nombre} · {fmtFecha(r.creado_en)}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {datos.etapas?.length > 0 && (
+          <div className="card resumen-card">
+            <h3 className="card-title"><Icon name="chart" size={15} /> Pipeline comercial</h3>
+            <div className="resumen-bars">
+              {datos.etapas.map((e) => (
+                <div className="resumen-bar-row" key={e.valor}>
+                  <span className="resumen-bar-name">{e.valor}</span>
+                  <span className="resumen-bar-track"><span style={{ width: `${Math.max(3, (e.total / maxEtapa) * 100)}%` }} /></span>
+                  <b>{e.total}</b>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {datos.alertas?.length > 0 && (
+          <div className="card resumen-card">
+            <h3 className="card-title"><Icon name="info" size={15} /> Atención</h3>
+            <div className="col" style={{ gap: 7 }}>
+              {datos.alertas.map((a) => (
+                <div className="resumen-alerta" key={`${a.lista}-${a.texto}`}>
+                  <span>{a.lista} · {a.texto}</span><b>{a.total}</b>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function AreaDetalle({ area }) {
   const cargarAreas = useStore((s) => s.cargarAreas);
   const toastShow = useStore((s) => s.toastShow);
@@ -167,6 +256,8 @@ function AreaDetalle({ area }) {
           </button>
         ) : null}
       />
+
+      <ResumenArea area={area} />
 
       {area.listas?.length ? (
         <div className="cat-grid">
@@ -222,6 +313,23 @@ function ListaDetalle({ listaId, area }) {
   const vistas = lista?.vistas || [];
   const puede = lista?.puede || {};
   const puedeConvertir = Boolean(puede.convertir_prospecto) && lista?.area_slug === 'ventas';
+  const puedeEditarFila = (registro) => {
+    if (!puede.editar_registros) return false;
+    if (usuario?.rol === 'admin') return true;
+    const modo = lista?.permiso_filas || 'todos';
+    if (modo === 'todos') return true;
+    if (modo === 'admin') return false;
+    if (modo === 'creador') return registro?.creado_por === usuario?.email;
+    if (modo === 'responsable') {
+      if (!lista?.permiso_campo) return false;
+      const valor = String(registro?.datos?.[lista.permiso_campo] ?? '').trim().toLowerCase();
+      const email = String(usuario?.email || '').toLowerCase();
+      const uid = String(usuario?.uid || '').toLowerCase();
+      return Boolean(valor) && (valor === email || (uid && valor === uid));
+    }
+    return true;
+  };
+  const puedeBorrarFila = (registro) => Boolean(puede.borrar_registros) && puedeEditarFila(registro);
   const vistaActiva = vistas.find((v) => v.id === vistaId) || null;
   const columnasVisibles = columnasDeVista(vistaActiva, campos);
   const visibles = columnasVisibles.length ? columnasVisibles : campos;
@@ -608,7 +716,7 @@ function ListaDetalle({ listaId, area }) {
   };
 
   const moverKanban = async (registro, opcion) => {
-    if (!kanbanCampo || !puede.editar_registros) return;
+    if (!kanbanCampo || !puedeEditarFila(registro)) return;
     const actual = String(registro.datos?.[kanbanCampo.id] ?? '');
     if (actual === String(opcion)) return;
     setBusy(true);
@@ -796,13 +904,13 @@ function ListaDetalle({ listaId, area }) {
                               <article
                                 key={r.id}
                                 className="kanban-card"
-                                draggable={Boolean(puede.editar_registros)}
+                                draggable={puedeEditarFila(r)}
                                 onDragStart={(e) => {
                                   e.dataTransfer.setData('text/plain', r.id);
                                   e.dataTransfer.effectAllowed = 'move';
                                 }}
                                 onClick={() => {
-                                  if (puede.editar_registros) setModal({ tipo: 'registro', registro: r });
+                                  if (puedeEditarFila(r)) setModal({ tipo: 'registro', registro: r });
                                 }}
                               >
                                 <b>{titulo || 'Sin título'}</b>
@@ -866,7 +974,7 @@ function ListaDetalle({ listaId, area }) {
                                 type="button"
                                 className="calendar-event"
                                 key={r.id}
-                                onClick={() => { if (puede.editar_registros) setModal({ tipo: 'registro', registro: r }); }}
+                                onClick={() => { if (puedeEditarFila(r)) setModal({ tipo: 'registro', registro: r }); }}
                                 title="Abrir registro"
                               >
                                 {valorVisible(tarjetaTitulo, r.datos?.[tarjetaTitulo?.id]) || 'Sin título'}
@@ -897,7 +1005,7 @@ function ListaDetalle({ listaId, area }) {
                     type="button"
                     className="gallery-card"
                     key={r.id}
-                    onClick={() => { if (puede.editar_registros) setModal({ tipo: 'registro', registro: r }); }}
+                    onClick={() => { if (puedeEditarFila(r)) setModal({ tipo: 'registro', registro: r }); }}
                   >
                     {img?.url ? <img src={img.url} alt={img.nombre || titulo} className="gallery-img" /> : <div className="gallery-img gallery-noimg"><Icon name="clipboard" size={24} /></div>}
                     <b>{titulo}</b>
@@ -956,10 +1064,10 @@ function ListaDetalle({ listaId, area }) {
                           {grupo.rows.map((registro) => (
                         <tr
                           key={registro.id}
-                          className={puede.editar_registros ? 'listas-row-click' : ''}
+                          className={puedeEditarFila(registro) ? 'listas-row-click' : ''}
                           style={estiloFila(registro)}
                           onClick={() => {
-                            if (puede.editar_registros) setModal({ tipo: 'registro', registro });
+                            if (puedeEditarFila(registro)) setModal({ tipo: 'registro', registro });
                           }}
                         >
                           {visibles.map((campo) => {
@@ -988,12 +1096,12 @@ function ListaDetalle({ listaId, area }) {
                           })}
                           <td className="listas-acciones-col" onClick={(e) => e.stopPropagation()}>
                             <div className="row" style={{ gap: 4, justifyContent: 'flex-end' }}>
-                              {puede.editar_registros && (
+                              {puedeEditarFila(registro) && (
                                 <button type="button" className="btn icon sm" title="Editar" onClick={() => setModal({ tipo: 'registro', registro })}>
                                   <Icon name="gear" size={13} />
                                 </button>
                               )}
-                              {puede.borrar_registros && (
+                              {puedeBorrarFila(registro) && (
                                 <button type="button" className="btn icon sm danger" title="Archivar" onClick={() => confirmarArchivarRegistro(registro)}>
                                   <Icon name="x" size={13} />
                                 </button>
@@ -1029,6 +1137,7 @@ function ListaDetalle({ listaId, area }) {
           registro={modal.registro}
           puedeBorrar={puede.borrar_registros}
           puedeEditar={puede.editar_registros}
+          puedeAprobar={puede.editar_listas}
           puedeConvertir={puedeConvertir}
           busy={busy}
           onGuardar={guardarRegistro}
@@ -1037,6 +1146,10 @@ function ListaDetalle({ listaId, area }) {
           onRecargar={recargarRegistros}
           onClose={() => setModal(null)}
         />
+      )}
+
+      {modal?.tipo === 'formulario' && (
+        <FormularioPublicoModal lista={lista} onClose={() => setModal(null)} />
       )}
 
       {modal?.tipo === 'reglas' && (
@@ -1082,6 +1195,7 @@ function ListaDetalle({ listaId, area }) {
           onDuplicar={puede.crear_listas ? () => setModal({ tipo: 'duplicar' }) : null}
           onPapelera={puede.borrar_registros ? () => setModal({ tipo: 'papeleraRegistros' }) : null}
           onReglas={puede.editar_listas ? () => setModal({ tipo: 'reglas' }) : null}
+          onFormulario={puede.editar_listas ? () => setModal({ tipo: 'formulario' }) : null}
           onClose={() => setModal(null)}
         />
       )}

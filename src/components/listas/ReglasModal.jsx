@@ -11,7 +11,7 @@ const OPS = [
   { op: 'menor', label: 'es menor que' },
   { op: 'vacio', label: 'está vacío' },
 ];
-const VACIA = { nombre: '', evento: 'ambos', campo: '', op: 'igual', valor: '', destinatario: '', asunto: '', activo: true };
+const VACIA = { nombre: '', evento: 'ambos', campo: '', op: 'igual', valor: '', accion: 'email', destinatario: '', asunto: '', campo_destino: '', mensaje: '', activo: true };
 
 export default function ReglasModal({ lista, campos, onClose }) {
   const [reglas, setReglas] = useState([]);
@@ -40,7 +40,8 @@ export default function ReglasModal({ lista, campos, onClose }) {
     setEditando(r.id);
     setForm({
       nombre: r.nombre || '', evento: r.evento || 'ambos', campo: r.campo || '', op: r.op || 'igual',
-      valor: r.valor || '', destinatario: r.destinatario || '', asunto: r.asunto || '', activo: r.activo !== false,
+      valor: r.valor || '', accion: r.accion || 'email', destinatario: r.destinatario || '', asunto: r.asunto || '',
+      campo_destino: r.campo_destino || '', mensaje: r.mensaje || '', activo: r.activo !== false,
     });
   };
 
@@ -49,7 +50,9 @@ export default function ReglasModal({ lista, campos, onClose }) {
     setError('');
     if (!form.nombre.trim()) return setError('La regla necesita un nombre.');
     if (!form.campo) return setError('Elegí el campo que dispara el aviso.');
-    if (!/^\S+@\S+\.\S+$/.test(form.destinatario.trim())) return setError('El email del aviso no es válido.');
+    if (form.accion === 'whatsapp') {
+      if (!form.campo_destino) return setError('Elegí el campo de teléfono para el WhatsApp.');
+    } else if (!/^\S+@\S+\.\S+$/.test(form.destinatario.trim())) return setError('El email del aviso no es válido.');
     setBusy(true);
     try {
       if (editando) await api(`/lista-reglas/${editando}`, { method: 'PATCH', body: form });
@@ -100,7 +103,7 @@ export default function ReglasModal({ lista, campos, onClose }) {
                 <b>{r.nombre}</b>
                 <span className={`badge ${r.activo ? 'green' : 'gray'}`} style={{ marginLeft: 6 }}>{r.activo ? 'Activa' : 'Apagada'}</span>
                 <div className="muted" style={{ fontSize: 11.5 }}>
-                  {r.evento} · {c?.nombre || 'campo'} {r.op} {r.valor || ''} · avisa a {r.destinatario}
+                  {r.evento} · {c?.nombre || 'campo'} {r.op} {r.valor || ''} · {r.accion === 'whatsapp' ? `WhatsApp a ${campos.find((x) => x.id === r.campo_destino)?.nombre || 'teléfono'}` : `email a ${r.destinatario}`}
                 </div>
               </div>
               <button type="button" className="btn sm" onClick={() => editar(r)}><Icon name="gear" size={12} /> Editar</button>
@@ -129,6 +132,13 @@ export default function ReglasModal({ lista, campos, onClose }) {
             </select>
           </div>
           <div className="field">
+            <label>Acción</label>
+            <select className="input" value={form.accion} onChange={(e) => set('accion', e.target.value)}>
+              <option value="email">Enviar email</option>
+              <option value="whatsapp">Enviar WhatsApp</option>
+            </select>
+          </div>
+          <div className="field">
             <label>Campo *</label>
             <select className="input" value={form.campo} onChange={(e) => set('campo', e.target.value)}>
               <option value="">Elegir campo...</option>
@@ -144,14 +154,33 @@ export default function ReglasModal({ lista, campos, onClose }) {
               {form.op !== 'vacio' && <input className="input" value={form.valor} onChange={(e) => set('valor', e.target.value)} placeholder="Valor" />}
             </div>
           </div>
-          <div className="field">
-            <label>Avisar a (email) *</label>
-            <input className="input" type="email" value={form.destinatario} onChange={(e) => set('destinatario', e.target.value)} placeholder="equipo@bertika.com" />
-          </div>
-          <div className="field">
-            <label>Asunto</label>
-            <input className="input" value={form.asunto} onChange={(e) => set('asunto', e.target.value)} placeholder="Bertika · aviso de la lista" />
-          </div>
+          {form.accion === 'whatsapp' ? (
+            <>
+              <div className="field">
+                <label>Campo de teléfono *</label>
+                <select className="input" value={form.campo_destino} onChange={(e) => set('campo_destino', e.target.value)}>
+                  <option value="">Elegir campo...</option>
+                  {campos.filter((c) => c.tipo === 'telefono').map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                </select>
+              </div>
+              <div className="field" style={{ gridColumn: '1 / -1' }}>
+                <label>Mensaje de WhatsApp</label>
+                <textarea className="input" rows={2} value={form.mensaje} onChange={(e) => set('mensaje', e.target.value)} placeholder="Hola, te escribimos desde Bertika..." />
+                <small className="ayuda">Si queda vacío se manda un resumen de la regla.</small>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="field">
+                <label>Avisar a (email) *</label>
+                <input className="input" type="email" value={form.destinatario} onChange={(e) => set('destinatario', e.target.value)} placeholder="equipo@bertika.com" />
+              </div>
+              <div className="field">
+                <label>Asunto</label>
+                <input className="input" value={form.asunto} onChange={(e) => set('asunto', e.target.value)} placeholder="Bertika · aviso de la lista" />
+              </div>
+            </>
+          )}
           <div className="field" style={{ gridColumn: '1 / -1' }}>
             <label className="check-line" style={{ textTransform: 'none', letterSpacing: 0 }}>
               <input type="checkbox" checked={form.activo} onChange={(e) => set('activo', e.target.checked)} />

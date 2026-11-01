@@ -303,7 +303,9 @@ CREATE TABLE IF NOT EXISTS listas (
   actualizado_en TIMESTAMPTZ,
   archivada BOOLEAN DEFAULT FALSE,
   archivada_en TIMESTAMPTZ,
-  archivada_por TEXT
+  archivada_por TEXT,
+  permiso_filas TEXT DEFAULT 'todos',
+  permiso_campo TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_listas_area ON listas (area_id, archivada, orden);
 CREATE UNIQUE INDEX IF NOT EXISTS listas_area_nombre_uniq ON listas (area_id, lower(nombre)) WHERE archivada = false;
@@ -386,7 +388,41 @@ CREATE TABLE IF NOT EXISTS lista_reglas (
   valor TEXT,
   destinatario TEXT,
   asunto TEXT,
+  accion TEXT DEFAULT 'email',
+  campo_destino TEXT,
+  mensaje TEXT,
   creada_por TEXT,
   creado_en TIMESTAMPTZ DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_lista_reglas_lista ON lista_reglas (lista_id, activo);
+
+
+-- Fase 3: formularios públicos por lista.
+CREATE TABLE IF NOT EXISTS lista_formularios (
+  id TEXT PRIMARY KEY,
+  lista_id TEXT NOT NULL UNIQUE,
+  token TEXT NOT NULL UNIQUE,
+  titulo TEXT,
+  descripcion TEXT,
+  campos JSONB DEFAULT '[]'::jsonb,
+  activo BOOLEAN DEFAULT TRUE,
+  creado_por TEXT,
+  creado_en TIMESTAMPTZ DEFAULT now(),
+  actualizado_en TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_lista_formularios_token ON lista_formularios (token);
+
+
+-- Fase 3: aprobaciones de registros.
+CREATE TABLE IF NOT EXISTS lista_aprobaciones (
+  id TEXT PRIMARY KEY,
+  lista_id TEXT NOT NULL,
+  registro_id TEXT NOT NULL,
+  estado TEXT DEFAULT 'pendiente',
+  solicitado_por TEXT,
+  decidido_por TEXT,
+  comentario TEXT,
+  decidido_en TIMESTAMPTZ,
+  creado_en TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_lista_aprobaciones_registro ON lista_aprobaciones (registro_id, creado_en DESC);

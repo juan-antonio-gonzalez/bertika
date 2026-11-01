@@ -571,6 +571,38 @@ async function asegurarCodigos() {
     creado_en TIMESTAMPTZ DEFAULT now()
   )`);
   await query('CREATE INDEX IF NOT EXISTS idx_lista_reglas_lista ON lista_reglas (lista_id, activo)');
+  // Fase 3: permisos a nivel de fila.
+  await query("ALTER TABLE listas ADD COLUMN IF NOT EXISTS permiso_filas TEXT DEFAULT 'todos'");
+  await query('ALTER TABLE listas ADD COLUMN IF NOT EXISTS permiso_campo TEXT');
+  // Fase 3: formularios públicos por lista (token no adivinable).
+  await query(`CREATE TABLE IF NOT EXISTS lista_formularios (
+    id TEXT PRIMARY KEY,
+    lista_id TEXT NOT NULL UNIQUE,
+    token TEXT NOT NULL UNIQUE,
+    titulo TEXT,
+    descripcion TEXT,
+    campos JSONB DEFAULT '[]'::jsonb,
+    activo BOOLEAN DEFAULT TRUE,
+    creado_por TEXT,
+    creado_en TIMESTAMPTZ DEFAULT now(),
+    actualizado_en TIMESTAMPTZ
+  )`);
+  await query('CREATE INDEX IF NOT EXISTS idx_lista_formularios_token ON lista_formularios (token)');
+  await query(`CREATE TABLE IF NOT EXISTS lista_aprobaciones (
+    id TEXT PRIMARY KEY,
+    lista_id TEXT NOT NULL,
+    registro_id TEXT NOT NULL,
+    estado TEXT DEFAULT 'pendiente',
+    solicitado_por TEXT,
+    decidido_por TEXT,
+    comentario TEXT,
+    decidido_en TIMESTAMPTZ,
+    creado_en TIMESTAMPTZ DEFAULT now()
+  )`);
+  await query('CREATE INDEX IF NOT EXISTS idx_lista_aprobaciones_registro ON lista_aprobaciones (registro_id, creado_en DESC)');
+  await query("ALTER TABLE lista_reglas ADD COLUMN IF NOT EXISTS accion TEXT DEFAULT 'email'");
+  await query('ALTER TABLE lista_reglas ADD COLUMN IF NOT EXISTS campo_destino TEXT');
+  await query('ALTER TABLE lista_reglas ADD COLUMN IF NOT EXISTS mensaje TEXT');
   // Siembra inicial del área Ventas (solo si todavía no tiene listas).
   await sembrarListasVentas();
   await sembrarListasTaller();

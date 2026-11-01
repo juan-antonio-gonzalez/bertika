@@ -35,6 +35,7 @@ const CotizacionPublica = lazy(() => import('./pages/CotizacionPublica'));
 const Reportes = lazy(() => import('./pages/Reportes'));
 const Usuarios = lazy(() => import('./pages/Usuarios'));
 const Listas = lazy(() => import('./pages/Listas'));
+const FormularioPublico = lazy(() => import('./pages/FormularioPublico'));
 const Respaldos = lazy(() => import('./pages/Respaldos'));
 const Sistema = lazy(() => import('./pages/Sistema'));
 const Privacidad = lazy(() => import('./pages/Privacidad'));
@@ -180,6 +181,7 @@ export default function App() {
         <Route path="/cotizador" element={<TemaPublico><Cotizador /></TemaPublico>} />
         <Route path="/seguimiento" element={<PublicLayout><Seguimiento /></PublicLayout>} />
         <Route path="/cotizacion/:orden_id" element={<PublicLayout><CotizacionPublica /></PublicLayout>} />
+        <Route path="/f/:token" element={<PublicLayout><FormularioPublico /></PublicLayout>} />
         <Route path="/plataforma" element={<PublicLayout><Plataforma /></PublicLayout>} />
 
         {/* Acceso */}
