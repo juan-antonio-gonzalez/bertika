@@ -100,7 +100,7 @@ async function crearOrdenDesdeOportunidad(oportunidad, req, cotizacion = null) {
         cotizacionJson, cotizacion ? 'pending' : null, oportunidad.id, cotizacion?.id || null,
       ]
     );
-    await client.query('UPDATE oportunidades SET orden_id = $2, cotizacion_id = $3, etapa = $4, etapa_desde = now(), actualizado_en = now(), actualizado_por = $5 WHERE id = $1', [oportunidad.id, ordId, cotizacion?.id || oportunidad.cotizacion_actual_id || null, 'ganado', req.user.email]);
+    await client.query('UPDATE oportunidades SET orden_id = $2, cotizacion_actual_id = COALESCE($3, cotizacion_actual_id), etapa = $4, etapa_desde = now(), actualizado_en = now(), actualizado_por = $5 WHERE id = $1', [oportunidad.id, ordId, cotizacion?.id || oportunidad.cotizacion_actual_id || null, 'ganado', req.user.email]);
   });
   await evento(oportunidad.id, 'orden_creada', `Orden ${ordId}`, req.user.email);
   await auditar({ req, tabla: 'oportunidades', registroId: oportunidad.id, accion: 'crear_orden', detalle: ordId });
