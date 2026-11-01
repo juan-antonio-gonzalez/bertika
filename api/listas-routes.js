@@ -798,7 +798,7 @@ listasRouter.post('/listas/:id/registros/:rid/comentarios', authRequired, async 
   if (!registro) return res.status(404).json({ error: 'Registro no encontrado' });
   const texto = limStr(req.body?.texto, 2000);
   if (!texto) return res.status(400).json({ error: 'Escribí un comentario.' });
-  const emails = [...new Set((texto.match(/@[^\s@]+@[^\s@]+\.[^\s@]+/g) || []).map((m) => m.slice(1).toLowerCase()))].slice(0, 10);
+  const emails = [...new Set((texto.match(/@[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}/g) || []).map((m) => m.slice(1).toLowerCase()))].slice(0, 10);
   const id = idNuevo('com');
   const fila = await one(
     `INSERT INTO lista_comentarios (id, lista_id, registro_id, autor, texto, menciones)

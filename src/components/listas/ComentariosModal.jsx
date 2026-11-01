@@ -41,7 +41,7 @@ export default function ComentariosModal({ lista, registro, onClose }) {
     }
   };
 
-  const renderTexto = (textoComentario) => String(textoComentario || '').split(/(@[^\s@]+@[^\s@]+\.[^\s@]+)/g).map((parte, i) => (
+  const renderTexto = (textoComentario) => String(textoComentario || '').split(/(@[^\s@]+@[^\s@]+\.[a-zA-Z]{2,})/g).map((parte, i) => (
     parte.startsWith('@') && parte.includes('@', 1)
       ? <b className="lista-mencion" key={i}>{parte}</b>
       : <span key={i}>{parte}</span>
