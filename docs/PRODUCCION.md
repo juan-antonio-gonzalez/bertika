@@ -314,7 +314,22 @@ nginx aplica CSP, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`
 
 Las migraciones históricas están extraídas en `api/migraciones-legacy.js` y corren una
 sola vez con el marcador `000_legacy_baseline`. Las migraciones nuevas están en
-`schema_migrations` (`001_ventas_hardening`, `002_listas_trgm`).
+`schema_migrations` (`001_ventas_hardening`, `002_listas_trgm`, `003_rate_limit_store`).
+
+### Worker separado
+
+La API corre con `OUTBOX_WORKER=0`. El proceso `bertika-worker.service` es el único que
+procesa la cola de WhatsApp. El deploy instala, habilita y reinicia ambos servicios.
+
+### Rate limit compartido
+
+Con `RATE_LIMIT_STORE=postgres` los contadores se guardan en `rate_limit_hits` y se
+comparten entre instancias. Sin esa variable se usa memoria local (una sola instancia).
+
+### `/estado`
+
+El panel pide `/api/estado?paginado=1&limit=500&offset=0` y une las páginas. El endpoint
+sin `paginado` sigue disponible para clientes viejos.
 
 ## 13. Pruebas antes de deployar
 

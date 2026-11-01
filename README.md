@@ -223,3 +223,10 @@ Datos semilla precargados (5 tecnicos, 5 clientes, 9 baterias, 10+ insumos, 8 or
 > Nota: WhatsApp (Meta Cloud API) y email transaccional ya están integrados. La agenda de
 > visitas, CFDI/facturación, pagos y lecturas automáticas del equipo siguen pendientes.
 > El detalle y el orden sugerido están en [docs/FUTURO.md](docs/FUTURO.md).
+
+## Servicios
+
+- `bertika-api.service`: HTTP.
+- `bertika-worker.service`: outbox de WhatsApp y reintentos.
+- `RATE_LIMIT_STORE=postgres`: contadores compartidos entre instancias.
+- `GET /api/estado?paginado=1`: bootstrap por páginas; el store une las páginas.
