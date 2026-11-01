@@ -602,6 +602,17 @@ async function asegurarCodigos() {
     creado_en TIMESTAMPTZ DEFAULT now()
   )`);
   await query('CREATE INDEX IF NOT EXISTS idx_lista_aprobaciones_registro ON lista_aprobaciones (registro_id, creado_en DESC)');
+  await query(`CREATE TABLE IF NOT EXISTS lista_notificaciones (
+    id TEXT PRIMARY KEY,
+    usuario_email TEXT NOT NULL,
+    titulo TEXT,
+    mensaje TEXT,
+    link TEXT,
+    tipo TEXT DEFAULT 'lista',
+    leida BOOLEAN DEFAULT FALSE,
+    creado_en TIMESTAMPTZ DEFAULT now()
+  )`);
+  await query('CREATE INDEX IF NOT EXISTS idx_lista_notificaciones_usuario ON lista_notificaciones (usuario_email, leida, creado_en DESC)');
   await query("ALTER TABLE lista_reglas ADD COLUMN IF NOT EXISTS accion TEXT DEFAULT 'email'");
   await query('ALTER TABLE lista_reglas ADD COLUMN IF NOT EXISTS campo_destino TEXT');
   await query('ALTER TABLE lista_reglas ADD COLUMN IF NOT EXISTS mensaje TEXT');

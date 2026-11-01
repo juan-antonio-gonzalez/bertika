@@ -428,3 +428,17 @@ CREATE TABLE IF NOT EXISTS lista_aprobaciones (
   creado_en TIMESTAMPTZ DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_lista_aprobaciones_registro ON lista_aprobaciones (registro_id, creado_en DESC);
+
+
+-- Fase 3: notificaciones internas de listas.
+CREATE TABLE IF NOT EXISTS lista_notificaciones (
+  id TEXT PRIMARY KEY,
+  usuario_email TEXT NOT NULL,
+  titulo TEXT,
+  mensaje TEXT,
+  link TEXT,
+  tipo TEXT DEFAULT 'lista',
+  leida BOOLEAN DEFAULT FALSE,
+  creado_en TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_lista_notificaciones_usuario ON lista_notificaciones (usuario_email, leida, creado_en DESC);

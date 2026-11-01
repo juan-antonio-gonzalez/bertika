@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../../store/api';
 import { useStore } from '../../store/store';
 import { Icon } from '../ui';
@@ -54,20 +54,36 @@ export default function CentroNotificaciones({ onAbrirOrden }) {
   const sync = useStore((s) => s.sync);
   const toastShow = useStore((s) => s.toastShow);
   const { pathname } = useLocation();
+  const navigate = useNavigate();
   const [abierto, setAbierto] = useState(false);
+  const [listaNotifs, setListaNotifs] = useState([]);
   const [nuevas, setNuevas] = useState([]); // ids que estaban sin leer al abrir
   const caja = useRef(null);
 
-  const lista = useMemo(() => {
-    const arr = Array.isArray(notificaciones) ? [...notificaciones] : [];
-    // Mas nuevas primero; si falta la fecha, se mantiene el orden que vino.
-    return arr.sort((a, b) => new Date(b?.fecha || 0) - new Date(a?.fecha || 0)).slice(0, 40);
-  }, [notificaciones]);
+  const cargarListaNotifs = async () => {
+    try {
+      const r = await api('/listas/notificaciones');
+      setListaNotifs(Array.isArray(r?.notificaciones) ? r.notificaciones : []);
+    } catch {
+      /* si falla, las notificaciones de órdenes siguen funcionando */
+    }
+  };
 
-  const noLeidas = (Array.isArray(notificaciones) ? notificaciones : []).filter((n) => !n.leida).length;
+  const lista = useMemo(() => {
+    const arr = [
+      ...(Array.isArray(notificaciones) ? notificaciones.map((n) => ({ ...n, _tipo: 'orden' })) : []),
+      ...(Array.isArray(listaNotifs) ? listaNotifs.map((n) => ({ ...n, _tipo: 'lista' })) : []),
+    ];
+    // Mas nuevas primero; si falta la fecha, se mantiene el orden que vino.
+    return arr.sort((a, b) => new Date(b?.fecha || b?.creado_en || 0) - new Date(a?.fecha || a?.creado_en || 0)).slice(0, 40);
+  }, [notificaciones, listaNotifs]);
+
+  const noLeidas = lista.filter((n) => !n.leida).length;
 
   // El panel se cierra al cambiar de pantalla.
   useEffect(() => { setAbierto(false); }, [pathname]);
+
+  useEffect(() => { cargarListaNotifs(); }, [pathname]);
 
   // Se cierra con Escape y al hacer clic afuera.
   useEffect(() => {
@@ -86,7 +102,11 @@ export default function CentroNotificaciones({ onAbrirOrden }) {
     if (!noLeidas) return;
     setNuevas(lista.filter((n) => !n.leida).map((n) => n.id));
     try {
-      await api('/notificaciones/leidas', { method: 'POST' });
+      await Promise.all([
+        api('/notificaciones/leidas', { method: 'POST' }),
+        api('/listas/notificaciones/leidas', { method: 'POST' }),
+      ]);
+      setListaNotifs((prev) => prev.map((n) => ({ ...n, leida: true })));
       await sync();
     } catch (e) {
       toastShow(e.message || 'No se pudieron marcar como leídas', 'error');
@@ -96,14 +116,22 @@ export default function CentroNotificaciones({ onAbrirOrden }) {
   const alternar = () => {
     const proximo = !abierto;
     setAbierto(proximo);
-    if (proximo) marcarLeidas();
+    if (proximo) {
+      cargarListaNotifs();
+      marcarLeidas();
+    }
   };
 
   // Borrar una sola notificación (antes solo se podían borrar todas juntas).
   const borrar = async (n) => {
     try {
-      await api(`/notificaciones/${n.id}`, { method: 'DELETE' });
-      await sync();
+      if (n._tipo === 'lista') {
+        await api(`/listas/notificaciones/${n.id}`, { method: 'DELETE' });
+        setListaNotifs((prev) => prev.filter((x) => x.id !== n.id));
+      } else {
+        await api(`/notificaciones/${n.id}`, { method: 'DELETE' });
+        await sync();
+      }
     } catch (e) {
       toastShow(e.message || 'No se pudo borrar la notificación', 'error');
     }
@@ -112,6 +140,11 @@ export default function CentroNotificaciones({ onAbrirOrden }) {
   const verOrden = (n) => {
     setAbierto(false);
     if (n?.orden_id) onAbrirOrden?.(n.orden_id);
+  };
+
+  const verLista = (n) => {
+    setAbierto(false);
+    if (n?.link) navigate(n.link);
   };
 
   const ordenDe = (id) => (Array.isArray(ordenes) ? ordenes.find((o) => o.id === id) : null);
@@ -145,20 +178,24 @@ export default function CentroNotificaciones({ onAbrirOrden }) {
           ) : (
             <div className="bell-lista">
               {lista.map((n) => {
-                const orden = ordenDe(n.orden_id);
-                const canal = canalDe(n.canal);
+                const esLista = n._tipo === 'lista';
+                const orden = esLista ? null : ordenDe(n.orden_id);
+                const canal = esLista ? 'otro' : canalDe(n.canal);
                 return (
-                  <div key={n.id} className="bell-fila">
+                  <div key={`${n._tipo}-${n.id}`} className="bell-fila">
                     <button
-                      className={`bell-item${n.leida ? '' : ' new'}${n.orden_id ? '' : ' sin-link'}`}
-                      onClick={n.orden_id ? () => verOrden(n) : undefined}
+                      className={`bell-item${n.leida ? '' : ' new'}${!esLista && !n.orden_id ? ' sin-link' : ''}`}
+                      onClick={esLista ? () => verLista(n) : n.orden_id ? () => verOrden(n) : undefined}
                     >
-                      <span className={`bell-ic ${canal}`}>{ICONO_CANAL[canal]}</span>
+                      <span className={`bell-ic ${canal}`}>
+                        {esLista ? <Icon name={n.tipo === 'aprobacion' ? 'check' : 'bell'} size={15} /> : ICONO_CANAL[canal]}
+                      </span>
                       <span className="bell-txt">
-                        <span className="bell-msg">{n.mensaje || 'Novedad'}</span>
+                        <span className="bell-msg">{n.titulo ? `${n.titulo}: ` : ''}{n.mensaje || 'Novedad'}</span>
                         <span className="bell-sub">
-                          {orden ? `${orden.id} · ${orden.bateria_serie}` : (n.canal || 'Sistema')}
-                          {n.fecha ? ` · ${fechaRelativa(n.fecha)}` : ''}
+                          {esLista
+                            ? `Listas · ${n.tipo || 'aviso'} · ${fechaRelativa(n.creado_en)}`
+                            : (orden ? `${orden.id} · ${orden.bateria_serie}` : (n.canal || 'Sistema')) + (n.fecha ? ` · ${fechaRelativa(n.fecha)}` : '')}
                         </span>
                       </span>
                       {nuevas.includes(n.id) && <span className="bell-dot" title="Nueva" />}

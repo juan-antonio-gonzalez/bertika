@@ -90,6 +90,19 @@ async function evaluarReglas(lista, campos, datos, evento, registroId, req) {
   }
 }
 
+async function notificarLista(email, { titulo, mensaje, link, tipo = 'lista' }) {
+  if (!email) return;
+  try {
+    await query(
+      `INSERT INTO lista_notificaciones (id, usuario_email, titulo, mensaje, link, tipo)
+       VALUES ($1,$2,$3,$4,$5,$6)`,
+      [idNuevo('lnot'), email, titulo, mensaje, link, tipo]
+    );
+  } catch (e) {
+    console.error('[listas] no se pudo crear la notificación:', e.message);
+  }
+}
+
 async function avisarPorMail(destinatario, asunto, texto, html) {
   if (!mailerListas || !destinatario) return false;
   try {
@@ -497,6 +510,32 @@ listasRouter.post('/public/formulario/:token', publicFormLimiter, async (req, re
   if (lista) evaluarReglas(lista, todos, datosFinal, 'crear', id, req);
   await auditar({ req, tabla: 'lista_registros', registroId: id, accion: 'crear_formulario', detalle: f.id });
   return res.status(201).json({ ok: true });
+});
+
+// ---------- Notificaciones internas de listas ----------
+listasRouter.get('/listas/notificaciones', authRequired, async (req, res) => {
+  const filas = await query(`
+    SELECT id, titulo, mensaje, link, tipo, leida, creado_en
+      FROM lista_notificaciones
+     WHERE usuario_email = $1
+     ORDER BY creado_en DESC
+     LIMIT 50
+  `, [req.user.email]);
+  return res.json({
+    notificaciones: filas,
+    no_leidas: filas.filter((f) => !f.leida).length,
+  });
+});
+
+listasRouter.post('/listas/notificaciones/leidas', authRequired, async (req, res) => {
+  await query('UPDATE lista_notificaciones SET leida = true WHERE usuario_email = $1 AND leida = false', [req.user.email]);
+  return res.json({ ok: true });
+});
+
+listasRouter.delete('/listas/notificaciones/:id', authRequired, async (req, res) => {
+  const borrada = await one('DELETE FROM lista_notificaciones WHERE id = $1 AND usuario_email = $2 RETURNING id', [req.params.id, req.user.email]);
+  if (!borrada) return res.status(404).json({ error: 'Notificación no encontrada' });
+  return res.json({ ok: true });
 });
 
 // Bandeja de aprobaciones pendientes del área (para gestores de listas).
@@ -1208,6 +1247,12 @@ async function avisarAprobadores(lista, aprobacion, solicitante, decision = fals
       if (!aprobacion.solicitado_por) return;
       const texto = `Tu solicitud de aprobación en ${lista.nombre} fue ${aprobacion.estado}.\n${aprobacion.comentario || ''}\n${link}`;
       await avisarPorMail(aprobacion.solicitado_por, `Bertika · aprobación ${aprobacion.estado} en ${lista.nombre}`, texto, `<p>Tu solicitud en <b>${lista.nombre}</b> fue <b>${aprobacion.estado}</b>.</p><p>${aprobacion.comentario || ''}</p><p><a href="${link}">Abrir la lista</a></p>`);
+      await notificarLista(aprobacion.solicitado_por, {
+        titulo: `Aprobación ${aprobacion.estado}`,
+        mensaje: `Tu solicitud en ${lista.nombre} fue ${aprobacion.estado}.`,
+        link: `/listas/${lista.area_slug}/${lista.id}`,
+        tipo: 'aprobacion',
+      });
       return;
     }
     const rows = await query(`
@@ -1223,6 +1268,12 @@ async function avisarAprobadores(lista, aprobacion, solicitante, decision = fals
     for (const email of correos) {
       const texto = `${solicitante} solicitó aprobar un registro en ${lista.nombre}.\n${aprobacion.comentario || ''}\n${link}`;
       await avisarPorMail(email, `Bertika · aprobación pendiente en ${lista.nombre}`, texto, `<p><b>${solicitante}</b> solicitó aprobar un registro en <b>${lista.nombre}</b>.</p><p>${aprobacion.comentario || ''}</p><p><a href="${link}">Abrir la lista</a></p>`);
+      await notificarLista(email, {
+        titulo: 'Aprobación pendiente',
+        mensaje: `${solicitante} solicitó aprobar un registro en ${lista.nombre}.`,
+        link: `/listas/${lista.area_slug}/${lista.id}`,
+        tipo: 'aprobacion',
+      });
     }
   } catch (e) {
     console.error('[listas] no se pudo avisar la aprobación:', e.message);
@@ -1328,6 +1379,12 @@ listasRouter.post('/listas/:id/registros/:rid/comentarios', authRequired, async 
       <blockquote>${texto.replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]))}</blockquote>
       <p><a href="${link}">Abrir la lista</a></p>`;
     await avisarPorMail(u.email, `Bertika · mención en ${lista.nombre}`, `${req.user.email} te mencionó: ${texto}`, html);
+    await notificarLista(u.email, {
+      titulo: `Mención en ${lista.nombre}`,
+      mensaje: `${req.user.email} te mencionó: ${texto.slice(0, 180)}`,
+      link: `/listas/${lista.area_slug}/${lista.id}`,
+      tipo: 'mencion',
+    });
   }
   await auditar({ req, tabla: 'lista_comentarios', registroId: id, accion: 'crear', detalle: `registro ${registro.id}` });
   return res.status(201).json(fila);
