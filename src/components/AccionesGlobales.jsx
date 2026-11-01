@@ -184,6 +184,7 @@ export function NewOrdenForm({ onClose }) {
   const [modelo, setModelo] = useState('');
   const [equipo, setEquipo] = useState('');
   const [cli, setCli] = useState('');
+  const [activoId, setActivoId] = useState('');
   const [falla, setFalla] = useState('');
 
   const onSerie = (val) => {
@@ -198,6 +199,16 @@ export function NewOrdenForm({ onClose }) {
   };
 
   const batData = batSel || null;
+  const activosCliente = (data.activos || []).filter((a) => a.cliente_id === cli && !a.archivado);
+
+  const elegirActivo = (id) => {
+    setActivoId(id);
+    const a = activosCliente.find((x) => x.id === id);
+    if (!a) return;
+    setSerie(a.serie || a.nombre);
+    setExiste(false);
+    setEquipo(a.nombre || '');
+  };
 
   return (
     <Modal
@@ -215,7 +226,7 @@ export function NewOrdenForm({ onClose }) {
             disabled={!serie || !cli || !falla || (!existe && !cap)}
             onClick={() => {
               addOrder({
-                serie, tipo, voltaje: volt, capacidad: cap, aplicacion: aplic, marca: maMa, modelo, equipo, cliente_id: cli, falla,
+                serie, tipo, voltaje: volt, capacidad: cap, aplicacion: aplic, marca: maMa, modelo, equipo, cliente_id: cli, falla, activo_id: activoId || null,
               });
               onClose();
             }}
@@ -287,10 +298,18 @@ export function NewOrdenForm({ onClose }) {
           <FormGrid cols={1}>
             <div className="field">
               <label>Cliente *</label>
-              <select className="input" value={cli} onChange={(e) => setCli(e.target.value)}>
+              <select className="input" value={cli} onChange={(e) => { setCli(e.target.value); setActivoId(''); }}>
                 <option value="">— Seleccionar cliente —</option>
                 {data.clientes.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
               </select>
+            </div>
+            <div className="field">
+              <label>Activo del cliente</label>
+              <select className="input" value={activoId} onChange={(e) => elegirActivo(e.target.value)} disabled={!cli || activosCliente.length === 0}>
+                <option value="">— Sin activo / cargar serie manual —</option>
+                {activosCliente.map((a) => <option key={a.id} value={a.id}>{a.nombre} · {a.tipo}{a.serie ? ` · ${a.serie}` : ''}</option>)}
+              </select>
+              {cli && activosCliente.length === 0 && <small className="ayuda">Este cliente no tiene activos cargados; podés cargarlos desde su ficha.</small>}
             </div>
             <div className="field">
               <label>Falla reportada / motivo de ingreso *</label>

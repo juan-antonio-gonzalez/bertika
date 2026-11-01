@@ -586,6 +586,7 @@ async function asegurarCodigos() {
   await query("ALTER TABLE lista_campos ADD COLUMN IF NOT EXISTS oculto_categorias JSONB DEFAULT '[]'::jsonb");
   await query("ALTER TABLE listas ADD COLUMN IF NOT EXISTS aprobadores JSONB DEFAULT '[]'::jsonb");
   await query("ALTER TABLE listas ADD COLUMN IF NOT EXISTS permisos_categorias JSONB DEFAULT '{}'::jsonb");
+  await query('ALTER TABLE ordenes ADD COLUMN IF NOT EXISTS activo_id TEXT');
   await query('ALTER TABLE lista_aprobaciones ADD COLUMN IF NOT EXISTS paso INTEGER DEFAULT 0');
   await query('ALTER TABLE lista_aprobaciones ADD COLUMN IF NOT EXISTS aprobador TEXT');
   await query('ALTER TABLE lista_aprobaciones ADD COLUMN IF NOT EXISTS fecha_limite TIMESTAMPTZ');
@@ -2295,8 +2296,14 @@ app.post('/api/ordenes/:id/cotizacion/rechazar', publicLimiter, async (req, res)
 // puertas crean exactamente lo mismo.
 async function crearOrdenTx(client, {
   serieT, tipo, voltaje, capacidad, aplicacion, marca, modelo, equipo,
-  clienteT, fallaT, tecnico_id,
+  clienteT, fallaT, tecnico_id, activo_id,
 }, actor) {
+  let activo = null;
+  if (activo_id) {
+    activo = (await client.query('SELECT * FROM activos WHERE id = $1 AND archivado = false', [activo_id])).rows[0];
+    if (!activo || activo.cliente_id !== clienteT) throw { status: 400, message: 'El activo no pertenece al cliente de la orden' };
+    if (!serieT) serieT = activo.serie || activo.nombre;
+  }
   let bat = (await client.query('SELECT * FROM baterias WHERE numero_serie = $1', [serieT])).rows[0];
   if (!bat) {
     const batId = await nextId('bat', client);
@@ -2314,12 +2321,13 @@ async function crearOrdenTx(client, {
     return r.rowCount > 0;
   });
   await client.query(
-    `INSERT INTO ordenes (id, codigo_seguimiento, bateria_serie, cliente_id, tecnico_id, falla, motivo, estado, fecha_ingreso, hora_entrega, eventos, cotizacion, estado_cotizacion, insumos_utilizados, prueba_final, diagnostico)
-     VALUES ($1,$2,$3,$4,$5,$6,$6,'received',$7,$8,$9::jsonb,NULL,NULL,'[]'::jsonb,'{"estado":"pending"}',NULL)`,
+    `INSERT INTO ordenes (id, codigo_seguimiento, bateria_serie, cliente_id, tecnico_id, falla, motivo, estado, fecha_ingreso, hora_entrega, eventos, cotizacion, estado_cotizacion, insumos_utilizados, prueba_final, diagnostico, activo_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$6,'received',$7,$8,$9::jsonb,NULL,NULL,'[]'::jsonb,'{"estado":"pending"}',NULL,$10)`,
     [
       ordId, codigo, serieT, clienteT, tecnico_id ? limStr(tecnico_id, 32) : null, fallaT,
       nowIso(), new Date(Date.now() + 24 * 3600000).toISOString(),
       JSON.stringify([{ id: evId, tipo: 'ingreso', detalle: `Batería ${serieT} ingresada al taller. Falla reportada: ${fallaT}`, fecha: nowIso(), usuario: actor }]),
+      activo ? activo.id : null,
     ]
   );
   return ordId;
@@ -2377,7 +2385,7 @@ async function moverEtapaPorOrden(client, ordenId, nuevaEtapa, motivo, usuario =
 }
 
 app.post('/api/ordenes', authRequired, permisoRequerido('crear_orden'), async (req, res) => {
-  const { serie, tipo, voltaje, capacidad, aplicacion, marca, modelo, equipo, cliente_id, falla, tecnico_id } = req.body || {};
+  const { serie, tipo, voltaje, capacidad, aplicacion, marca, modelo, equipo, cliente_id, falla, tecnico_id, activo_id } = req.body || {};
   const serieT = limStr(serie, 64);
   const fallaT = limStr(falla, 500);
   const clienteT = limStr(cliente_id, 32);
@@ -2385,11 +2393,11 @@ app.post('/api/ordenes', authRequired, permisoRequerido('crear_orden'), async (r
     return res.status(400).json({ error: 'Faltan datos obligatorios (serie, cliente y falla)' });
   }
   const ordId = await tx(async (client) => crearOrdenTx(client, {
-    serieT, tipo, voltaje, capacidad, aplicacion, marca, modelo, equipo, clienteT, fallaT, tecnico_id,
+    serieT, tipo, voltaje, capacidad, aplicacion, marca, modelo, equipo, clienteT, fallaT, tecnico_id, activo_id,
   }, actorDe(req)));
   await auditar({
     req, tabla: 'ordenes', registroId: ordId, accion: 'crear',
-    despues: { bateria_serie: serieT, cliente_id: clienteT, falla: fallaT, tecnico_id: tecnico_id || null, estado: 'received' },
+    despues: { bateria_serie: serieT, cliente_id: clienteT, falla: fallaT, tecnico_id: tecnico_id || null, activo_id: activo_id || null, estado: 'received' },
   });
   notificarSinFrenar(null, ordId, `Orden ${ordId}: batería ingresada al taller.`, 'Email');
   avisarOrden(ordId); // no se espera: el aviso no debe demorar la respuesta

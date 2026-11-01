@@ -160,11 +160,11 @@ export const useStore = create()((set, get) => ({
     }
   },
 
-  async addOrder({ serie, tipo, voltaje, capacidad, aplicacion, marca, modelo, equipo, cliente_id, falla, tecnico_id }) {
+  async addOrder({ serie, tipo, voltaje, capacidad, aplicacion, marca, modelo, equipo, cliente_id, falla, tecnico_id, activo_id }) {
     try {
       const { id } = await api('/ordenes', {
         method: 'POST',
-        body: { serie, tipo, voltaje, capacidad, aplicacion, marca, modelo, equipo, cliente_id, falla, tecnico_id },
+        body: { serie, tipo, voltaje, capacidad, aplicacion, marca, modelo, equipo, cliente_id, falla, tecnico_id, activo_id },
       });
       await get().sync();
       get().toastShow(`Orden ${id} creada`, 'ok');
