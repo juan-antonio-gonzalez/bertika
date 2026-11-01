@@ -1663,6 +1663,7 @@ function normalizarRegla(body, campos) {
     if (!serieCampo) return { error: 'Elegí el campo que va a aportar el número de serie.' };
     return {
       ...base,
+      evento: 'crear',
       campo_destino: clienteCampo.id,
       campo_serie: serieCampo.id,
       mensaje: limStr(body?.mensaje, 500) || 'Orden creada automáticamente por una regla.',
