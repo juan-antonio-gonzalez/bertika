@@ -94,7 +94,7 @@ async function esperarServidor() {
     } catch { /* todavía no levantó */ }
     await sleep(250);
   }
-  throw new Error('El servidor no respondió /api/health en 20 segundos.');
+  throw new Error(`El servidor no respondió /api/health en ${Math.round(timeoutMs / 1000)} segundos.`);
 }
 
 async function prepararBase() {
