@@ -313,7 +313,8 @@ CREATE TABLE IF NOT EXISTS listas (
   aprobador_email TEXT,
   aprobacion_dias INTEGER DEFAULT 3,
   acceso_solo_lectura JSONB DEFAULT '[]'::jsonb,
-  aprobadores JSONB DEFAULT '[]'::jsonb
+  aprobadores JSONB DEFAULT '[]'::jsonb,
+  permisos_categorias JSONB DEFAULT '{}'::jsonb
 );
 CREATE INDEX IF NOT EXISTS idx_listas_area ON listas (area_id, archivada, orden);
 CREATE UNIQUE INDEX IF NOT EXISTS listas_area_nombre_uniq ON listas (area_id, lower(nombre)) WHERE archivada = false;

@@ -20,6 +20,7 @@ export default function ListaConfigModal({
   const [restringirAcceso, setRestringirAcceso] = useState(Array.isArray(lista.acceso_categorias) && lista.acceso_categorias.length > 0);
   const [categoriasAcceso, setCategoriasAcceso] = useState(Array.isArray(lista.acceso_categorias) ? lista.acceso_categorias : []);
   const [soloLectura, setSoloLectura] = useState(Array.isArray(lista.acceso_solo_lectura) ? lista.acceso_solo_lectura : []);
+  const [permisosCategorias, setPermisosCategorias] = useState(lista.permisos_categorias && typeof lista.permisos_categorias === 'object' ? lista.permisos_categorias : {});
   const campos = lista.campos || [];
   useEffect(() => {
     let vivo = true;
@@ -43,7 +44,7 @@ export default function ListaConfigModal({
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          if (nombre.trim().length >= 2) onGuardarLista({ nombre: nombre.trim(), descripcion: descripcion.trim(), permiso_filas: permisoFilas, permiso_campo: permisoCampo || null, ver_filas: verFilas, ver_campo: verCampo || null, requiere_aprobacion: requiereAprobacion, aprobador_email: aprobadorEmail.trim() || null, aprobacion_dias: Number(aprobacionDias) || 3, aprobadores: cadenaAprobadores.split(/[\n,]+/).map((x) => x.trim()).filter(Boolean), acceso_categorias: restringirAcceso ? categoriasAcceso : [], acceso_solo_lectura: soloLectura });
+          if (nombre.trim().length >= 2) onGuardarLista({ nombre: nombre.trim(), descripcion: descripcion.trim(), permiso_filas: permisoFilas, permiso_campo: permisoCampo || null, ver_filas: verFilas, ver_campo: verCampo || null, requiere_aprobacion: requiereAprobacion, aprobador_email: aprobadorEmail.trim() || null, aprobacion_dias: Number(aprobacionDias) || 3, aprobadores: cadenaAprobadores.split(/[\n,]+/).map((x) => x.trim()).filter(Boolean), acceso_categorias: restringirAcceso ? categoriasAcceso : [], acceso_solo_lectura: soloLectura, permisos_categorias: permisosCategorias });
         }}
         className="col"
         style={{ gap: 12 }}
@@ -138,6 +139,35 @@ export default function ListaConfigModal({
         {restringirAcceso && categoriasAcceso.length === 0 && (
           <div className="banner-red"><div><Icon name="x" size={15} /> Elegí al menos una categoría para restringir el acceso.</div></div>
         )}
+        <div className="field">
+          <label>Permisos por categoría</label>
+          <small className="ayuda">Desmarcá lo que esa categoría no puede hacer en esta lista. No puede superar los permisos del área.</small>
+          <div className="col" style={{ gap: 5, marginTop: 6, border: '1px solid var(--line)', borderRadius: 8, padding: 8 }}>
+            <div className="row permisos-head" style={{ gap: 6, fontSize: 10.5, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '.04em' }}>
+              <span style={{ flex: 1 }}>Categoría</span><span>Crear</span><span>Editar</span><span>Borrar</span><span>Vistas</span>
+            </div>
+            {categorias.map((c) => {
+              const perm = permisosCategorias[c.id] || { crear: true, editar: true, borrar: true, vistas: true };
+              return (
+                <div key={c.id} className="row permisos-row" style={{ gap: 6, alignItems: 'center' }}>
+                  <span style={{ flex: 1, fontSize: 12 }}>{c.nombre}</span>
+                  {[['crear', 'Crear'], ['editar', 'Editar'], ['borrar', 'Borrar'], ['vistas', 'Vistas']].map(([key]) => (
+                    <label key={key} className="check-line" style={{ textTransform: 'none', letterSpacing: 0 }} title={key}>
+                      <input
+                        type="checkbox"
+                        checked={perm?.[key] !== false}
+                        onChange={(e) => setPermisosCategorias((prev) => ({
+                          ...prev,
+                          [c.id]: { ...(prev[c.id] || { crear: true, editar: true, borrar: true, vistas: true }), [key]: e.target.checked },
+                        }))}
+                      />
+                    </label>
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+        </div>
         <div className="field">
           <label>Categorías de solo lectura</label>
           <small className="ayuda">Pueden ver la lista y sus filas, pero no crear, editar, archivar ni administrar vistas.</small>

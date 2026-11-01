@@ -227,6 +227,7 @@ function Ficha({ cliente, datos, onAbrirOrden, onEditar, onBaja, onClose }) {
   const puedeEditar = usePermiso('editar_clientes');
   const sync = useStore((s) => s.sync);
   const [nuevoActivo, setNuevoActivo] = useState(false);
+  const [editandoActivo, setEditandoActivo] = useState(null);
   const [activoForm, setActivoForm] = useState({ nombre: '', tipo: 'equipo', serie: '', estado: 'activo', notas: '' });
   const [busyActivo, setBusyActivo] = useState(false);
   const [errorActivo, setErrorActivo] = useState('');
@@ -238,10 +239,13 @@ function Ficha({ cliente, datos, onAbrirOrden, onEditar, onBaja, onClose }) {
     setBusyActivo(true);
     setErrorActivo('');
     try {
-      await api('/activos', { method: 'POST', body: { ...activoForm, cliente_id: cliente.id, nombre: activoForm.nombre.trim() } });
+      const payload = { ...activoForm, cliente_id: cliente.id, nombre: activoForm.nombre.trim() };
+      if (editandoActivo) await api(`/activos/${editandoActivo}`, { method: 'PATCH', body: payload });
+      else await api('/activos', { method: 'POST', body: payload });
       await sync();
       setActivoForm({ nombre: '', tipo: 'equipo', serie: '', estado: 'activo', notas: '' });
       setNuevoActivo(false);
+      setEditandoActivo(null);
     } catch (err) {
       setErrorActivo(err.message);
     } finally {
@@ -346,7 +350,7 @@ function Ficha({ cliente, datos, onAbrirOrden, onEditar, onBaja, onClose }) {
       <div className="mt16">
         <div className="row between wrap" style={{ gap: 8 }}>
           <div className="card-title"><Icon name="box" size={14} /> Activos y equipos ({activos.length})</div>
-          {puedeEditar && <button type="button" className="btn sm" onClick={() => setNuevoActivo((v) => !v)}><Icon name="plus" size={12} /> Agregar</button>}
+          {puedeEditar && <button type="button" className="btn sm" onClick={() => { setEditandoActivo(null); setActivoForm({ nombre: '', tipo: 'equipo', serie: '', estado: 'activo', notas: '' }); setNuevoActivo((v) => !v); }}><Icon name="plus" size={12} /> Agregar</button>}
         </div>
         {errorActivo && <small className="pass-error">{errorActivo}</small>}
         {activos.length === 0 ? <p className="muted" style={{ margin: '6px 0 0' }}>Sin activos registrados.</p> : (
@@ -354,7 +358,15 @@ function Ficha({ cliente, datos, onAbrirOrden, onEditar, onBaja, onClose }) {
             {activos.map((a) => (
               <li key={a.id}>
                 <span><b>{a.nombre}</b> <span className="muted">{a.tipo}{a.serie ? ` · ${a.serie}` : ''}</span></span>
-                <span className={`badge ${a.estado === 'activo' ? 'green' : 'gray'}`}>{a.estado || 'activo'}</span>
+                <span className="row" style={{ gap: 5, alignItems: 'center' }}>
+                  <span className={`badge ${a.estado === 'activo' ? 'green' : 'gray'}`}>{a.estado || 'activo'}</span>
+                  {puedeEditar && (
+                    <>
+                      <button type="button" className="btn xs" onClick={() => { setEditandoActivo(a.id); setActivoForm({ nombre: a.nombre || '', tipo: a.tipo || 'equipo', serie: a.serie || '', estado: a.estado || 'activo', notas: a.notas || '' }); setNuevoActivo(true); }}>Editar</button>
+                      <button type="button" className="btn xs danger" onClick={async () => { if (!window.confirm(`¿Archivar ${a.nombre}?`)) return; try { await api(`/activos/${a.id}`, { method: 'DELETE' }); await sync(); } catch (err) { setErrorActivo(err.message); } }}>Archivar</button>
+                    </>
+                  )}
+                </span>
               </li>
             ))}
           </ul>
@@ -368,8 +380,8 @@ function Ficha({ cliente, datos, onAbrirOrden, onEditar, onBaja, onClose }) {
               <div className="field"><label>Estado</label><input className="input" value={activoForm.estado} onChange={(e) => setActivoForm((p) => ({ ...p, estado: e.target.value }))} /></div>
             </FormGrid>
             <div className="row" style={{ gap: 6, marginTop: 8 }}>
-              <button type="submit" className="btn primary sm" disabled={busyActivo}><Icon name="check" size={12} /> {busyActivo ? 'Guardando...' : 'Guardar activo'}</button>
-              <button type="button" className="btn sm" onClick={() => setNuevoActivo(false)}>Cancelar</button>
+              <button type="submit" className="btn primary sm" disabled={busyActivo}><Icon name="check" size={12} /> {busyActivo ? 'Guardando...' : editandoActivo ? 'Guardar cambios' : 'Guardar activo'}</button>
+              <button type="button" className="btn sm" onClick={() => { setNuevoActivo(false); setEditandoActivo(null); setActivoForm({ nombre: '', tipo: 'equipo', serie: '', estado: 'activo', notas: '' }); }}>Cancelar</button>
             </div>
           </form>
         )}

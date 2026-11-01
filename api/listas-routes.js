@@ -246,9 +246,22 @@ function listaAccesible(user, lista) {
 function capacidadesLista(req, lista) {
   const base = capacidades(req, lista.area_id);
   if (req.user?.rol === 'admin') return base;
+  const categoria = req.user?.categoria_id;
+  if (!categoria) return base;
+  const permisos = lista.permisos_categorias && typeof lista.permisos_categorias === 'object' ? lista.permisos_categorias[categoria] : null;
+  if (permisos && typeof permisos === 'object') {
+    for (const [clave, cap] of [['crear', 'crear_registros'], ['editar', 'editar_registros'], ['borrar', 'borrar_registros'], ['vistas', 'administrar_vistas']]) {
+      if (permisos[clave] === false) base[cap] = false;
+    }
+  }
   const soloLectura = Array.isArray(lista.acceso_solo_lectura) ? lista.acceso_solo_lectura : [];
-  if (!req.user?.categoria_id || !soloLectura.includes(req.user.categoria_id)) return base;
-  return { ...base, crear_registros: false, editar_registros: false, borrar_registros: false, administrar_vistas: false };
+  if (soloLectura.includes(categoria)) {
+    base.crear_registros = false;
+    base.editar_registros = false;
+    base.borrar_registros = false;
+    base.administrar_vistas = false;
+  }
+  return base;
 }
 
 function idsCamposOcultos(user, campos) {
@@ -1094,6 +1107,28 @@ listasRouter.patch('/listas/:id', authRequired, async (req, res) => {
     } else {
       sets.push('permiso_campo = NULL');
     }
+  }
+  if (req.body?.permisos_categorias !== undefined) {
+    const entrada = req.body.permisos_categorias;
+    const limpio = {};
+    if (entrada && typeof entrada === 'object' && !Array.isArray(entrada)) {
+      const ids = Object.keys(entrada).map((x) => limStr(x, 80)).filter(Boolean);
+      if (ids.length) {
+        const validas = await query('SELECT id FROM categorias_acceso WHERE id = ANY($1)', [ids]);
+        if (validas.length !== ids.length) return res.status(400).json({ error: 'Una de las categorías de permisos no existe.' });
+      }
+      for (const cat of ids) {
+        const val = entrada[cat];
+        if (!val || typeof val !== 'object') continue;
+        limpio[cat] = {
+          crear: val.crear !== false,
+          editar: val.editar !== false,
+          borrar: val.borrar !== false,
+          vistas: val.vistas !== false,
+        };
+      }
+    }
+    params.push(JSON.stringify(limpio)); sets.push(`permisos_categorias = $${params.length}::jsonb`);
   }
   if (req.body?.acceso_solo_lectura !== undefined) {
     const ids = Array.isArray(req.body.acceso_solo_lectura)
