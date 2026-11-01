@@ -881,6 +881,14 @@ async function main() {
     assert.equal(pagina.json.paginacion.ordenes.next, pagina.json.paginacion.ordenes.total > 1);
   });
 
+  await test('el listado de respaldos responde solo al admin', async () => {
+    const r = await pedir('/respaldos', { token: tokenAdmin });
+    assert.equal(r.status, 200);
+    assert.ok(Array.isArray(r.json.archivos));
+    const tec = await pedir('/respaldos', { token: tokenTec });
+    assert.equal(tec.status, 403);
+  });
+
   await test('la salud ve la cola con el envío fallido', async () => {
     const r = await pedir('/salud', { token: tokenAdmin });
     assert.equal(r.status, 200);
