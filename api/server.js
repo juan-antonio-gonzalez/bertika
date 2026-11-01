@@ -583,6 +583,9 @@ async function asegurarCodigos() {
   await query('ALTER TABLE listas ADD COLUMN IF NOT EXISTS aprobador_email TEXT');
   await query('ALTER TABLE listas ADD COLUMN IF NOT EXISTS aprobacion_dias INTEGER DEFAULT 3');
   await query("ALTER TABLE listas ADD COLUMN IF NOT EXISTS acceso_solo_lectura JSONB DEFAULT '[]'::jsonb");
+  await query("ALTER TABLE lista_campos ADD COLUMN IF NOT EXISTS oculto_categorias JSONB DEFAULT '[]'::jsonb");
+  await query("ALTER TABLE listas ADD COLUMN IF NOT EXISTS aprobadores JSONB DEFAULT '[]'::jsonb");
+  await query('ALTER TABLE lista_aprobaciones ADD COLUMN IF NOT EXISTS paso INTEGER DEFAULT 0');
   await query('ALTER TABLE lista_aprobaciones ADD COLUMN IF NOT EXISTS aprobador TEXT');
   await query('ALTER TABLE lista_aprobaciones ADD COLUMN IF NOT EXISTS fecha_limite TIMESTAMPTZ');
   // Fase 3: formularios públicos por lista (token no adivinable).

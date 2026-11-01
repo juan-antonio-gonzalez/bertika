@@ -59,7 +59,7 @@ export default function AprobacionesPendientesModal({ area, onClose }) {
                 <div>
                   <b>{f.titulo}</b>
                   <span className="badge amber" style={{ marginLeft: 6 }}>Pendiente</span>
-                  <div className="muted" style={{ fontSize: 11.5 }}>{f.lista_nombre} · solicitó {f.solicitado_por} · {fmtFecha(f.creado_en)}{f.aprobador ? ` · aprobador ${f.aprobador}` : ''}{f.fecha_limite ? ` · vence ${fmtFecha(f.fecha_limite)}` : ''}</div>
+                  <div className="muted" style={{ fontSize: 11.5 }}>{f.lista_nombre} · solicitó {f.solicitado_por} · {fmtFecha(f.creado_en)}{f.aprobador ? ` · aprobador ${f.aprobador}` : ''}{Number(f.paso) > 0 ? ` · paso ${Number(f.paso) + 1}` : ''}{f.fecha_limite ? ` · vence ${fmtFecha(f.fecha_limite)}` : ''}</div>
                 </div>
               </div>
               {f.comentario && <p>{f.comentario}</p>}

@@ -17,10 +17,20 @@ export default function CampoModal({ campo, listas = [], listaActual, camposActu
   const [camposDestino, setCamposDestino] = useState([]);
   const [mostrar, setMostrar] = useState(campo?.config?.campo_mostrar || '');
   const [error, setError] = useState('');
+  const [oculto, setOculto] = useState(Array.isArray(campo?.oculto_categorias) ? campo.oculto_categorias : []);
+  const [categorias, setCategorias] = useState([]);
   const esSeleccion = tipo === 'seleccion' || tipo === 'multiseleccion';
   const esNumero = tipo === 'numero' || tipo === 'moneda';
   const esRelacion = tipo === 'relacion';
   const esCalculado = tipo === 'calculado';
+  useEffect(() => {
+    let vivo = true;
+    api('/listas/categorias')
+      .then((r) => { if (vivo) setCategorias(Array.isArray(r) ? r : []); })
+      .catch(() => { if (vivo) setCategorias([]); });
+    return () => { vivo = false; };
+  }, []);
+
   useEffect(() => {
     if (!esRelacion || !relacionId) { setCamposDestino([]); return undefined; }
     let vivo = true;
@@ -68,6 +78,7 @@ export default function CampoModal({ campo, listas = [], listaActual, camposActu
       config,
       requerido,
       unico,
+      oculto_categorias: oculto,
     });
   };
 
@@ -201,6 +212,25 @@ export default function CampoModal({ campo, listas = [], listaActual, camposActu
             <span>No permitir valores repetidos en este campo</span>
           </label>
         </div>
+
+        {categorias.length > 0 && (
+          <div className="field" style={{ marginTop: 12 }}>
+            <label>Ocultar este campo para</label>
+            <small className="ayuda">Esas categorías no lo ven en la tabla, el formulario, el historial ni la API.</small>
+            <div className="col" style={{ gap: 4, marginTop: 6, border: '1px solid var(--line)', borderRadius: 8, padding: 8, maxHeight: 130, overflow: 'auto' }}>
+              {categorias.map((c) => (
+                <label key={c.id} className="check-line" style={{ textTransform: 'none', letterSpacing: 0 }}>
+                  <input
+                    type="checkbox"
+                    checked={oculto.includes(c.id)}
+                    onChange={(e) => setOculto((prev) => (e.target.checked ? [...prev, c.id] : prev.filter((x) => x !== c.id)))}
+                  />
+                  <span>{c.nombre}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
       </form>
     </Modal>
   );

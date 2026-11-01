@@ -312,7 +312,8 @@ CREATE TABLE IF NOT EXISTS listas (
   acceso_categorias JSONB DEFAULT '[]'::jsonb,
   aprobador_email TEXT,
   aprobacion_dias INTEGER DEFAULT 3,
-  acceso_solo_lectura JSONB DEFAULT '[]'::jsonb
+  acceso_solo_lectura JSONB DEFAULT '[]'::jsonb,
+  aprobadores JSONB DEFAULT '[]'::jsonb
 );
 CREATE INDEX IF NOT EXISTS idx_listas_area ON listas (area_id, archivada, orden);
 CREATE UNIQUE INDEX IF NOT EXISTS listas_area_nombre_uniq ON listas (area_id, lower(nombre)) WHERE archivada = false;
@@ -325,6 +326,7 @@ CREATE TABLE IF NOT EXISTS lista_campos (
   config JSONB NOT NULL DEFAULT '{}'::jsonb,
   requerido BOOLEAN DEFAULT FALSE,
   unico BOOLEAN DEFAULT FALSE,
+  oculto_categorias JSONB DEFAULT '[]'::jsonb,
   orden INTEGER DEFAULT 0,
   activo BOOLEAN DEFAULT TRUE,
   creado_en TIMESTAMPTZ DEFAULT now(),
@@ -434,7 +436,8 @@ CREATE TABLE IF NOT EXISTS lista_aprobaciones (
   comentario TEXT,
   decidido_en TIMESTAMPTZ,
   fecha_limite TIMESTAMPTZ,
-  creado_en TIMESTAMPTZ DEFAULT now()
+  creado_en TIMESTAMPTZ DEFAULT now(),
+  paso INTEGER DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_lista_aprobaciones_registro ON lista_aprobaciones (registro_id, creado_en DESC);
 

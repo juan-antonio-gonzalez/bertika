@@ -251,6 +251,23 @@ function capacidadesLista(req, lista) {
   return { ...base, crear_registros: false, editar_registros: false, borrar_registros: false, administrar_vistas: false };
 }
 
+function idsCamposOcultos(user, campos) {
+  if (user?.rol === 'admin' || !user?.categoria_id) return new Set();
+  return new Set((campos || []).filter((c) => Array.isArray(c.oculto_categorias) && c.oculto_categorias.includes(user.categoria_id)).map((c) => c.id));
+}
+
+function camposVisibles(user, campos) {
+  const ocultos = idsCamposOcultos(user, campos);
+  return ocultos.size ? campos.filter((c) => !ocultos.has(c.id)) : campos;
+}
+
+function sinCamposOcultos(datos, ocultos) {
+  if (!ocultos.size || !datos || typeof datos !== 'object') return datos;
+  const copia = { ...datos };
+  for (const id of ocultos) delete copia[id];
+  return copia;
+}
+
 async function listaConArea(id, user = null) {
   const lista = await one(`
     SELECT l.*, a.slug AS area_slug, a.nombre AS area_nombre
@@ -264,7 +281,7 @@ async function listaConArea(id, user = null) {
 
 async function camposDe(listaId) {
   return query(`
-    SELECT id, lista_id, nombre, tipo, config, requerido, unico, orden, activo,
+    SELECT id, lista_id, nombre, tipo, config, requerido, unico, oculto_categorias, orden, activo,
            creado_en, actualizado_en
       FROM lista_campos
      WHERE lista_id = $1 AND activo = true
@@ -310,12 +327,13 @@ function bloqueoAprobacion(req, lista, registro) {
 
 async function crearAprobacionAuto(client, lista, registroId, usuario, comentario) {
   const id = idNuevo('apr');
-  const aprobador = lista.aprobador_email || null;
+  const cadena = Array.isArray(lista.aprobadores) && lista.aprobadores.length ? lista.aprobadores : (lista.aprobador_email ? [lista.aprobador_email] : []);
+  const aprobador = cadena[0] || null;
   const dias = Math.max(1, Number(lista.aprobacion_dias) || 3);
   const fila = await client.query(
-    `INSERT INTO lista_aprobaciones (id, lista_id, registro_id, solicitado_por, aprobador, comentario, fecha_limite)
-     VALUES ($1,$2,$3,$4,$5,$6, now() + ($7 || ' days')::interval)
-     RETURNING id, estado, solicitado_por, decidido_por, aprobador, comentario, decidido_en, fecha_limite, creado_en`,
+    `INSERT INTO lista_aprobaciones (id, lista_id, registro_id, solicitado_por, aprobador, comentario, fecha_limite, paso)
+     VALUES ($1,$2,$3,$4,$5,$6, now() + ($7 || ' days')::interval, 0)
+     RETURNING id, estado, solicitado_por, decidido_por, aprobador, comentario, decidido_en, fecha_limite, creado_en, paso`,
     [id, lista.id, registroId, usuario, aprobador, comentario, String(dias)]
   );
   return fila.rows[0];
@@ -864,7 +882,7 @@ listasRouter.get('/listas/aprobaciones/pendientes', authRequired, async (req, re
   if (!cap.ver || !cap.editar_listas) return sinPermiso(res, 'Solo quien administra las listas puede ver las aprobaciones pendientes.');
 
   let filas = await query(`
-    SELECT a.id, a.lista_id, a.registro_id, a.solicitado_por, a.aprobador, a.comentario, a.fecha_limite, a.creado_en,
+    SELECT a.id, a.lista_id, a.registro_id, a.solicitado_por, a.aprobador, a.comentario, a.fecha_limite, a.paso, a.creado_en,
            l.nombre AS lista_nombre, l.acceso_categorias, r.datos
       FROM lista_aprobaciones a
       JOIN listas l ON l.id = a.lista_id
@@ -1014,8 +1032,8 @@ listasRouter.get('/listas/:id', authRequired, async (req, res) => {
   if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
   const cap = capacidades(req, lista.area_id);
   if (!cap.ver) return sinPermiso(res, 'No tenés acceso a esta área.');
-  const [campos, vistas] = await Promise.all([camposDe(lista.id), vistasDe(lista.id, req.user.email)]);
-  return res.json({ ...lista, campos, vistas, puede: capacidadesLista(req, lista) });
+  const [todos, vistas] = await Promise.all([camposDe(lista.id), vistasDe(lista.id, req.user.email)]);
+  return res.json({ ...lista, campos: camposVisibles(req.user, todos), vistas, puede: capacidadesLista(req, lista) });
 });
 
 listasRouter.post('/listas', authRequired, async (req, res) => {
@@ -1096,6 +1114,13 @@ listasRouter.patch('/listas/:id', authRequired, async (req, res) => {
       if (validas.length !== ids.length) return res.status(400).json({ error: 'Una de las categorías seleccionadas no existe.' });
     }
     params.push(JSON.stringify(ids)); sets.push(`acceso_categorias = $${params.length}::jsonb`);
+  }
+  if (req.body?.aprobadores !== undefined) {
+    const emails = Array.isArray(req.body.aprobadores)
+      ? [...new Set(req.body.aprobadores.map((x) => limStr(x, 200).toLowerCase()).filter(Boolean))].slice(0, 10)
+      : [];
+    if (emails.some((e) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e))) return res.status(400).json({ error: 'Uno de los emails de aprobadores no es válido.' });
+    params.push(JSON.stringify(emails)); sets.push(`aprobadores = $${params.length}::jsonb`);
   }
   if (req.body?.aprobador_email !== undefined) {
     const email = limStr(req.body.aprobador_email, 200);
@@ -1265,19 +1290,20 @@ listasRouter.post('/listas/:id/campos', authRequired, async (req, res) => {
   }
   const requerido = normalizarBooleano(req.body?.requerido) === true;
   const unico = normalizarBooleano(req.body?.unico) === true;
+  const oculto = Array.isArray(req.body?.oculto_categorias) ? [...new Set(req.body.oculto_categorias.map((x) => limStr(x, 80)).filter(Boolean))] : [];
   const [max] = await query('SELECT COALESCE(MAX(orden), 0)::int AS n FROM lista_campos WHERE lista_id = $1', [lista.id]);
   const id = idNuevo('cam');
   try {
     await query(
-      `INSERT INTO lista_campos (id, lista_id, nombre, tipo, config, requerido, unico, orden)
-       VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8)`,
-      [id, lista.id, nombre, tipo, config, requerido, unico, Number(max.n) + 10]
+      `INSERT INTO lista_campos (id, lista_id, nombre, tipo, config, requerido, unico, oculto_categorias, orden)
+       VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8::jsonb,$9)`,
+      [id, lista.id, nombre, tipo, config, requerido, unico, JSON.stringify(oculto), Number(max.n) + 10]
     );
   } catch (e) {
     if (e.code === '23505') return res.status(400).json({ error: 'Ya existe un campo con ese nombre en la lista.' });
     throw e;
   }
-  await auditar({ req, tabla: 'lista_campos', registroId: id, accion: 'crear', despues: { listaId: lista.id, nombre, tipo, config, requerido, unico } });
+  await auditar({ req, tabla: 'lista_campos', registroId: id, accion: 'crear', despues: { listaId: lista.id, nombre, tipo, config, requerido, unico, oculto } });
   return res.status(201).json({ id });
 });
 
@@ -1308,6 +1334,10 @@ listasRouter.patch('/lista-campos/:id', authRequired, async (req, res) => {
   }
   if (req.body?.unico !== undefined) {
     params.push(normalizarBooleano(req.body.unico) === true); sets.push(`unico = $${params.length}`);
+  }
+  if (req.body?.oculto_categorias !== undefined) {
+    const ids = Array.isArray(req.body.oculto_categorias) ? [...new Set(req.body.oculto_categorias.map((x) => limStr(x, 80)).filter(Boolean))] : [];
+    params.push(JSON.stringify(ids)); sets.push(`oculto_categorias = $${params.length}::jsonb`);
   }
   if (req.body?.orden !== undefined) {
     params.push(Math.max(0, Number(req.body.orden) || 0)); sets.push(`orden = $${params.length}`);
@@ -1447,20 +1477,25 @@ listasRouter.get('/listas/:id/registros', authRequired, async (req, res) => {
   }
   sql += ' ORDER BY creado_en DESC LIMIT 500';
   const registros = await query(sql, params);
+  const ocultos = idsCamposOcultos(req.user, await camposDe(lista.id));
+  const regsVisibles = ocultos.size ? registros.map((r) => ({ ...r, datos: sinCamposOcultos(r.datos, ocultos) })) : registros;
   const paramsTotal = [lista.id, ...vis.params];
   const [total] = await query(`SELECT count(*)::int AS n FROM lista_registros WHERE lista_id = $1 AND archivado = false ${vis.sql}`, paramsTotal);
-  return res.json({ registros, total: total.n, restringido: Boolean(vis.sql) });
+  return res.json({ registros: regsVisibles, total: total.n, restringido: Boolean(vis.sql) });
 });
 
 listasRouter.post('/listas/:id/registros', authRequired, async (req, res) => {
   const lista = await listaConArea(req.params.id, req.user);
   if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
   if (!capacidadesLista(req, lista).crear_registros) return sinPermiso(res, 'No tenés permiso para crear registros en esta lista.');
-  const campos = await camposDe(lista.id);
+  const todos = await camposDe(lista.id);
+  const ocultos = idsCamposOcultos(req.user, todos);
+  const campos = camposVisibles(req.user, todos);
   const validado = validarRegistro(campos, req.body?.datos);
   if (!validado.ok) return res.status(400).json({ error: validado.error });
-  const datosFinal = calcularCampos(campos, validado.datos);
-  const relError = await validarRelaciones(campos, datosFinal);
+  let datosFinal = calcularCampos(todos, validado.datos);
+  if (ocultos.size) datosFinal = sinCamposOcultos(datosFinal, ocultos);
+  const relError = await validarRelaciones(todos, datosFinal);
   if (relError) return res.status(400).json({ error: relError });
   const conflicto = await conflictoUnico(lista.id, campos, datosFinal);
   if (conflicto) return res.status(400).json({ error: conflicto });
@@ -1495,12 +1530,17 @@ listasRouter.patch('/lista-registros/:id', authRequired, async (req, res) => {
   if (!puedeEditarRegistro(req, lista, registro)) return sinPermiso(res, 'Este registro está reservado para su creador o responsable.');
   const bloqueo = bloqueoAprobacion(req, lista, registro);
   if (bloqueo) return res.status(409).json({ error: bloqueo });
-  const campos = await camposDe(lista.id);
+  const todos = await camposDe(lista.id);
+  const ocultos = idsCamposOcultos(req.user, todos);
+  const campos = camposVisibles(req.user, todos);
   const combinados = { ...(esObjeto(registro.datos) ? registro.datos : {}), ...(esObjeto(req.body?.datos) ? req.body.datos : {}) };
   const validado = validarRegistro(campos, combinados);
   if (!validado.ok) return res.status(400).json({ error: validado.error });
-  const datosFinal = calcularCampos(campos, validado.datos);
-  const relError = await validarRelaciones(campos, datosFinal);
+  const datosFinal = calcularCampos(todos, validado.datos);
+  for (const id of ocultos) {
+    if (Object.prototype.hasOwnProperty.call(registro.datos || {}, id)) datosFinal[id] = registro.datos[id];
+  }
+  const relError = await validarRelaciones(todos, datosFinal);
   if (relError) return res.status(400).json({ error: relError });
   const conflicto = await conflictoUnico(lista.id, campos, datosFinal, registro.id);
   if (conflicto) return res.status(400).json({ error: conflicto });
@@ -1665,10 +1705,10 @@ async function avisarAprobadores(lista, aprobacion, solicitante, decision = fals
          u.rol = 'admin' OR (c.areas -> $1 ->> 'editar_listas')::boolean = true
        )
     `, [lista.area_id]);
-    const correos = lista.aprobador_email
-      ? new Set([lista.aprobador_email])
+    const correos = aprobacion.aprobador
+      ? new Set([aprobacion.aprobador])
       : new Set(rows.map((r) => r.email).filter(Boolean));
-    if (!lista.aprobador_email && lista.creada_por) correos.add(lista.creada_por);
+    if (!aprobacion.aprobador && lista.creada_por) correos.add(lista.creada_por);
     correos.delete(solicitante);
     for (const email of correos) {
       const texto = `${solicitante} solicitó aprobar un registro en ${lista.nombre}.\n${aprobacion.comentario || ''}\n${link}`;
@@ -1694,7 +1734,7 @@ listasRouter.get('/listas/:id/registros/:rid/aprobaciones', authRequired, async 
   if (!registro) return res.status(404).json({ error: 'Registro no encontrado' });
   if (!puedeVerRegistro(req, lista, registro)) return sinPermiso(res, 'No tenés acceso a este registro.');
   const filas = await query(`
-    SELECT id, estado, solicitado_por, decidido_por, aprobador, comentario, decidido_en, fecha_limite, creado_en
+    SELECT id, estado, solicitado_por, decidido_por, aprobador, comentario, decidido_en, fecha_limite, paso, creado_en
       FROM lista_aprobaciones WHERE registro_id = $1 ORDER BY creado_en DESC LIMIT 50
   `, [registro.id]);
   return res.json(filas);
@@ -1712,12 +1752,13 @@ listasRouter.post('/listas/:id/registros/:rid/aprobaciones', authRequired, async
   if (pendiente) return res.status(400).json({ error: 'Ya hay una aprobación pendiente para este registro.' });
   const comentario = limStr(req.body?.comentario, 1000) || null;
   const id = idNuevo('apr');
-  const aprobador = lista.aprobador_email || null;
+  const cadena = Array.isArray(lista.aprobadores) && lista.aprobadores.length ? lista.aprobadores : (lista.aprobador_email ? [lista.aprobador_email] : []);
+  const aprobador = cadena[0] || null;
   const dias = Math.max(1, Number(lista.aprobacion_dias) || 3);
   const fila = await one(
-    `INSERT INTO lista_aprobaciones (id, lista_id, registro_id, solicitado_por, aprobador, comentario, fecha_limite)
-     VALUES ($1,$2,$3,$4,$5,$6, now() + ($7 || ' days')::interval)
-     RETURNING id, estado, solicitado_por, decidido_por, aprobador, comentario, decidido_en, fecha_limite, creado_en`,
+    `INSERT INTO lista_aprobaciones (id, lista_id, registro_id, solicitado_por, aprobador, comentario, fecha_limite, paso)
+     VALUES ($1,$2,$3,$4,$5,$6, now() + ($7 || ' days')::interval, 0)
+     RETURNING id, estado, solicitado_por, decidido_por, aprobador, comentario, decidido_en, fecha_limite, creado_en, paso`,
     [id, lista.id, registro.id, req.user.email, aprobador, comentario, String(dias)]
   );
   if (lista.requiere_aprobacion) {
@@ -1741,9 +1782,23 @@ listasRouter.patch('/lista-aprobaciones/:id', authRequired, async (req, res) => 
   const estado = req.body?.estado === 'aprobado' ? 'aprobado' : req.body?.estado === 'rechazado' ? 'rechazado' : null;
   if (!estado) return res.status(400).json({ error: 'Elegí aprobar o rechazar.' });
   const comentario = limStr(req.body?.comentario, 1000) || null;
+  const cadena = Array.isArray(lista.aprobadores) && lista.aprobadores.length ? lista.aprobadores : (lista.aprobador_email ? [lista.aprobador_email] : []);
+  const paso = Math.max(0, Number(aprobacion.paso) || 0);
+  const siguiente = estado === 'aprobado' ? cadena[paso + 1] : null;
+  if (siguiente) {
+    const dias = Math.max(1, Number(lista.aprobacion_dias) || 3);
+    const fila = await one(
+      `UPDATE lista_aprobaciones SET paso = $2, aprobador = $3, fecha_limite = now() + ($4 || ' days')::interval, comentario = COALESCE($5, comentario)
+        WHERE id = $1 RETURNING id, estado, solicitado_por, decidido_por, aprobador, comentario, decidido_en, fecha_limite, paso, creado_en`,
+      [aprobacion.id, paso + 1, siguiente, String(dias), comentario]
+    );
+    await auditar({ req, tabla: 'lista_aprobaciones', registroId: aprobacion.id, accion: 'paso_aprobado', detalle: `${paso + 1} → ${siguiente}` });
+    avisarAprobadores(lista, fila, req.user.email, false);
+    return res.json({ ...fila, siguiente: true });
+  }
   const fila = await one(
     `UPDATE lista_aprobaciones SET estado = $2, decidido_por = $3, comentario = COALESCE($4, comentario), decidido_en = now()
-      WHERE id = $1 RETURNING id, estado, solicitado_por, decidido_por, aprobador, comentario, decidido_en, fecha_limite, creado_en`,
+      WHERE id = $1 RETURNING id, estado, solicitado_por, decidido_por, aprobador, comentario, decidido_en, fecha_limite, paso, creado_en`,
     [aprobacion.id, estado, req.user.email, comentario]
   );
   if (lista.requiere_aprobacion) {
@@ -1821,7 +1876,8 @@ listasRouter.get('/listas/:id/registros/:rid/historial', authRequired, async (re
      ORDER BY creado_en DESC
      LIMIT 100
   `, [registro.id]);
-  return res.json(filas);
+  const ocultos = idsCamposOcultos(req.user, await camposDe(registro.lista_id));
+  return res.json(ocultos.size ? filas.map((f) => ({ ...f, datos: sinCamposOcultos(f.datos, ocultos) })) : filas);
 });
 
 listasRouter.patch('/lista-registros/:id/historial/:histId/restaurar', authRequired, async (req, res) => {

@@ -15,6 +15,7 @@ export default function ListaConfigModal({
   const [requiereAprobacion, setRequiereAprobacion] = useState(lista.requiere_aprobacion === true);
   const [aprobadorEmail, setAprobadorEmail] = useState(lista.aprobador_email || '');
   const [aprobacionDias, setAprobacionDias] = useState(lista.aprobacion_dias || 3);
+  const [cadenaAprobadores, setCadenaAprobadores] = useState(Array.isArray(lista.aprobadores) ? lista.aprobadores.join('\n') : '');
   const [categorias, setCategorias] = useState([]);
   const [restringirAcceso, setRestringirAcceso] = useState(Array.isArray(lista.acceso_categorias) && lista.acceso_categorias.length > 0);
   const [categoriasAcceso, setCategoriasAcceso] = useState(Array.isArray(lista.acceso_categorias) ? lista.acceso_categorias : []);
@@ -42,7 +43,7 @@ export default function ListaConfigModal({
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          if (nombre.trim().length >= 2) onGuardarLista({ nombre: nombre.trim(), descripcion: descripcion.trim(), permiso_filas: permisoFilas, permiso_campo: permisoCampo || null, ver_filas: verFilas, ver_campo: verCampo || null, requiere_aprobacion: requiereAprobacion, aprobador_email: aprobadorEmail.trim() || null, aprobacion_dias: Number(aprobacionDias) || 3, acceso_categorias: restringirAcceso ? categoriasAcceso : [], acceso_solo_lectura: soloLectura });
+          if (nombre.trim().length >= 2) onGuardarLista({ nombre: nombre.trim(), descripcion: descripcion.trim(), permiso_filas: permisoFilas, permiso_campo: permisoCampo || null, ver_filas: verFilas, ver_campo: verCampo || null, requiere_aprobacion: requiereAprobacion, aprobador_email: aprobadorEmail.trim() || null, aprobacion_dias: Number(aprobacionDias) || 3, aprobadores: cadenaAprobadores.split(/[\n,]+/).map((x) => x.trim()).filter(Boolean), acceso_categorias: restringirAcceso ? categoriasAcceso : [], acceso_solo_lectura: soloLectura });
         }}
         className="col"
         style={{ gap: 12 }}
@@ -88,6 +89,11 @@ export default function ListaConfigModal({
               <label>Días para aprobar</label>
               <input className="input" type="number" min="1" max="60" value={aprobacionDias} onChange={(e) => setAprobacionDias(e.target.value)} />
             </div>
+          </div>
+          <div className="field" style={{ marginTop: 8 }}>
+            <label>Aprobadores en cadena</label>
+            <textarea className="input" rows={2} value={cadenaAprobadores} onChange={(e) => setCadenaAprobadores(e.target.value)} placeholder={'Uno por línea o separados por coma. Ej.:\njefe@empresa.com\nadmin@empresa.com'} />
+            <small className="ayuda">Se aprueban en orden. Si está vacío se usa el aprobador asignado de arriba.</small>
           </div>
         </div>
         <div className="field">
