@@ -139,6 +139,31 @@ function PersonaInput({ value, onChange }) {
   );
 }
 
+function ClienteInput({ value, onChange }) {
+  const [clientes, setClientes] = useState([]);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    let vivo = true;
+    api('/listas/clientes')
+      .then((r) => { if (vivo) setClientes(Array.isArray(r) ? r : []); })
+      .catch((e) => { if (vivo) setError(e.message); });
+    return () => { vivo = false; };
+  }, []);
+  const actual = value && typeof value === 'object' ? String(value.id || '') : String(value || '');
+  return (
+    <>
+      <select className="input" value={actual} onChange={(e) => {
+        const c = clientes.find((x) => x.id === e.target.value);
+        onChange(c ? { id: c.id, nombre: c.nombre } : null);
+      }}>
+        <option value="">Elegir cliente...</option>
+        {clientes.map((c) => <option key={c.id} value={c.id}>{c.nombre}{c.empresa ? ` · ${c.empresa}` : ''}</option>)}
+      </select>
+      {error && <small className="pass-error">{error}</small>}
+    </>
+  );
+}
+
 export function CampoInput({ campo, value, onChange, listaId }) {
   const opciones = Array.isArray(campo.config?.opciones) ? campo.config.opciones : [];
   const ayuda = campo.config?.ayuda;
@@ -199,6 +224,8 @@ export function CampoInput({ campo, value, onChange, listaId }) {
     control = <input className="input" value={value ?? ''} disabled placeholder="Se calcula al guardar" />;
   } else if (tipo === 'persona') {
     control = <PersonaInput value={value} onChange={onChange} />;
+  } else if (tipo === 'cliente') {
+    control = <ClienteInput value={value} onChange={onChange} />;
   } else {
     const inputType = tipo === 'numero' || tipo === 'moneda' ? 'number'
       : tipo === 'fecha' ? 'date'

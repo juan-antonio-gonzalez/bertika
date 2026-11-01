@@ -74,7 +74,25 @@ async function evaluarReglas(lista, campos, datos, evento, registroId, req) {
         .join(' · ');
       const link = `${PUBLIC_URL}/listas/${lista.area_slug}/${lista.id}`;
       const texto = `Regla "${regla.nombre}" en ${lista.nombre}: ${campo?.nombre || 'campo'} ${regla.op} ${regla.valor || '(vacío)'}.\n${resumen}\n${link}`;
-      if (regla.accion === 'webhook') {
+      if (regla.accion === 'orden') {
+        const clienteVal = datos?.[regla.campo_destino];
+        const clienteId = clienteVal && typeof clienteVal === 'object' ? clienteVal.id : clienteVal;
+        const serie = String(datos?.[regla.campo_serie] ?? '').trim();
+        if (clienteId && serie) {
+          const cliente = await one('SELECT id FROM clientes WHERE id = $1 AND deleted_at IS NULL', [clienteId]);
+          if (cliente) {
+            const ordId = idNuevo('ord');
+            const codigo = `AUTO-${Date.now().toString(36).toUpperCase()}-${randomUUID().slice(0, 6).toUpperCase()}`;
+            const evId = idNuevo('ev');
+            await query(
+              `INSERT INTO ordenes (id, codigo_seguimiento, bateria_serie, cliente_id, tecnico_id, falla, motivo, estado, fecha_ingreso, hora_entrega, eventos, cotizacion, estado_cotizacion, insumos_utilizados, prueba_final, diagnostico)
+               VALUES ($1,$2,$3,$4,NULL,$5,$5,'received',$6,$7,$8::jsonb,NULL,NULL,'[]'::jsonb,'{"estado":"pending"}',NULL)`,
+              [ordId, codigo, serie, cliente.id, regla.mensaje || 'Orden automática', new Date().toISOString(), new Date(Date.now() + 24 * 3600000).toISOString(), JSON.stringify([{ id: evId, tipo: 'ingreso', detalle: `Serie ${serie} ingresada por regla "${regla.nombre}".`, fecha: new Date().toISOString(), usuario: 'regla' }])]
+            );
+            await auditar({ req, tabla: 'lista_reglas', registroId: regla.id, accion: 'orden_creada', detalle: `${ordId} cliente ${cliente.id}` });
+          }
+        }
+      } else if (regla.accion === 'webhook') {
         try {
           const url = new URL(regla.mensaje || '');
           const host = url.hostname.toLowerCase();
@@ -743,6 +761,13 @@ async function crearListaDesdeSnapshot({ tpl, areaId, nombre, usuario }) {
   });
   return listaId;
 }
+
+// Clientes disponibles para el campo Cliente de una lista.
+listasRouter.get('/listas/clientes', authRequired, async (req, res) => {
+  if (!req.user || req.user.rol === 'cliente') return sinPermiso(res);
+  const filas = await query("SELECT id, nombre, empresa FROM clientes WHERE deleted_at IS NULL ORDER BY lower(nombre) LIMIT 500");
+  return res.json(filas);
+});
 
 // Catálogo de plantillas de listas.
 listasRouter.get('/listas/plantillas', authRequired, async (req, res) => {
@@ -1608,7 +1633,7 @@ function normalizarRegla(body, campos) {
   if (!campo) return { error: 'Elegí un campo válido para la regla.' };
   const op = ['contiene', 'igual', 'distinto', 'mayor', 'menor', 'vacio'].includes(body?.op) ? body.op : 'igual';
   const evento = ['crear', 'editar', 'ambos'].includes(body?.evento) ? body.evento : 'ambos';
-  const accion = ['whatsapp', 'campo', 'webhook'].includes(body?.accion) ? body.accion : 'email';
+  const accion = ['whatsapp', 'campo', 'webhook', 'orden'].includes(body?.accion) ? body.accion : 'email';
   const base = {
     nombre,
     campo: campo.id,
@@ -1617,7 +1642,26 @@ function normalizarRegla(body, campos) {
     evento,
     accion,
     activo: body?.activo === undefined ? true : normalizarBooleano(body.activo),
+    campo_destino: null,
+    campo_serie: null,
+    mensaje: null,
+    destinatario: null,
+    asunto: null,
   };
+  if (accion === 'orden') {
+    const clienteCampo = (campos || []).find((c) => c.id === limStr(body?.campo_destino, 80) && c.tipo === 'cliente');
+    const serieCampo = (campos || []).find((c) => c.id === limStr(body?.campo_serie, 80));
+    if (!clienteCampo) return { error: 'Elegí el campo Cliente que va a usar la orden.' };
+    if (!serieCampo) return { error: 'Elegí el campo que va a aportar el número de serie.' };
+    return {
+      ...base,
+      campo_destino: clienteCampo.id,
+      campo_serie: serieCampo.id,
+      mensaje: limStr(body?.mensaje, 500) || 'Orden creada automáticamente por una regla.',
+      destinatario: null,
+      asunto: null,
+    };
+  }
   if (accion === 'webhook') {
     const url = limStr(body?.mensaje, 500);
     try {
@@ -1682,9 +1726,9 @@ listasRouter.post('/listas/:id/reglas', authRequired, async (req, res) => {
   if (regla.error) return res.status(400).json({ error: regla.error });
   const id = idNuevo('regla');
   const fila = await one(
-    `INSERT INTO lista_reglas (id, lista_id, nombre, activo, evento, campo, op, valor, destinatario, asunto, accion, campo_destino, mensaje, creada_por)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
-    [id, lista.id, regla.nombre, regla.activo, regla.evento, regla.campo, regla.op, regla.valor, regla.destinatario, regla.asunto, regla.accion, regla.campo_destino, regla.mensaje, req.user.email]
+    `INSERT INTO lista_reglas (id, lista_id, nombre, activo, evento, campo, op, valor, destinatario, asunto, accion, campo_destino, campo_serie, mensaje, creada_por)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,
+    [id, lista.id, regla.nombre, regla.activo, regla.evento, regla.campo, regla.op, regla.valor, regla.destinatario, regla.asunto, regla.accion, regla.campo_destino, regla.campo_serie, regla.mensaje, req.user.email]
   );
   await auditar({ req, tabla: 'lista_reglas', registroId: id, accion: 'crear', despues: fila });
   return res.status(201).json(fila);
@@ -1701,8 +1745,8 @@ listasRouter.patch('/lista-reglas/:id', authRequired, async (req, res) => {
   if (datos.error) return res.status(400).json({ error: datos.error });
   const fila = await one(
     `UPDATE lista_reglas SET nombre=$2, activo=$3, evento=$4, campo=$5, op=$6, valor=$7, destinatario=$8, asunto=$9,
-       accion=$10, campo_destino=$11, mensaje=$12 WHERE id=$1 RETURNING *`,
-    [regla.id, datos.nombre, datos.activo, datos.evento, datos.campo, datos.op, datos.valor, datos.destinatario, datos.asunto, datos.accion, datos.campo_destino, datos.mensaje]
+       accion=$10, campo_destino=$11, campo_serie=$12, mensaje=$13 WHERE id=$1 RETURNING *`,
+    [regla.id, datos.nombre, datos.activo, datos.evento, datos.campo, datos.op, datos.valor, datos.destinatario, datos.asunto, datos.accion, datos.campo_destino, datos.campo_serie, datos.mensaje]
   );
   await auditar({ req, tabla: 'lista_reglas', registroId: regla.id, accion: 'editar', antes: regla, despues: fila });
   return res.json(fila);

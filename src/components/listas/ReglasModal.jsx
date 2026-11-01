@@ -11,7 +11,7 @@ const OPS = [
   { op: 'menor', label: 'es menor que' },
   { op: 'vacio', label: 'está vacío' },
 ];
-const VACIA = { nombre: '', evento: 'ambos', campo: '', op: 'igual', valor: '', accion: 'email', destinatario: '', asunto: '', campo_destino: '', mensaje: '', activo: true };
+const VACIA = { nombre: '', evento: 'ambos', campo: '', op: 'igual', valor: '', accion: 'email', destinatario: '', asunto: '', campo_destino: '', campo_serie: '', mensaje: '', activo: true };
 
 export default function ReglasModal({ lista, campos, onClose }) {
   const [reglas, setReglas] = useState([]);
@@ -41,7 +41,7 @@ export default function ReglasModal({ lista, campos, onClose }) {
     setForm({
       nombre: r.nombre || '', evento: r.evento || 'ambos', campo: r.campo || '', op: r.op || 'igual',
       valor: r.valor || '', accion: r.accion || 'email', destinatario: r.destinatario || '', asunto: r.asunto || '',
-      campo_destino: r.campo_destino || '', mensaje: r.mensaje || '', activo: r.activo !== false,
+      campo_destino: r.campo_destino || '', campo_serie: r.campo_serie || '', mensaje: r.mensaje || '', activo: r.activo !== false,
     });
   };
 
@@ -50,7 +50,10 @@ export default function ReglasModal({ lista, campos, onClose }) {
     setError('');
     if (!form.nombre.trim()) return setError('La regla necesita un nombre.');
     if (!form.campo) return setError('Elegí el campo que dispara el aviso.');
-    if (form.accion === 'webhook') {
+    if (form.accion === 'orden') {
+      if (!form.campo_destino) return setError('Elegí el campo Cliente para la orden.');
+      if (!form.campo_serie) return setError('Elegí el campo que aporta el número de serie.');
+    } else if (form.accion === 'webhook') {
       if (!/^https:\/\//i.test(form.mensaje.trim())) return setError('El webhook tiene que ser una URL HTTPS.');
     } else if (form.accion === 'campo') {
       if (!form.campo_destino) return setError('Elegí el campo que va a cambiar la regla.');
@@ -107,7 +110,7 @@ export default function ReglasModal({ lista, campos, onClose }) {
                 <b>{r.nombre}</b>
                 <span className={`badge ${r.activo ? 'green' : 'gray'}`} style={{ marginLeft: 6 }}>{r.activo ? 'Activa' : 'Apagada'}</span>
                 <div className="muted" style={{ fontSize: 11.5 }}>
-                  {r.evento} · {c?.nombre || 'campo'} {r.op} {r.valor || ''} · {r.accion === 'whatsapp' ? `WhatsApp a ${campos.find((x) => x.id === r.campo_destino)?.nombre || 'teléfono'}` : r.accion === 'campo' ? `cambia ${campos.find((x) => x.id === r.campo_destino)?.nombre || 'campo'} a “${r.mensaje || ''}”` : r.accion === 'webhook' ? `webhook ${r.mensaje || ''}` : `email a ${r.destinatario}`}
+                  {r.evento} · {c?.nombre || 'campo'} {r.op} {r.valor || ''} · {r.accion === 'whatsapp' ? `WhatsApp a ${campos.find((x) => x.id === r.campo_destino)?.nombre || 'teléfono'}` : r.accion === 'campo' ? `cambia ${campos.find((x) => x.id === r.campo_destino)?.nombre || 'campo'} a “${r.mensaje || ''}”` : r.accion === 'webhook' ? `webhook ${r.mensaje || ''}` : r.accion === 'orden' ? `crea orden con ${campos.find((x) => x.id === r.campo_destino)?.nombre || 'cliente'} / ${campos.find((x) => x.id === r.campo_serie)?.nombre || 'serie'}` : `email a ${r.destinatario}`}
                 </div>
               </div>
               <button type="button" className="btn sm" onClick={() => editar(r)}><Icon name="gear" size={12} /> Editar</button>
@@ -142,6 +145,7 @@ export default function ReglasModal({ lista, campos, onClose }) {
               <option value="whatsapp">Enviar WhatsApp</option>
               <option value="campo">Cambiar un campo</option>
               <option value="webhook">Enviar a webhook</option>
+              <option value="orden">Crear orden de taller</option>
             </select>
           </div>
           <div className="field">
@@ -160,7 +164,28 @@ export default function ReglasModal({ lista, campos, onClose }) {
               {form.op !== 'vacio' && <input className="input" value={form.valor} onChange={(e) => set('valor', e.target.value)} placeholder="Valor" />}
             </div>
           </div>
-          {form.accion === 'webhook' ? (
+          {form.accion === 'orden' ? (
+            <>
+              <div className="field">
+                <label>Campo Cliente *</label>
+                <select className="input" value={form.campo_destino} onChange={(e) => set('campo_destino', e.target.value)}>
+                  <option value="">Elegir campo...</option>
+                  {campos.filter((c) => c.tipo === 'cliente').map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                </select>
+              </div>
+              <div className="field">
+                <label>Campo número de serie *</label>
+                <select className="input" value={form.campo_serie} onChange={(e) => set('campo_serie', e.target.value)}>
+                  <option value="">Elegir campo...</option>
+                  {campos.filter((c) => ['texto', 'texto_largo'].includes(c.tipo)).map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                </select>
+              </div>
+              <div className="field" style={{ gridColumn: '1 / -1' }}>
+                <label>Motivo / falla de la orden</label>
+                <textarea className="input" rows={2} value={form.mensaje} onChange={(e) => set('mensaje', e.target.value)} placeholder="Orden creada automáticamente por una regla." />
+              </div>
+            </>
+          ) : form.accion === 'webhook' ? (
             <div className="field" style={{ gridColumn: '1 / -1' }}>
               <label>URL del webhook *</label>
               <input className="input" type="url" value={form.mensaje} onChange={(e) => set('mensaje', e.target.value)} placeholder="https://ejemplo.com/bertika/webhook" />

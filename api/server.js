@@ -587,6 +587,7 @@ async function asegurarCodigos() {
   await query("ALTER TABLE listas ADD COLUMN IF NOT EXISTS aprobadores JSONB DEFAULT '[]'::jsonb");
   await query("ALTER TABLE listas ADD COLUMN IF NOT EXISTS permisos_categorias JSONB DEFAULT '{}'::jsonb");
   await query('ALTER TABLE ordenes ADD COLUMN IF NOT EXISTS activo_id TEXT');
+  await query('ALTER TABLE lista_reglas ADD COLUMN IF NOT EXISTS campo_serie TEXT');
   await query('ALTER TABLE lista_aprobaciones ADD COLUMN IF NOT EXISTS paso INTEGER DEFAULT 0');
   await query('ALTER TABLE lista_aprobaciones ADD COLUMN IF NOT EXISTS aprobador TEXT');
   await query('ALTER TABLE lista_aprobaciones ADD COLUMN IF NOT EXISTS fecha_limite TIMESTAMPTZ');

@@ -60,6 +60,7 @@ export const TIPOS_CAMPO = [
   { tipo: 'telefono', etiqueta: 'Teléfono' },
   { tipo: 'url', etiqueta: 'Enlace' },
   { tipo: 'persona', etiqueta: 'Persona' },
+  { tipo: 'cliente', etiqueta: 'Cliente' },
   { tipo: 'adjunto', etiqueta: 'Adjunto' },
   { tipo: 'imagen', etiqueta: 'Imagen' },
   { tipo: 'relacion', etiqueta: 'Relación con otra lista' },
@@ -170,6 +171,13 @@ export function validarRegistro(campos, datos, { parcial = false } = {}) {
       salida[id] = texto;
       continue;
     }
+    if (tipo === 'cliente') {
+      const cliente = esObjeto(valor) ? valor : { id: valor };
+      const idCliente = String(cliente.id || '').trim().slice(0, 80);
+      if (!idCliente.startsWith('cli_')) return { ok: false, error: `“${campo.nombre}”: elegí un cliente válido.` };
+      salida[id] = { id: idCliente, nombre: String(cliente.nombre || cliente.etiqueta || '').slice(0, 160) };
+      continue;
+    }
     if (tipo === 'numero' || tipo === 'moneda') {
       const numero = Number(valor);
       if (!Number.isFinite(numero)) return { ok: false, error: `“${campo.nombre}” debe ser un número.` };
@@ -262,6 +270,7 @@ export function valorVisible(campo, valor) {
   if (esVacio(valor)) return '';
   if (campo?.tipo === 'checkbox') return valor ? 'Sí' : 'No';
   if (campo?.tipo === 'multiseleccion') return Array.isArray(valor) ? valor.join(', ') : String(valor);
+  if (campo?.tipo === 'cliente' && esObjeto(valor)) return valor.nombre || valor.id || '';
   if (campo?.tipo === 'moneda') {
     const n = Number(valor);
     return Number.isFinite(n)

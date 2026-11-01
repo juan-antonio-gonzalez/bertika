@@ -401,6 +401,7 @@ CREATE TABLE IF NOT EXISTS lista_reglas (
   asunto TEXT,
   accion TEXT DEFAULT 'email',
   campo_destino TEXT,
+  campo_serie TEXT,
   mensaje TEXT,
   creada_por TEXT,
   creado_en TIMESTAMPTZ DEFAULT now()
