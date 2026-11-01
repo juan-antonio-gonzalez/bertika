@@ -352,7 +352,7 @@ ventasRouter.post('/cotizaciones/:id/decision', authRequired, permisoRequerido('
 async function decidirCotizacion(req, res, q, o, decision, motivo) {
   const estado = decision === 'aceptada' ? 'aceptada' : decision === 'rechazada' ? 'rechazada' : null;
   if (!estado) return res.status(400).json({ error: 'Elegí aceptar o rechazar.' });
-  if (cotizacionVencida(q)) {
+  if (q.estado === 'vencida' || cotizacionVencida(q)) {
     await query("UPDATE cotizaciones SET estado='vencida', actualizado_en=now() WHERE id=$1", [q.id]);
     return res.status(410).json({ error: 'La cotización venció. Pedí una nueva versión.' });
   }
