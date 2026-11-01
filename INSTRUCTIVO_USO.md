@@ -569,7 +569,7 @@ Al enviar se genera un link público:
 https://bertika.com/cotizacion-venta/<token>
 ```
 
-El cliente puede ver la cotización, aceptarla o rechazarla. Al aceptar:
+El cliente puede ver la cotización, aceptarla o rechazarla dentro del plazo. Al aceptar:
 
 - La cotización queda aceptada.
 - La oportunidad pasa a **Ganado**.
@@ -577,7 +577,8 @@ El cliente puede ver la cotización, aceptarla o rechazarla. Al aceptar:
 
 ### Pasar a la orden
 
-Con la oportunidad abierta y el número de serie cargado, usar **Crear orden**.
+Con la oportunidad abierta y el número de serie cargado, usar **Crear orden**. Hace falta
+`crear_orden` además de `ventas_cerrar`.
 Se crea la orden en estado `received`, vinculada al cliente, la oportunidad y la cotización.
 
 ### Bandeja Hoy

@@ -41,6 +41,18 @@ todo (`.github/workflows/ci.yml`) con un servicio PostgreSQL 16.
 El smoke E2E de navegador verifica login, menú, Ventas, las listas de Taller, la búsqueda
 global y el buscador del menú. Es **solo lectura**: no crea ni modifica datos.
 
+## Seguridad y operación
+
+- Deploy con **verificación estricta**: falla si el frontend, las tarjetas, `/api/health` o
+  `/api/public/stats` no responden 200, y exige que el servicio esté activo.
+- **CSP y cabeceras de seguridad** en nginx para el SPA, además de Helmet en la API.
+- **Rate limit** en login, formularios públicos, cotizaciones públicas y contacto.
+- **Migraciones versionadas** para el hardening de Ventas y schema `schema_migrations`.
+- Cotizaciones con **vencimiento**, nueva versión y link público.
+- Respuesta **410** para cotizaciones vencidas.
+- **Índices** para oportunidades, cotizaciones y búsqueda de listas.
+- **CI** con auditoría de dependencias críticas.
+
 ## Robustez operativa (Fase 1)
 
 - **Outbox de WhatsApp**: todo mensaje se guarda antes de enviarse; los errores de red,

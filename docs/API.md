@@ -294,12 +294,12 @@ y `ventas_todos`.
 
 | Método | Ruta | Descripción |
 | --- | --- | --- |
-| `GET` | `/oportunidades?q=&etapa=` | Pipeline visible para el usuario. |
+| `GET` | `/oportunidades?q=&etapa=&limit=&offset=` | Pipeline visible, paginado (máx. 200). |
 | `POST` | `/oportunidades` | Crea una oportunidad con o sin cliente. |
 | `GET` | `/oportunidades/:id` | Oportunidad, cotizaciones y eventos. |
 | `PATCH` | `/oportunidades/:id` | Edita datos y etapa. |
 | `POST` | `/oportunidades/:id/perder` | Cierra con motivo obligatorio. |
-| `POST` | `/oportunidades/:id/orden` | Crea la orden de taller (requiere cliente y serie). |
+| `POST` | `/oportunidades/:id/orden` | Crea la orden de taller. Requiere cliente, serie, `ventas_cerrar` y `crear_orden`. |
 
 Campos principales: `titulo`, `cliente_id` o datos del prospecto, `etapa`, `monto_estimado`,
 `probabilidad`, `cierre_estimado`, `responsable`, `origen`, `serie`, `activo_id`,
@@ -316,10 +316,16 @@ Campos principales: `titulo`, `cliente_id` o datos del prospecto, `etapa`, `mont
 | `POST` | `/cotizaciones/:id/enviar` | Genera token y link público. |
 | `POST` | `/cotizaciones/:id/decision` | Acepta o rechaza desde el panel. |
 | `GET` | `/public/cotizacion-venta/:token` | Cotización pública; marca vista. |
-| `POST` | `/public/cotizacion-venta/:token` | Acepta o rechaza; actualiza la oportunidad. |
+| `POST` | `/public/cotizacion-venta/:token` | Acepta o rechaza; 410 si venció; actualiza la oportunidad. |
 
 Body de cotización: `{ items: [{ descripcion, cantidad, precio_unitario, descuento }],
 descuento, iva_pct, validez_dias }`. El servidor recalcula subtotal, IVA y total.
+
+La validez se controla: una cotización enviada fuera de plazo pasa a `vencida` y ya no
+puede aceptarse. El panel permite crear una **nueva versión** de una cotización enviada.
+
+`GET /listas/:id/registros` acepta `limit` (máx. 500) y `offset`; la respuesta incluye el
+total histórico.
 
 ### Panel
 

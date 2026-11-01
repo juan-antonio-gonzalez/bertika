@@ -298,7 +298,21 @@ bash scripts/backup-db.sh
 # (el mismo script, con --en-servidor --json, y baja la copia al navegador)
 ```
 
-## 12. Pruebas antes de deployar
+## 12. Verificación del deploy y seguridad
+
+`scripts/deploy.sh` no termina en verde si:
+
+- `/`, `/tarjetas/`, `/api/health` o `/api/public/stats` no responden 200.
+- El servicio `bertika-api` no queda activo.
+- La verificación falla después de 15 reintentos de 2 segundos.
+
+nginx aplica CSP, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`,
+`Permissions-Policy` y HSTS. La CSP permite mapas, GTM y estilos inline de React.
+
+Las migraciones nuevas se registran en `schema_migrations`. Las migraciones históricas
+siguen en el arranque de la API; el próximo paso es moverlas a archivos versionados.
+
+## 13. Pruebas antes de deployar
 
 ```bash
 npm run build
