@@ -1532,3 +1532,52 @@ details[open] > .cz-summary::after { content: ' –'; }
 .ventas-card:hover { border-color: var(--amber); }
 .ventas-next { font-size: 10.5px; color: var(--amber); display: flex; gap: 4px; align-items: center; margin-top: 4px; }
 @media (max-width: 900px) { .ventas-pipeline { grid-template-columns: repeat(5, 220px); } }
+
+/* WhatsApp Web: bandeja de interacción a pantalla completa */
+.wa-tabs { padding: 2px 0; }
+.wa-panel {
+  height: calc(100dvh - 235px);
+  min-height: 560px;
+  grid-template-columns: 360px minmax(0, 1fr);
+  border-radius: 12px;
+  box-shadow: 0 8px 30px rgba(10, 23, 64, .06);
+}
+.wa-lista { max-height: none; background: #fff; overflow-y: auto; }
+.wa-conv { position: relative; padding: 10px 12px 10px 58px; min-height: 62px; }
+.wa-conv .wa-avatar { position: absolute; left: 12px; top: 12px; }
+.wa-avatar {
+  width: 38px; height: 38px; border-radius: 50%; display: inline-grid; place-items: center;
+  background: #e7f0ed; color: #075e54; font-weight: 800; font-size: 12px; flex: 0 0 auto;
+}
+.wa-avatar-lg { width: 44px; height: 44px; font-size: 14px; }
+.wa-hilo { height: 100%; background: #efeae2; }
+.wa-hilo-head { padding: 9px 14px; background: #f0f2f5; border-bottom: 1px solid #e1e5e8; gap: 9px; align-items: center; }
+.wa-hilo-head b { font-size: 14.5px; }
+.wa-mensajes {
+  max-height: none !important; flex: 1; padding: 18px 22px; gap: 3px;
+  background-color: #efeae2;
+  background-image: radial-gradient(rgba(255,255,255,.45) 1px, transparent 1px);
+  background-size: 18px 18px;
+}
+.wa-msg {
+  max-width: min(72%, 620px); padding: 7px 10px 6px; border-radius: 8px; font-size: 13px;
+  background: #fff; border: 0; box-shadow: 0 1px 1px rgba(10,23,64,.10); align-self: flex-start;
+  white-space: pre-wrap; line-height: 1.4;
+}
+.wa-msg.out { background: #d9fdd3; align-self: flex-end; }
+.wa-msg.in { border-top-left-radius: 2px; }
+.wa-msg.out { border-top-right-radius: 2px; }
+.wa-meta { font-size: 10px; color: #667781; margin-top: 3px; text-align: right; }
+.wa-composer { background: #f0f2f5; border-top: 1px solid #e1e5e8; align-items: center; }
+.wa-composer .input { background: #fff; border-radius: 20px; }
+.wa-detalles { background: #f7f8f9; border-bottom: 1px solid #e1e5e8; max-height: 34vh; overflow-y: auto; padding-bottom: 8px; }
+.wa-detalles .wa-orden { margin: 8px 14px 0; }
+.wa-detalles .wa-crm { background: #f7f8f9; border-bottom: 0; }
+.wa-detalles .wa-notas { background: #f7f8f9; }
+@media (max-width: 900px) {
+  .wa-panel { height: auto; min-height: 0; grid-template-columns: 1fr; }
+  .wa-lista { max-height: 260px; border-right: 0; border-bottom: 1px solid var(--line); }
+  .wa-hilo { height: 68vh; min-height: 460px; }
+  .wa-mensajes { padding: 12px; }
+  .wa-msg { max-width: 88%; }
+}

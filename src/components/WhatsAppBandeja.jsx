@@ -9,6 +9,7 @@ import {
 import { aplicarVariables, enlaceSeguimiento, VARIABLES_RESPUESTA } from '../data/respuestas.js';
 
 const listaDe = (texto) => String(texto || '').split(', ').filter(Boolean);
+const iniciales = (nombre) => String(nombre || '?').trim().split(/\s+/).slice(0, 2).map((x) => x[0]).join('').toUpperCase();
 
 // Escapa un texto para usarlo dentro de una expresion regular.
 const escaparRegex = (t) => String(t || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -47,6 +48,8 @@ export default function WhatsAppBandeja() {
   const [prueba, setPrueba] = useState({ telefono: '', texto: 'Hola, esta es una prueba del canal de WhatsApp de Bertika.' });
   const [avisos, setAvisos] = useState(null);
   const [vista, setVista] = useState('bandeja');
+  const [configAbierta, setConfigAbierta] = useState(false);
+  const [detallesAbiertos, setDetallesAbiertos] = useState(false);
   const [embudo, setEmbudo] = useState([]);
   const [revisando, setRevisando] = useState(false);
   // Rango y alcance de la exportación a CSV (admin).
@@ -664,6 +667,8 @@ export default function WhatsAppBandeja() {
 
   return (
     <div className="col">
+      {configAbierta && (
+      <>
       {/* Estado del canal */}
       <div className="card">
         <div className="row between wrap" style={{ gap: 10 }}>
@@ -819,8 +824,11 @@ export default function WhatsAppBandeja() {
         </div>
       )}
 
+      </>
+      )}
+
       {/* Bandeja / Embudo comercial / Métricas */}
-      <div className="row wrap" style={{ gap: 8, alignItems: 'center' }}>
+      <div className="row wrap wa-tabs" style={{ gap: 8, alignItems: 'center' }}>
         <button className={`chip${vista === 'bandeja' ? ' on' : ''}`} onClick={() => setVista('bandeja')}>
           <Icon name="mail" size={12} /> Bandeja
         </button>
@@ -832,6 +840,9 @@ export default function WhatsAppBandeja() {
         </button>
         <button className={`chip${vista === 'atencion' ? ' on' : ''}`} onClick={() => setVista('atencion')}>
           <Icon name="clock" size={12} /> Atención
+        </button>
+        <button className={`chip${configAbierta ? ' on' : ''}`} onClick={() => setConfigAbierta((v) => !v)} title="Canal, prueba, avisos y automatizaciones">
+          <Icon name="gear" size={12} /> Ajustes
         </button>
         {vista === 'embudo' && (
           <span className="muted" style={{ fontSize: 12 }}>
@@ -1121,6 +1132,7 @@ export default function WhatsAppBandeja() {
           )}
           {convs.map((c) => (
             <button key={c.id} className={`wa-conv${sel === c.id ? ' on' : ''}`} onClick={() => abrir(c.id)}>
+              <span className="wa-avatar">{iniciales(c.cliente_nombre || c.nombre_perfil || c.telefono)}</span>
               <div className="row between" style={{ gap: 6 }}>
                 <b style={{ fontSize: 13 }}>{c.cliente_nombre || c.nombre_perfil || c.telefono}</b>
                 {c.no_leidos > 0 && <span className="badge amber">{c.no_leidos}</span>}
@@ -1145,8 +1157,9 @@ export default function WhatsAppBandeja() {
             <p className="muted" style={{ padding: 18, fontSize: 13 }}>Elegí una conversación para verla.</p>
           ) : (
             <>
-              <div className="row between wrap" style={{ padding: '10px 14px', borderBottom: '1px solid var(--line)', gap: 8 }}>
-                <div>
+              <div className="wa-hilo-head row between wrap">
+                <span className="wa-avatar wa-avatar-lg">{iniciales(hilo.cliente?.nombre || hilo.conversacion.nombre_perfil || hilo.conversacion.telefono)}</span>
+                <div className="grow">
                   <b>{hilo.cliente?.nombre || hilo.conversacion.nombre_perfil || hilo.conversacion.telefono}</b>
                   <div className="muted" style={{ fontSize: 12 }}>
                     {hilo.conversacion.telefono}
@@ -1191,8 +1204,13 @@ export default function WhatsAppBandeja() {
                     ))}
                   </div>
                 )}
+                <button type="button" className={`btn sm${detallesAbiertos ? ' primary' : ' ghost'}`} onClick={() => setDetallesAbiertos((v) => !v)}>
+                  <Icon name="info" size={13} /> Detalles
+                </button>
               </div>
 
+              {detallesAbiertos && (
+              <div className="wa-detalles">
               {/* Orden vinculada: el puente entre el chat y la venta del taller. */}
               <div className="wa-orden" style={{ margin: '10px 14px 0', padding: '10px 12px', border: '1px solid var(--line)', borderRadius: 10, background: 'var(--bg2, #f8f9fb)' }}>
                 {hilo.orden ? (
@@ -1355,7 +1373,10 @@ export default function WhatsAppBandeja() {
                 )}
               </div>
 
-              <div className="row" style={{ padding: 10, gap: 8, borderTop: '1px solid var(--line)', position: 'relative' }}>
+              </div>
+              )}
+
+              <div className="wa-composer row" style={{ padding: 10, gap: 8, borderTop: '1px solid var(--line)', position: 'relative' }}>
                 {atajosAbiertos && (
                   <div className="atajos">
                     <div className="muted" style={{ fontSize: 11, padding: '2px 8px' }}>
