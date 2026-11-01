@@ -81,6 +81,14 @@ async function evaluarReglas(lista, campos, datos, evento, registroId, req) {
         if (clienteId && serie) {
           const cliente = await one('SELECT id FROM clientes WHERE id = $1 AND deleted_at IS NULL', [clienteId]);
           if (cliente) {
+            const batExistente = await one('SELECT id FROM baterias WHERE numero_serie = $1', [serie]);
+            if (!batExistente) {
+              await query(
+                `INSERT INTO baterias (id, numero_serie, tipo, voltaje, capacidad, aplicacion, marca, modelo, equipo, fecha_fabricacion, cliente_id, ciclos_estimados, estado_vida)
+                 VALUES ($1,$2,'Plomo-Acido','12V',60,'Automotriz','Generica','Estandar',$3,$4,$5,300,'activa')`,
+                [idNuevo('bat'), serie, serie, new Date().toISOString().slice(0, 10), cliente.id]
+              );
+            }
             const ordId = idNuevo('ord');
             const codigo = `AUTO-${Date.now().toString(36).toUpperCase()}-${randomUUID().slice(0, 6).toUpperCase()}`;
             const evId = idNuevo('ev');
