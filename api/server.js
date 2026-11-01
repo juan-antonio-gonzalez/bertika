@@ -592,6 +592,7 @@ async function asegurarCodigos() {
     actualizado_en TIMESTAMPTZ
   )`);
   await query('CREATE INDEX IF NOT EXISTS idx_lista_formularios_token ON lista_formularios (token)');
+  await query('ALTER TABLE lista_formularios ADD COLUMN IF NOT EXISTS confirmar_email BOOLEAN DEFAULT FALSE');
   await query(`CREATE TABLE IF NOT EXISTS lista_aprobaciones (
     id TEXT PRIMARY KEY,
     lista_id TEXT NOT NULL,

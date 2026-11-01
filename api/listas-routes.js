@@ -466,15 +466,16 @@ listasRouter.put('/listas/:id/formulario', authRequired, async (req, res) => {
   const titulo = limStr(req.body?.titulo, 120) || `Formulario de ${lista.nombre}`;
   const descripcion = limStr(req.body?.descripcion, 400) || null;
   const activo = req.body?.activo !== false;
+  const confirmarEmail = normalizarBooleano(req.body?.confirmar_email) === true;
   const existente = await one('SELECT token FROM lista_formularios WHERE lista_id = $1', [lista.id]);
   const token = existente?.token || randomUUID().replace(/-/g, '').slice(0, 24);
   const fila = await one(
-    `INSERT INTO lista_formularios (id, lista_id, token, titulo, descripcion, campos, activo, creado_por)
-     VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8)
+    `INSERT INTO lista_formularios (id, lista_id, token, titulo, descripcion, campos, activo, confirmar_email, creado_por)
+     VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9)
      ON CONFLICT (lista_id) DO UPDATE SET titulo = EXCLUDED.titulo, descripcion = EXCLUDED.descripcion,
-       campos = EXCLUDED.campos, activo = EXCLUDED.activo, actualizado_en = now()
+       campos = EXCLUDED.campos, activo = EXCLUDED.activo, confirmar_email = EXCLUDED.confirmar_email, actualizado_en = now()
      RETURNING *`,
-    [idNuevo('form'), lista.id, token, titulo, descripcion, JSON.stringify(ids), activo, req.user.email]
+    [idNuevo('form'), lista.id, token, titulo, descripcion, JSON.stringify(ids), activo, confirmarEmail, req.user.email]
   );
   await auditar({ req, tabla: 'lista_formularios', registroId: fila.id, accion: 'guardar', detalle: lista.id });
   return res.json({ ...fila, url: `${PUBLIC_URL}/f/${token}` });
@@ -536,6 +537,18 @@ listasRouter.post('/public/formulario/:token', publicFormLimiter, async (req, re
     await guardarHistorial(client, f.lista_id, id, datosFinal, 'formulario-publico', 'crear');
   });
   if (aprobacionAuto && lista) avisarAprobadores(lista, aprobacionAuto, 'formulario-publico');
+  if (f.confirmar_email) {
+    const campoEmail = campos.find((c) => c.tipo === 'email' && datosFinal[c.id]);
+    const email = campoEmail ? String(datosFinal[campoEmail.id] || '').trim() : '';
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      avisarPorMail(
+        email,
+        `Bertika · recibimos tu respuesta en ${f.lista_nombre}`,
+        `Gracias por escribirnos. Recibimos tu respuesta en ${f.lista_nombre}.`,
+        `<p>Gracias por escribirnos.</p><p>Recibimos tu respuesta en <b>${f.lista_nombre}</b>.</p>`
+      );
+    }
+  }
   if (lista) evaluarReglas(lista, todos, datosFinal, 'crear', id, req);
   await auditar({ req, tabla: 'lista_registros', registroId: id, accion: 'crear_formulario', detalle: f.id });
   return res.status(201).json({ ok: true, aprobacion_estado: estadoAprobacion });

@@ -10,6 +10,7 @@ export default function FormularioPublicoModal({ lista, onClose }) {
   const [titulo, setTitulo] = useState(`Formulario de ${lista.nombre}`);
   const [descripcion, setDescripcion] = useState('');
   const [activo, setActivo] = useState(true);
+  const [confirmarEmail, setConfirmarEmail] = useState(false);
   const [cargando, setCargando] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -28,6 +29,7 @@ export default function FormularioPublicoModal({ lista, onClose }) {
           setTitulo(r.formulario.titulo || `Formulario de ${lista.nombre}`);
           setDescripcion(r.formulario.descripcion || '');
           setActivo(r.formulario.activo !== false);
+          setConfirmarEmail(r.formulario.confirmar_email === true);
           setUrl(r.formulario.url || '');
         } else {
           setSeleccion((r.campos || []).map((c) => c.id));
@@ -48,7 +50,7 @@ export default function FormularioPublicoModal({ lista, onClose }) {
     try {
       const r = await api(`/listas/${lista.id}/formulario`, {
         method: 'PUT',
-        body: { titulo, descripcion, campos: seleccion, activo },
+        body: { titulo, descripcion, campos: seleccion, activo, confirmar_email: confirmarEmail },
       });
       setForm(r);
       setUrl(r.url);
@@ -111,6 +113,16 @@ export default function FormularioPublicoModal({ lista, onClose }) {
             <input type="checkbox" checked={activo} onChange={(e) => setActivo(e.target.checked)} />
             <span>Formulario activo</span>
           </label>
+          <label className="check-line" style={{ textTransform: 'none', letterSpacing: 0 }}>
+            <input
+              type="checkbox"
+              checked={confirmarEmail}
+              onChange={(e) => setConfirmarEmail(e.target.checked)}
+              disabled={!campos.some((c) => c.tipo === 'email' && seleccion.includes(c.id))}
+            />
+            <span>Enviar email de confirmación al responder</span>
+          </label>
+          <small className="ayuda">Requiere publicar un campo de tipo Email. Se envía solo si la respuesta trae un correo válido.</small>
           <div className="row" style={{ gap: 6 }}>
             <button type="submit" className="btn primary sm" disabled={busy || !seleccion.length}>
               <Icon name="check" size={13} /> {busy ? 'Guardando...' : 'Guardar formulario'}

@@ -410,6 +410,7 @@ CREATE TABLE IF NOT EXISTS lista_formularios (
   descripcion TEXT,
   campos JSONB DEFAULT '[]'::jsonb,
   activo BOOLEAN DEFAULT TRUE,
+  confirmar_email BOOLEAN DEFAULT FALSE,
   creado_por TEXT,
   creado_en TIMESTAMPTZ DEFAULT now(),
   actualizado_en TIMESTAMPTZ
