@@ -16,7 +16,8 @@ Guía de la infraestructura real desplegada en el VPS, despliegue, backups y sol
 | Frontend | estático en `/var/www/bertika/` (build de Vite) |
 | Backend | servicios `bertika-api.service` (systemd) en `127.0.0.1:3001` |
 | Seed data | `/var/www/bertika/src/data/` (copia de la fuente de verdad) |
-| Fotos | `/var/www/bertika/uploads/` |
+| Fotos y legados | `/var/www/bertika/uploads/` |
+| Adjuntos privados de listas | `/var/www/bertika/api/uploads-private/` (fuera de nginx) |
 | Backups | `/var/backups/bertika/` (cron diario del servidor + botón manual del panel `/respaldos`) |
 | Env (secretos) | `/etc/bertika/bertika-api.env` (modo 600, fuera del árbol web) |
 
@@ -39,6 +40,7 @@ DATABASE_URL=postgres://bertika:<PASS>@localhost:5432/bertika
 JWT_SECRET=<hex-64>
 ALLOWED_ORIGINS=https://bertika.com,https://www.bertika.com
 UPLOAD_DIR=/var/www/bertika/uploads
+PRIVATE_UPLOAD_DIR=/var/www/bertika/api/uploads-private
 PUBLIC_URL=https://bertika.com
 
 # Robustez (Fase 1) - opcionales pero recomendados
@@ -134,7 +136,7 @@ Qué hace `scripts/deploy.sh`:
 1. `npm run build` (frontend → `dist/`).
 2. `rsync --delete dist/` → `/var/www/bertika/` **excluyendo** `api`, `src`, `uploads`
    (para no borrar backend, seed ni fotos).
-3. `rsync api/` → `/var/www/bertika/api/` (excluye `node_modules` y `.env`).
+3. `rsync api/` → `/var/www/bertika/api/` (excluye `node_modules`, `.env`, `uploads` y `uploads-private`).
 4. `rsync src/data/` → `/var/www/bertika/src/data/` (fuente del seed).
 5. En el VPS: `npm ci --omit=dev` + `systemctl restart bertika-api`.
 6. Verificación HTTP de `https://bertika.com`, `/api/public/stats` y el hostname del VPS.
@@ -192,7 +194,8 @@ Además del cron del servidor, el administrador puede respaldar **cuando quiere*
 **Sistema → Respaldos** (`/respaldos`):
 
 - **Respaldar ahora**: corre el respaldo en el VPS y baja el `.sql.gz` al navegador en el
-  mismo click (queda en la carpeta de Descargas). Las fotos van en un `.tar.gz` aparte.
+  mismo click (queda en la carpeta de Descargas). Las fotos y los adjuntos privados de
+  listas van en `.tar.gz` aparte (`uploads_*.tar.gz` y `privados_*.tar.gz`).
 - Debajo, la lista de copias del servidor (tamaño y fecha) con un botón para bajar cada una.
 
 No hay ninguna tarea programada en la Mac: la bajada automática diaria a las 09:15
@@ -229,7 +232,7 @@ systemctl start bertika-api
 Un respaldo en el mismo servidor no protege contra perder el servidor. Las copias son:
 
 ```bash
-bash scripts/backup-db.sh --traer                    # trae la última copia a tu Mac (backups/)
+bash scripts/backup-db.sh --traer                    # trae base, fotos y adjuntos privados a tu Mac (backups/)
 bash scripts/backup-db.sh --configurar-nube <destino>  # copia automática en la nube
 bash scripts/backup-db.sh --nube                     # prueba la copia a la nube ahora
 ```
@@ -294,3 +297,22 @@ bash scripts/backup-db.sh
 # Backup manual desde el panel: Sistema → Respaldos → «Respaldar ahora»
 # (el mismo script, con --en-servidor --json, y baja la copia al navegador)
 ```
+
+## 12. Pruebas antes de deployar
+
+```bash
+npm run build
+npm run lint
+npm test
+BERTIKA_UI_EMAIL=... BERTIKA_UI_PASSWORD=... npm run test:ui
+```
+
+El smoke UI es solo lectura: login, menú, listas de Taller, búsqueda global y buscador del
+menú. Para la integración API se usa una base descartable:
+
+```bash
+TEST_DATABASE_URL=postgres://.../bertika_test npm run test:integracion
+```
+
+Los adjuntos privados de listas **no** se sirven por nginx: pasan por
+`GET /api/lista-adjuntos/:id`, que valida sesión y permiso de lista.

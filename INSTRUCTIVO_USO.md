@@ -39,8 +39,10 @@ Comandos adicionales:
 | --- | --- |
 | `npm run build` | Genera la version de produccion en `dist/` |
 | `npm run preview` | Sirve la version de produccion (despues de `build`) |
-| `npx oxlint` | Revisa el codigo (no hay script `lint` en `package.json`) |
-| `npm test` | Tests del cotizador de visitas y del proveedor de dolar (sin dependencias) |
+| `npm run lint` | Revisa el codigo con oxlint |
+| `npm test` | Tests unitarios (listas, CSV, contraseñas, cotizador, CRM, etc.) |
+| `npm run test:integracion` | API + PostgreSQL descartable (`TEST_DATABASE_URL`) |
+| `npm run test:ui` | Smoke E2E de navegador; requiere credenciales por entorno |
 | `bash scripts/checkpoint.sh "mensaje"` | Snapshot local: commitea todo (tracked + untracked), sin push |
 | `bash scripts/deploy.sh` | Build + deploy a produccion (no existe script `npm run deploy`) |
 
@@ -420,3 +422,95 @@ y **Cambiar preferencias**.
 
 Los datos registrales que faltan (razón social, CUIT, domicilio legal e inscripción en la
 AAIP) figuran **en trámite** en los textos hasta que se completen.
+
+---
+
+## 14. Listas dinámicas (`/listas`)
+
+El modulo **Listas** permite crear tablas y formularios por area, sin tocar codigo.
+
+### Crear una lista
+
+1. Entrar a **Listas**.
+2. Elegir el area: **Taller**, **Ventas** o **Administracion**.
+3. **Nueva lista**.
+4. Elegir una **plantilla** (Materiales, Herramientas, Insumos, Prospectos, Oportunidades,
+   Actividades o una plantilla propia) o empezar vacia.
+5. Definir campos en **Configurar → Campos**.
+6. Crear vistas en **Vistas**: grilla, formulario, Kanban, calendario o galeria.
+
+### Campos
+
+Tipos disponibles:
+
+- Texto corto/largo, numero, moneda, fecha.
+- Seleccion unica/multiple, si/no.
+- Email, telefono, URL.
+- Persona (equipo interno).
+- **Cliente** (usa la cartera real de clientes).
+- Adjunto e imagen.
+- Relacion con otra lista.
+- Calculado.
+
+Cada campo puede ser obligatorio, unico y **oculto para determinadas categorias**.
+El campo oculto no aparece en la tabla, el formulario, el historial ni la API.
+
+### Permisos
+
+En **Configurar → Acceso**:
+
+- Categorias que ven la lista.
+- Categorias de **solo lectura**.
+- **Permisos por categoria**: crear, editar, borrar y administrar vistas.
+- Permisos por fila: todos, solo el creador o solo el responsable.
+
+No se puede superar el permiso del area. El admin siempre ve todo.
+
+### Formularios publicos
+
+En **Configurar → Formulario** se elige que campos publicar y se obtiene un enlace `/f/:token`.
+El formulario puede pedir confirmacion por email. Si la lista exige aprobacion, el registro
+queda pendiente y se avisa al aprobador.
+
+### Aprobaciones
+
+- **Aprobador asignado**: email y dias para aprobar.
+- **Aprobadores en cadena**: uno por linea; se aprueban en orden.
+- Bandeja **Aprobaciones pendientes** con paso, responsable y vencimiento.
+- Un registro recien queda aprobado al terminar la cadena.
+
+### Plantillas propias
+
+En **Configurar → Guardar como plantilla** se guardan los campos y las vistas compartidas.
+La plantilla aparece en **Nueva lista → Empezar desde** para esa area.
+
+### Automatizaciones
+
+**Configurar → Reglas** permite:
+
+- Enviar email.
+- Enviar WhatsApp.
+- Cambiar un campo.
+- Enviar a un webhook HTTPS.
+- **Crear una orden de taller**: requiere un campo **Cliente** y un campo de serie; crea la
+  orden en `received` y la bateria si no existe.
+
+### Adjuntos
+
+- Los adjuntos se guardan en almacenamiento privado.
+- La descarga exige sesion y permiso sobre la lista.
+- Los formularios publicos no aceptan adjuntos.
+
+### Búsqueda y menú
+
+- **Busqueda global** en la portada de Listas.
+- **Favoritos** y **Recientes** en el menu, sincronizados por usuario.
+- El buscador del menu filtra areas y listas.
+
+### Activos y ordenes
+
+- En la ficha del cliente se cargan **activos/equipos/arrancadores**.
+- Se pueden editar y archivar.
+- Al crear una orden se puede elegir un activo del cliente.
+- El filtro **Con relacion / Sin relacion** considera ordenes, baterias y activos.
+

@@ -9,6 +9,7 @@ Aplicacion web para gestionar el ciclo completo de una bateria en el taller: rec
 - **Fase 1 — Robustez:** ✅ implementada y en producción (cola de salida de WhatsApp, auditoría, salud/alertas, CSV seguro, tests y CI).
 - **Fase 2 — CRM comercial:** ✅ implementada y en producción (cotizar desde el chat, embudo automático, SLA/reparto, automatizaciones de seguimiento).
 - **Privacidad, cookies y legales:** ✅ implementada (páginas legales, banner de consentimiento, registro con hash, retiro de derechos, versionado y panel de privacidad). Ver [docs/PRIVACIDAD.md](docs/PRIVACIDAD.md).
+- **Listas dinámicas (tipo SharePoint/MS Lists):** ✅ implementada y en producción. Áreas, listas, campos, vistas, formularios públicos, permisos por lista/categoría/campo, aprobaciones, plantillas, adjuntos privados, búsqueda global y automatizaciones. Ver [docs/API.md](docs/API.md) y el [manual](INSTRUCTIVO_USO.md).
 - **Fase 3 y pendientes de infraestructura:** ver [docs/FUTURO.md](docs/FUTURO.md).
 
 ## Como ejecutar
@@ -27,11 +28,17 @@ npm run lint     # oxlint sobre src, api y scripts
 npm test                  # lógica pura: cotizador, CRM, permisos, CSV, auditoría/outbox
 TEST_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/bertika_test \
   npm run test:integracion  # API + PostgreSQL real (la base se borra y recrea)
+
+BERTIKA_UI_EMAIL=... BERTIKA_UI_PASSWORD=... npm run test:ui  # smoke E2E con Chrome
 ```
 
 Los tests de integración levantan la API, usan un **Meta simulado** (no gastan mensajes)
-y cubren login, permisos, auditoría, outbox con reintentos, export CSV y webhook. En GitHub
-Actions corre todo (`.github/workflows/ci.yml`) con un servicio PostgreSQL 16.
+y cubren login, permisos, auditoría, outbox con reintentos, export CSV, webhook y los
+flujos de Listas (lista, campo, registro, búsqueda y plantillas). En GitHub Actions corre
+todo (`.github/workflows/ci.yml`) con un servicio PostgreSQL 16.
+
+El smoke E2E de navegador verifica login, menú, las listas de Taller, la búsqueda global
+y el buscador del menú. Es **solo lectura**: no crea ni modifica datos.
 
 ## Robustez operativa (Fase 1)
 
@@ -57,6 +64,29 @@ Actions corre todo (`.github/workflows/ci.yml`) con un servicio PostgreSQL 16.
 - **Automatizaciones de seguimiento**: reglas configurables (presupuesto sin respuesta y
   batería lista sin retirar) que crean **tareas** idempotentes cada 6 horas; no mandan
   mensajes solas. Se revisan también a mano desde la bandeja.
+
+## Listas dinámicas
+
+El módulo `/listas` permite crear tablas y formularios por área sin tocar código:
+
+- **Áreas y listas** separadas para Taller, Ventas y Administración.
+- **Campos**: texto, número, moneda, fecha, selección, checkbox, email, teléfono, URL,
+  persona, cliente, adjunto, imagen, relación con otra lista y calculado.
+- **Vistas**: grilla, formulario, Kanban, calendario y galería; compartidas o privadas.
+- **Permisos**: por área, por lista y por categoría (incluido solo lectura y permisos
+  granulares), por fila y por campo (un campo puede ocultarse a una categoría).
+- **Aprobaciones**: aprobador asignado, plazo y cadena de aprobadores.
+- **Formularios públicos** con token, confirmación por email y aprobación automática.
+- **Adjuntos privados**: se guardan fuera de `/uploads` y se descargan con token y permiso
+  de lista.
+- **Plantillas**: seis base y plantillas propias guardadas desde una lista.
+- **Automatizaciones**: email, WhatsApp, cambio de campo, webhook HTTPS y creación
+  automática de una orden de taller con el campo Cliente + serie.
+- **Búsqueda global**, favoritos y recientes del menú sincronizados por usuario.
+- **Activos/arrancadores** del cliente, seleccionables al crear una orden.
+
+La API completa está en [docs/API.md](docs/API.md); el recorrido de uso, en
+[INSTRUCTIVO_USO.md](INSTRUCTIVO_USO.md).
 
 ## Privacidad y legales
 
@@ -95,7 +125,7 @@ Actions corre todo (`.github/workflows/ci.yml`) con un servicio PostgreSQL 16.
 ## Stack
 
 - Frontend: Vite + React 19, Zustand (store global reactivo) con persistencia en `localStorage`, React Router (rutas SPA), CSS propio.
-- Backend: Express + PostgreSQL en `api/` (auth JWT, RBAC, ordenes, insumos, bajas, uploads).
+- Backend: Express + PostgreSQL en `api/` (auth JWT, RBAC, ordenes, insumos, bajas, uploads públicos y adjuntos privados de listas).
 - En desarrollo, Vite redirige `/api` y `/uploads` al backend en `http://127.0.0.1:3001`.
 - En produccion, nginx sirve el `dist/` y hace de proxy de `/api` hacia el servicio `bertika-api`.
 
@@ -122,6 +152,10 @@ Las paginas publicas (contacto, seguimiento, tracker, cotizacion) y los paneles 
 | `/cotizacion/:orden_id` | Cotizacion publica con enlace firmado (`?t=`) para aprobar/rechazar |
 | `/auth` | Login real (JWT) de Admin / Tecnico / Cliente |
 | `/home` | Redireccion segun rol |
+| `/listas` | Inicio del módulo de listas por área |
+| `/listas/:area` | Listas de un área (Taller, Ventas, Administración) |
+| `/listas/:area/:listaId` | Lista, registros y vistas |
+| `/f/:token` | Formulario público de una lista |
 | `/hub` | Panel administrativo (kanban, dashboard, historial, inventario, tecnicos, flotillas, garantias, reciclaje) |
 | `/tecnico` | Vista operativa (diagnostico, reparacion, insumos, prueba final) |
 | `/cliente` | Tracker, cotizaciones, historial, flotilla, garantias, agenda |

@@ -2,9 +2,9 @@
 
 Base URL en producción: `https://bertika.com/api` (en dev local: `http://localhost:5173/api`, que proxya a `http://localhost:3001`).
 
-> **Estado:** Fases 1 (robustez), 2 (CRM comercial) y el paquete de privacidad/cookies
-> implementados y en producción. Los endpoints de la Fase 3 todavía no existen; lo pendiente
-> está en [FUTURO.md](FUTURO.md).
+> **Estado:** Fases 1 (robustez), 2 (CRM comercial), privacidad/cookies y el módulo de
+> **Listas dinámicas** implementados y en producción. Los pendientes de producto están en
+> [FUTURO.md](FUTURO.md).
 
 Formato: JSON. Autenticación con `Authorization: Bearer <token>` (obtenido en `POST /auth/login`). Los errores responden `{ "error": "mensaje" }` con su código HTTP y, desde la fase de robustez, también `reqId` (el mismo que sale en el header `x-request-id` y en el log del servidor).
 
@@ -283,6 +283,94 @@ Textos vigentes: `/legal/privacidad`, `/legal/cookies`, `/legal/terminos`.
 Archivo congelado y manifiesto con hashes: `/legal/versiones` y
 `/legal/archivo/index.json`. Para cambiar un texto: editar `src/data/legal.js`,
 subir la versión y correr `npm run legal:archivar`.
+
+## Listas dinámicas
+
+El motor vive en `api/listas-routes.js`. Resuelve permisos **en el servidor** contra el área,
+la categoría, la lista, la fila y el campo. El frontend solo dibuja lo que la API devuelve.
+
+### Navegación y listas
+
+| Método | Ruta | Descripción |
+| --- | --- | --- |
+| `GET` | `/listas/nav` | Áreas y listas visibles para el usuario. |
+| `GET` | `/listas/resumen?area_id=...` | Métricas del área y actividad reciente. |
+| `POST` | `/listas` | Crea una lista vacía. Body: `{ area_id, nombre, descripcion?, icono? }`. |
+| `GET` | `/listas/:id` | Lista, campos visibles, vistas y `puede` (capacidades efectivas). |
+| `PATCH` | `/listas/:id` | Configuración: nombre, permisos, aprobación, acceso y solo lectura. |
+| `DELETE` | `/listas/:id` | Archiva la lista (papelera). |
+| `GET` | `/listas/:id/auditoria` | Auditoría de registros. |
+| `GET` | `/listas/:id/auditoria-estructura` | Auditoría de lista, campos, vistas, reglas y formularios. |
+| `GET` | `/listas/buscar?q=...` | Búsqueda global respetando listas, filas y campos visibles. |
+
+### Campos, vistas y registros
+
+| Método | Ruta | Descripción |
+| --- | --- | --- |
+| `POST` / `PATCH` / `DELETE` | `/listas/:id/campos` / `/lista-campos/:id` | Campos. Tipos: texto, número, moneda, fecha, selección, checkbox, email, teléfono, URL, persona, cliente, adjunto, imagen, relación y calculado. |
+| `GET` / `POST` / `PATCH` / `DELETE` | `/listas/:id/vistas` / `/lista-vistas/:id` | Vistas de grilla, formulario, Kanban, calendario o galería. |
+| `GET/POST` | `/listas/:id/registros` | Lista y crea registros. |
+| `PATCH/DELETE` | `/lista-registros/:id` | Edita o archiva un registro. |
+| `GET` | `/listas/:id/registros/:rid/historial` | Historial de versiones. |
+| `PATCH` | `/lista-registros/:id/historial/:histId/restaurar` | Restaura una versión. |
+| `GET/POST` | `/listas/:id/registros/:rid/comentarios` | Comentarios. |
+
+`GET /listas/:id` devuelve solo los campos que la categoría puede ver. Las respuestas de
+registros también omiten los valores de campos ocultos.
+
+### Permisos
+
+- `GET /listas/categorias` y `GET /listas/clientes`: catálogos para configurar.
+- `PATCH /listas/:id` acepta:
+  - `acceso_categorias`: categorías que pueden ver la lista.
+  - `acceso_solo_lectura`: categorías sin crear/editar/borrar/administrar vistas.
+  - `permisos_categorias`: `{ [categoria_id]: { crear, editar, borrar, vistas } }`.
+  - `permiso_filas`, `ver_filas`, `permiso_campo`, `ver_campo`.
+- `POST/PATCH /lista-campos` acepta `oculto_categorias` para ocultar el campo a esas categorías.
+
+### Aprobaciones
+
+| Método | Ruta | Descripción |
+| --- | --- | --- |
+| `GET` | `/listas/:id/aprobaciones` | Historial de aprobaciones de la lista. |
+| `POST` | `/listas/:id/registros/:rid/aprobaciones` | Solicitar aprobación de un registro. |
+| `PATCH` | `/lista-aprobaciones/:id` | Aprobar o rechazar el paso actual. |
+| `GET` | `/listas/aprobaciones/pendientes?area_id=...` | Bandeja con aprobador, paso y vencimiento. |
+
+La lista puede definir `aprobador_email`, `aprobacion_dias` y `aprobadores` (cadena). Al aprobar
+un paso pasa al siguiente; el registro recién queda aprobado al terminar la cadena.
+
+### Reglas y automatizaciones
+
+| Método | Ruta | Descripción |
+| --- | --- | --- |
+| `GET/POST` | `/listas/:id/reglas` | Reglas por creación/edición. |
+| `PATCH/DELETE` | `/lista-reglas/:id` | Editar o borrar. |
+
+Acciones: `email`, `whatsapp`, `campo`, `webhook` y `orden`. La acción `orden` usa un campo
+tipo `cliente` y un campo de serie; crea la orden y la batería si no existe. Los webhooks
+solo aceptan HTTPS público y se auditan como `webhook_ok` / `webhook_error`.
+
+### Formularios públicos, adjuntos y plantillas
+
+| Método | Ruta | Descripción |
+| --- | --- | --- |
+| `GET` | `/public/formulario/:token` | Formulario público (sin token de sesión). |
+| `POST` | `/public/formulario/:token` | Envía el formulario; puede generar aprobación. |
+| `GET/PUT` | `/listas/:id/formulario` | Configuración del formulario (gestor). |
+| `POST` | `/listas/:id/adjuntos` | Sube imagen/PDF a almacenamiento privado. |
+| `GET` | `/lista-adjuntos/:id` | Descarga autenticada; exige permiso de lista. |
+| `GET` | `/listas/plantillas` | Plantillas base + plantillas propias. |
+| `POST` | `/listas/:id/guardar-plantilla` | Guarda campos y vistas compartidas como plantilla. |
+| `POST` | `/listas/plantillas/:clave` | Crea una lista desde una plantilla. |
+
+### Menú, activos y órdenes
+
+| Método | Ruta | Descripción |
+| --- | --- | --- |
+| `GET/POST` | `/menu/favoritos` | Favoritos del menú por usuario. |
+| `GET/POST` | `/activos`, `PATCH/DELETE /activos/:id` | Activos, equipos y arrancadores por cliente. |
+| `POST` | `/ordenes` | Acepta `activo_id` además de `serie` y `cliente_id`. |
 
 ## Reset demo (admin)
 
