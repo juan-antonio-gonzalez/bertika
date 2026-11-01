@@ -31,7 +31,7 @@ echo "OK: dist sin 'Vertika' y con marca Bertika."
 echo "== Snapshot previo para rollback =="
 STAMP="$(date +%Y%m%d%H%M%S)"
 BACKUP="/var/backups/bertika/deploy-pre-$STAMP.tgz"
-if ! ssh $SSH_ARGS "root@$SSH_HOST" "mkdir -p /var/backups/bertika && tar czf '$BACKUP' --exclude='bertika/uploads' --exclude='bertika/api/uploads-private' --exclude='bertika/api/node_modules' -C /var/www bertika"; then
+if ! ssh $SSH_ARGS "root@$SSH_HOST" "mkdir -p /var/backups/bertika && tar czf '$BACKUP' --exclude='bertika/uploads' --exclude='bertika/api/uploads-private' --exclude='bertika/api/node_modules' --exclude='bertika/tarjetas' --exclude='bertika/tarjetas-src' -C /var/www bertika"; then
   echo "ERROR: no se pudo crear el snapshot previo; no se despliega."
   exit 1
 fi
@@ -116,4 +116,6 @@ check_url "https://bertika.com/api/public/stats" || { rollback_deploy; exit 1; }
 check_url "https://srv1981179.hstgr.cloud/" || { rollback_deploy; exit 1; }
 
 echo "Deploy verificado: frontend, tarjetas y API responden 200."
+ssh $SSH_ARGS "root@$SSH_HOST" "find /var/backups/bertika -maxdepth 1 -name 'deploy-pre-*.tgz' -mtime +7 -delete" >/dev/null 2>&1 || true
+echo "Retención de snapshots: se conservan los últimos 7 días."
 
