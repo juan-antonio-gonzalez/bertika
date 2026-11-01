@@ -307,7 +307,8 @@ CREATE TABLE IF NOT EXISTS listas (
   permiso_filas TEXT DEFAULT 'todos',
   permiso_campo TEXT,
   ver_filas TEXT DEFAULT 'todos',
-  ver_campo TEXT
+  ver_campo TEXT,
+  requiere_aprobacion BOOLEAN DEFAULT FALSE
 );
 CREATE INDEX IF NOT EXISTS idx_listas_area ON listas (area_id, archivada, orden);
 CREATE UNIQUE INDEX IF NOT EXISTS listas_area_nombre_uniq ON listas (area_id, lower(nombre)) WHERE archivada = false;
@@ -338,7 +339,8 @@ CREATE TABLE IF NOT EXISTS lista_registros (
   actualizado_en TIMESTAMPTZ,
   archivado BOOLEAN DEFAULT FALSE,
   archivado_en TIMESTAMPTZ,
-  archivado_por TEXT
+  archivado_por TEXT,
+  aprobacion_estado TEXT DEFAULT 'no_requiere'
 );
 CREATE INDEX IF NOT EXISTS idx_lista_registros_lista ON lista_registros (lista_id, archivado, creado_en DESC);
 

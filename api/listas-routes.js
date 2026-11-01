@@ -245,6 +245,28 @@ function calcularCampos(campos, datos) {
   return salida;
 }
 
+function esGestorLista(req, lista) {
+  return req.user?.rol === 'admin' || Boolean(capacidades(req, lista.area_id).editar_listas);
+}
+
+function bloqueoAprobacion(req, lista, registro) {
+  if (!lista.requiere_aprobacion || esGestorLista(req, lista)) return null;
+  if (registro.aprobacion_estado === 'pendiente') return 'Este registro está pendiente de aprobación y todavía no se puede modificar.';
+  if (registro.aprobacion_estado === 'rechazado') return 'Este registro fue rechazado. Un responsable tiene que aprobarlo antes de modificarlo.';
+  return null;
+}
+
+async function crearAprobacionAuto(client, lista, registroId, usuario, comentario) {
+  const id = idNuevo('apr');
+  const fila = await client.query(
+    `INSERT INTO lista_aprobaciones (id, lista_id, registro_id, solicitado_por, comentario)
+     VALUES ($1,$2,$3,$4,$5)
+     RETURNING id, estado, solicitado_por, decidido_por, comentario, decidido_en, creado_en`,
+    [id, lista.id, registroId, usuario, comentario]
+  );
+  return fila.rows[0];
+}
+
 async function guardarHistorial(client, listaId, registroId, datos, usuario, accion = 'editar') {
   await client.query(
     `INSERT INTO lista_registros_historial (id, lista_id, registro_id, datos, usuario, accion)
@@ -497,19 +519,26 @@ listasRouter.post('/public/formulario/:token', publicFormLimiter, async (req, re
   const datosFinal = calcularCampos(campos, validado.datos);
   const conflicto = await conflictoUnico(f.lista_id, campos, datosFinal);
   if (conflicto) return res.status(400).json({ error: 'Ya existe un registro con esos datos.' });
+  const lista = await listaConArea(f.lista_id);
+  const requiere = lista?.requiere_aprobacion === true;
+  const estadoAprobacion = requiere ? 'pendiente' : 'no_requiere';
   const id = idNuevo('reg');
+  let aprobacionAuto = null;
   await tx(async (client) => {
     await client.query(
-      `INSERT INTO lista_registros (id, lista_id, datos, creado_por, actualizado_por)
-       VALUES ($1,$2,$3::jsonb,'formulario-publico','formulario-publico')`,
-      [id, f.lista_id, datosFinal]
+      `INSERT INTO lista_registros (id, lista_id, datos, aprobacion_estado, creado_por, actualizado_por)
+       VALUES ($1,$2,$3::jsonb,$4,'formulario-publico','formulario-publico')`,
+      [id, f.lista_id, datosFinal, estadoAprobacion]
     );
+    if (requiere && lista) {
+      aprobacionAuto = await crearAprobacionAuto(client, lista, id, 'formulario-publico', 'Solicitud automática desde formulario público.');
+    }
     await guardarHistorial(client, f.lista_id, id, datosFinal, 'formulario-publico', 'crear');
   });
-  const lista = await listaConArea(f.lista_id);
+  if (aprobacionAuto && lista) avisarAprobadores(lista, aprobacionAuto, 'formulario-publico');
   if (lista) evaluarReglas(lista, todos, datosFinal, 'crear', id, req);
   await auditar({ req, tabla: 'lista_registros', registroId: id, accion: 'crear_formulario', detalle: f.id });
-  return res.status(201).json({ ok: true });
+  return res.status(201).json({ ok: true, aprobacion_estado: estadoAprobacion });
 });
 
 // ---------- Notificaciones internas de listas ----------
@@ -756,6 +785,10 @@ listasRouter.patch('/listas/:id', authRequired, async (req, res) => {
       sets.push('permiso_campo = NULL');
     }
   }
+  if (req.body?.requiere_aprobacion !== undefined) {
+    params.push(normalizarBooleano(req.body.requiere_aprobacion) === true);
+    sets.push(`requiere_aprobacion = $${params.length}`);
+  }
   if (req.body?.ver_filas !== undefined) {
     const modoVer = ['todos', 'creador', 'responsable', 'admin'].includes(req.body.ver_filas) ? req.body.ver_filas : 'todos';
     params.push(modoVer); sets.push(`ver_filas = $${params.length}`);
@@ -792,9 +825,9 @@ listasRouter.post('/listas/:id/duplicar', authRequired, async (req, res) => {
   try {
     await tx(async (client) => {
       await client.query(
-        `INSERT INTO listas (id, area_id, nombre, descripcion, icono, creada_por, permiso_filas, ver_filas)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-        [nuevoId, origen.area_id, nombre, origen.descripcion, origen.icono, req.user.email, origen.permiso_filas || 'todos', origen.ver_filas || 'todos']
+        `INSERT INTO listas (id, area_id, nombre, descripcion, icono, creada_por, permiso_filas, ver_filas, requiere_aprobacion)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+        [nuevoId, origen.area_id, nombre, origen.descripcion, origen.icono, req.user.email, origen.permiso_filas || 'todos', origen.ver_filas || 'todos', origen.requiere_aprobacion === true]
       );
       const campos = await client.query(
         'SELECT * FROM lista_campos WHERE lista_id = $1 AND activo = true ORDER BY orden, lower(nombre)',
@@ -1077,7 +1110,7 @@ listasRouter.get('/listas/:id/registros', authRequired, async (req, res) => {
   const q = limStr(req.query?.q, 120);
   const params = [lista.id];
   const vis = filtroVisibilidad(req, lista, params.length + 1);
-  let sql = `SELECT id, lista_id, datos, creado_por, actualizado_por, creado_en, actualizado_en
+  let sql = `SELECT id, lista_id, datos, aprobacion_estado, creado_por, actualizado_por, creado_en, actualizado_en
                FROM lista_registros
               WHERE lista_id = $1 AND archivado = false ${vis.sql}`;
   params.push(...vis.params);
@@ -1104,18 +1137,26 @@ listasRouter.post('/listas/:id/registros', authRequired, async (req, res) => {
   if (relError) return res.status(400).json({ error: relError });
   const conflicto = await conflictoUnico(lista.id, campos, datosFinal);
   if (conflicto) return res.status(400).json({ error: conflicto });
+  const gestor = esGestorLista(req, lista);
+  const requiere = lista.requiere_aprobacion === true;
+  const estadoAprobacion = !requiere ? 'no_requiere' : gestor ? 'aprobado' : 'pendiente';
   const id = idNuevo('reg');
+  let aprobacionAuto = null;
   await tx(async (client) => {
     await client.query(
-      `INSERT INTO lista_registros (id, lista_id, datos, creado_por, actualizado_por)
-       VALUES ($1,$2,$3::jsonb,$4,$5)`,
-      [id, lista.id, datosFinal, req.user.email, req.user.email]
+      `INSERT INTO lista_registros (id, lista_id, datos, aprobacion_estado, creado_por, actualizado_por)
+       VALUES ($1,$2,$3::jsonb,$4,$5,$6)`,
+      [id, lista.id, datosFinal, estadoAprobacion, req.user.email, req.user.email]
     );
+    if (requiere && !gestor) {
+      aprobacionAuto = await crearAprobacionAuto(client, lista, id, req.user.email, 'Solicitud automática al crear el registro.');
+    }
     await guardarHistorial(client, lista.id, id, datosFinal, req.user.email, 'crear');
   });
-  await auditar({ req, tabla: 'lista_registros', registroId: id, accion: 'crear', despues: { listaId: lista.id, datos: datosFinal } });
+  if (aprobacionAuto) avisarAprobadores(lista, aprobacionAuto, req.user.email);
+  await auditar({ req, tabla: 'lista_registros', registroId: id, accion: 'crear', despues: { listaId: lista.id, datos: datosFinal, aprobacion_estado: estadoAprobacion } });
   evaluarReglas(lista, campos, datosFinal, 'crear', id, req);
-  return res.status(201).json({ id });
+  return res.status(201).json({ id, aprobacion_estado: estadoAprobacion });
 });
 
 listasRouter.patch('/lista-registros/:id', authRequired, async (req, res) => {
@@ -1125,6 +1166,8 @@ listasRouter.patch('/lista-registros/:id', authRequired, async (req, res) => {
   if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
   if (!capacidades(req, lista.area_id).editar_registros) return sinPermiso(res, 'No tenés permiso para editar registros en esta lista.');
   if (!puedeEditarRegistro(req, lista, registro)) return sinPermiso(res, 'Este registro está reservado para su creador o responsable.');
+  const bloqueo = bloqueoAprobacion(req, lista, registro);
+  if (bloqueo) return res.status(409).json({ error: bloqueo });
   const campos = await camposDe(lista.id);
   const combinados = { ...(esObjeto(registro.datos) ? registro.datos : {}), ...(esObjeto(req.body?.datos) ? req.body.datos : {}) };
   const validado = validarRegistro(campos, combinados);
@@ -1134,14 +1177,22 @@ listasRouter.patch('/lista-registros/:id', authRequired, async (req, res) => {
   if (relError) return res.status(400).json({ error: relError });
   const conflicto = await conflictoUnico(lista.id, campos, datosFinal, registro.id);
   if (conflicto) return res.status(400).json({ error: conflicto });
+  const gestor = esGestorLista(req, lista);
+  const requiere = lista.requiere_aprobacion === true;
+  const nuevoEstado = !requiere ? 'no_requiere' : gestor ? (registro.aprobacion_estado || 'aprobado') : 'pendiente';
+  let aprobacionAuto = null;
   await tx(async (client) => {
     await client.query(
-      'UPDATE lista_registros SET datos = $2::jsonb, actualizado_por = $3, actualizado_en = now() WHERE id = $1',
-      [registro.id, datosFinal, req.user.email]
+      'UPDATE lista_registros SET datos = $2::jsonb, aprobacion_estado = $3, actualizado_por = $4, actualizado_en = now() WHERE id = $1',
+      [registro.id, datosFinal, nuevoEstado, req.user.email]
     );
+    if (requiere && !gestor) {
+      aprobacionAuto = await crearAprobacionAuto(client, lista, registro.id, req.user.email, 'Solicitud automática por cambios en el registro.');
+    }
     await guardarHistorial(client, lista.id, registro.id, datosFinal, req.user.email, 'editar');
   });
-  await auditar({ req, tabla: 'lista_registros', registroId: registro.id, accion: 'editar', antes: registro.datos, despues: datosFinal });
+  if (aprobacionAuto) avisarAprobadores(lista, aprobacionAuto, req.user.email);
+  await auditar({ req, tabla: 'lista_registros', registroId: registro.id, accion: 'editar', antes: registro.datos, despues: { datos: datosFinal, aprobacion_estado: nuevoEstado } });
   evaluarReglas(lista, campos, datosFinal, 'editar', registro.id, req);
   return res.json({ ok: true });
 });
@@ -1312,6 +1363,9 @@ listasRouter.post('/listas/:id/registros/:rid/aprobaciones', authRequired, async
      VALUES ($1,$2,$3,$4,$5) RETURNING id, estado, solicitado_por, decidido_por, comentario, decidido_en, creado_en`,
     [id, lista.id, registro.id, req.user.email, comentario]
   );
+  if (lista.requiere_aprobacion) {
+    await query("UPDATE lista_registros SET aprobacion_estado = 'pendiente' WHERE id = $1", [registro.id]);
+  }
   await auditar({ req, tabla: 'lista_aprobaciones', registroId: id, accion: 'solicitar', detalle: registro.id });
   avisarAprobadores(lista, fila, req.user.email);
   return res.status(201).json(fila);
@@ -1332,6 +1386,9 @@ listasRouter.patch('/lista-aprobaciones/:id', authRequired, async (req, res) => 
       WHERE id = $1 RETURNING id, estado, solicitado_por, decidido_por, comentario, decidido_en, creado_en`,
     [aprobacion.id, estado, req.user.email, comentario]
   );
+  if (lista.requiere_aprobacion) {
+    await query('UPDATE lista_registros SET aprobacion_estado = $2 WHERE id = $1', [aprobacion.registro_id, estado]);
+  }
   await auditar({ req, tabla: 'lista_aprobaciones', registroId: aprobacion.id, accion: estado, detalle: aprobacion.registro_id });
   avisarAprobadores(lista, fila, req.user.email, true);
   return res.json(fila);
@@ -1414,6 +1471,8 @@ listasRouter.patch('/lista-registros/:id/historial/:histId/restaurar', authRequi
   if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
   if (!capacidades(req, lista.area_id).editar_registros) return sinPermiso(res);
   if (!puedeEditarRegistro(req, lista, registro)) return sinPermiso(res, 'Este registro está reservado para su creador o responsable.');
+  const bloqueo = bloqueoAprobacion(req, lista, registro);
+  if (bloqueo) return res.status(409).json({ error: bloqueo });
   const version = await one('SELECT * FROM lista_registros_historial WHERE id = $1 AND registro_id = $2', [req.params.histId, registro.id]);
   if (!version) return res.status(404).json({ error: 'Versión no encontrada' });
   await tx(async (client) => {
@@ -1459,6 +1518,8 @@ listasRouter.delete('/lista-registros/:id', authRequired, async (req, res) => {
   if (!lista) return res.status(404).json({ error: 'Lista no encontrada' });
   if (!capacidades(req, lista.area_id).borrar_registros) return sinPermiso(res, 'No tenés permiso para archivar registros en esta lista.');
   if (!puedeEditarRegistro(req, lista, registro)) return sinPermiso(res, 'Este registro está reservado para su creador o responsable.');
+  const bloqueo = bloqueoAprobacion(req, lista, registro);
+  if (bloqueo) return res.status(409).json({ error: bloqueo });
   await query(
     'UPDATE lista_registros SET archivado = true, archivado_en = now(), archivado_por = $2 WHERE id = $1',
     [registro.id, req.user.email]

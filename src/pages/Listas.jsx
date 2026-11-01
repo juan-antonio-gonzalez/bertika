@@ -344,6 +344,7 @@ function ListaDetalle({ listaId, area }) {
     return true;
   };
   const puedeBorrarFila = (registro) => Boolean(puede.borrar_registros) && puedeEditarFila(registro);
+  const bloqueadoAprobacionFila = (registro) => Boolean(lista?.requiere_aprobacion && !puede.editar_listas && ['pendiente', 'rechazado'].includes(registro?.aprobacion_estado));
   const vistaActiva = vistas.find((v) => v.id === vistaId) || null;
   const columnasVisibles = columnasDeVista(vistaActiva, campos);
   const visibles = columnasVisibles.length ? columnasVisibles : campos;
@@ -1110,12 +1111,14 @@ function ListaDetalle({ listaId, area }) {
                           })}
                           <td className="listas-acciones-col" onClick={(e) => e.stopPropagation()}>
                             <div className="row" style={{ gap: 4, justifyContent: 'flex-end' }}>
+                              {registro.aprobacion_estado === 'pendiente' && <span className="badge amber">Pendiente</span>}
+                              {registro.aprobacion_estado === 'rechazado' && <span className="badge red">Rechazado</span>}
                               {puedeEditarFila(registro) && (
                                 <button type="button" className="btn icon sm" title="Editar" onClick={() => setModal({ tipo: 'registro', registro })}>
                                   <Icon name="gear" size={13} />
                                 </button>
                               )}
-                              {puedeBorrarFila(registro) && (
+                              {puedeBorrarFila(registro) && !bloqueadoAprobacionFila(registro) && (
                                 <button type="button" className="btn icon sm danger" title="Archivar" onClick={() => confirmarArchivarRegistro(registro)}>
                                   <Icon name="x" size={13} />
                                 </button>

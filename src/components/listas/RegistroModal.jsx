@@ -218,6 +218,7 @@ export default function RegistroModal({ lista, registro, puedeBorrar, puedeEdita
   });
   const [error, setError] = useState('');
   const [panel, setPanel] = useState(null);
+  const bloqueadoAprobacion = Boolean(registro && lista.requiere_aprobacion && !puedeAprobar && ['pendiente', 'rechazado'].includes(registro.aprobacion_estado));
 
   const setCampo = (id, valor) => setDatos((prev) => ({ ...prev, [id]: valor }));
 
@@ -248,13 +249,13 @@ export default function RegistroModal({ lista, registro, puedeBorrar, puedeEdita
               </button>
             )}
             {registro && puedeBorrar && (
-              <button type="button" className="btn danger" onClick={() => onEliminar(registro)} disabled={busy}>
+              <button type="button" className="btn danger" onClick={() => onEliminar(registro)} disabled={busy || bloqueadoAprobacion}>
                 <Icon name="x" size={14} /> Archivar
               </button>
             )}
           </div>
           <button type="button" className="btn" onClick={onClose} disabled={busy}>Cancelar</button>
-          <button type="submit" form="form-registro-lista" className="btn primary" disabled={busy || !campos.length}>
+          <button type="submit" form="form-registro-lista" className="btn primary" disabled={busy || !campos.length || bloqueadoAprobacion}>
             <Icon name="check" size={14} /> {busy ? 'Guardando...' : registro ? 'Guardar cambios' : 'Guardar registro'}
           </button>
         </>
@@ -264,6 +265,14 @@ export default function RegistroModal({ lista, registro, puedeBorrar, puedeEdita
         {error && (
           <div className="banner-red" style={{ marginBottom: 14 }}>
             <div><Icon name="x" size={15} /> {error}</div>
+          </div>
+        )}
+        {bloqueadoAprobacion && (
+          <div className="banner-info" style={{ marginBottom: 14 }}>
+            <Icon name="info" size={15} />
+            <span>{registro.aprobacion_estado === 'pendiente'
+              ? 'Este registro está pendiente de aprobación. Podés verlo y comentarlo, pero un gestor tiene que aprobarlo para modificarlo.'
+              : 'Este registro fue rechazado. Un gestor tiene que aprobarlo antes de modificarlo.'}</span>
           </div>
         )}
         {campos.length === 0 ? (

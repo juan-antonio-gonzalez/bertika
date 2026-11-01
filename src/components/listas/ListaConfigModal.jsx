@@ -11,6 +11,7 @@ export default function ListaConfigModal({
   const [permisoCampo, setPermisoCampo] = useState(lista.permiso_campo || '');
   const [verFilas, setVerFilas] = useState(lista.ver_filas || 'todos');
   const [verCampo, setVerCampo] = useState(lista.ver_campo || '');
+  const [requiereAprobacion, setRequiereAprobacion] = useState(lista.requiere_aprobacion === true);
   const campos = lista.campos || [];
 
   return (
@@ -27,7 +28,7 @@ export default function ListaConfigModal({
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          if (nombre.trim().length >= 2) onGuardarLista({ nombre: nombre.trim(), descripcion: descripcion.trim(), permiso_filas: permisoFilas, permiso_campo: permisoCampo || null, ver_filas: verFilas, ver_campo: verCampo || null });
+          if (nombre.trim().length >= 2) onGuardarLista({ nombre: nombre.trim(), descripcion: descripcion.trim(), permiso_filas: permisoFilas, permiso_campo: permisoCampo || null, ver_filas: verFilas, ver_campo: verCampo || null, requiere_aprobacion: requiereAprobacion });
         }}
         className="col"
         style={{ gap: 12 }}
@@ -57,6 +58,13 @@ export default function ListaConfigModal({
             </select>
           )}
           <small className="ayuda">Filtra las filas que se listan y el acceso a comentarios, historial y aprobaciones. Los administradores de la lista y del sistema ven todo.</small>
+        </div>
+        <div className="field">
+          <label className="check-line" style={{ textTransform: 'none', letterSpacing: 0 }}>
+            <input type="checkbox" checked={requiereAprobacion} onChange={(e) => setRequiereAprobacion(e.target.checked)} />
+            <span>Exigir aprobación antes de publicar o modificar filas</span>
+          </label>
+          <small className="ayuda">Si está activo, las altas y ediciones de usuarios comunes quedan pendientes hasta que un gestor las apruebe. Los formularios públicos también quedan pendientes.</small>
         </div>
         <div className="field">
           <label>¿Quién puede editar o archivar filas?</label>
