@@ -778,6 +778,47 @@ async function main() {
     assert.equal(r.status, 403);
   });
 
+  await test('el catálogo de plantillas de listas está disponible', async () => {
+    const r = await pedir('/listas/plantillas', { token: tokenAdmin });
+    assert.equal(r.status, 200);
+    assert.ok(Array.isArray(r.json));
+    assert.ok(r.json.length >= 6);
+    assert.ok(r.json.every((x) => x.clave && x.area_id));
+  });
+
+  let listaE2E = '';
+  let campoE2E = '';
+  await test('crear lista, campo y registro funciona de punta a punta', async () => {
+    const lista = await pedir('/listas', { method: 'POST', token: tokenAdmin, body: { area_id: 'area_taller', nombre: `E2E ${Date.now()}` } });
+    assert.equal(lista.status, 201);
+    listaE2E = lista.json.id;
+    const campo = await pedir(`/listas/${listaE2E}/campos`, { method: 'POST', token: tokenAdmin, body: { nombre: 'Nombre', tipo: 'texto', requerido: true } });
+    assert.equal(campo.status, 201);
+    campoE2E = campo.json.id;
+    const registro = await pedir(`/listas/${listaE2E}/registros`, { method: 'POST', token: tokenAdmin, body: { datos: { [campoE2E]: 'Registro E2E' } } });
+    assert.equal(registro.status, 201);
+    const detalle = await pedir(`/listas/${listaE2E}/registros`, { token: tokenAdmin });
+    assert.equal(detalle.status, 200);
+    assert.equal(detalle.json.registros.length, 1);
+    assert.equal(detalle.json.registros[0].datos[campoE2E], 'Registro E2E');
+  });
+
+  await test('la búsqueda global encuentra el registro y respeta la API', async () => {
+    const r = await pedir(`/listas/buscar?q=${encodeURIComponent('Registro E2E')}`, { token: tokenAdmin });
+    assert.equal(r.status, 200);
+    assert.ok(r.json.resultados.some((x) => x.lista_id === listaE2E));
+  });
+
+  await test('guardar una lista como plantilla y reutilizarla', async () => {
+    const tpl = await pedir(`/listas/${listaE2E}/guardar-plantilla`, { method: 'POST', token: tokenAdmin, body: { nombre: `Plantilla E2E ${Date.now()}` } });
+    assert.equal(tpl.status, 201);
+    const hija = await pedir(`/listas/plantillas/${tpl.json.id}`, { method: 'POST', token: tokenAdmin, body: { area_id: 'area_taller', nombre: `Hija E2E ${Date.now()}` } });
+    assert.equal(hija.status, 201);
+    const detalle = await pedir(`/listas/${hija.json.id}`, { token: tokenAdmin });
+    assert.equal(detalle.status, 200);
+    assert.ok(detalle.json.campos.some((c) => c.nombre === 'Nombre'));
+  });
+
   await test('la salud ve la cola con el envío fallido', async () => {
     const r = await pedir('/salud', { token: tokenAdmin });
     assert.equal(r.status, 200);
