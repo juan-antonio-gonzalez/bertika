@@ -14,6 +14,7 @@ import ReglasModal from '../components/listas/ReglasModal';
 import FormularioPublicoModal from '../components/listas/FormularioPublicoModal';
 import AprobacionesPendientesModal from '../components/listas/AprobacionesPendientesModal';
 import AuditoriaListaModal from '../components/listas/AuditoriaListaModal';
+import GuardarPlantillaModal from '../components/listas/GuardarPlantillaModal';
 import VistaFormulario from '../components/listas/VistaFormulario';
 import { AdjuntoLink, AdjuntoImg } from '../components/listas/AdjuntoLink';
 import {
@@ -773,6 +774,19 @@ function ListaDetalle({ listaId, area }) {
     }
   };
 
+  const guardarPlantilla = async ({ nombre, descripcion }) => {
+    setBusy(true);
+    try {
+      await api(`/listas/${lista.id}/guardar-plantilla`, { method: 'POST', body: { nombre, descripcion } });
+      setModal(null);
+      toastShow('Plantilla guardada. Ya aparece en Nueva lista.', 'ok');
+    } catch (e) {
+      toastShow(e.message, 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const duplicarLista = async ({ nombre }) => {
     setBusy(true);
     try {
@@ -1407,6 +1421,10 @@ function ListaDetalle({ listaId, area }) {
         />
       )}
 
+      {modal?.tipo === 'guardarPlantilla' && (
+        <GuardarPlantillaModal lista={lista} busy={busy} onGuardar={guardarPlantilla} onClose={() => setModal(null)} />
+      )}
+
       {modal?.tipo === 'duplicar' && (
         <DuplicarListaModal lista={lista} busy={busy} onGuardar={duplicarLista} onClose={() => setModal(null)} />
       )}
@@ -1434,6 +1452,7 @@ function ListaDetalle({ listaId, area }) {
           onEditarCampo={(campo) => setModal({ tipo: 'campo', campo })}
           onEliminarCampo={confirmarQuitarCampo}
           onArchivarLista={puede.borrar_listas ? archivarLista : null}
+          onGuardarPlantilla={puede.editar_listas ? () => setModal({ tipo: 'guardarPlantilla' }) : null}
           onDuplicar={puede.crear_listas ? () => setModal({ tipo: 'duplicar' }) : null}
           onPapelera={puede.borrar_registros ? () => setModal({ tipo: 'papeleraRegistros' }) : null}
           onReglas={puede.editar_listas ? () => setModal({ tipo: 'reglas' }) : null}

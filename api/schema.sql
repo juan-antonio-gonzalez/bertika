@@ -309,7 +309,9 @@ CREATE TABLE IF NOT EXISTS listas (
   ver_filas TEXT DEFAULT 'todos',
   ver_campo TEXT,
   requiere_aprobacion BOOLEAN DEFAULT FALSE,
-  acceso_categorias JSONB DEFAULT '[]'::jsonb
+  acceso_categorias JSONB DEFAULT '[]'::jsonb,
+  aprobador_email TEXT,
+  aprobacion_dias INTEGER DEFAULT 3
 );
 CREATE INDEX IF NOT EXISTS idx_listas_area ON listas (area_id, archivada, orden);
 CREATE UNIQUE INDEX IF NOT EXISTS listas_area_nombre_uniq ON listas (area_id, lower(nombre)) WHERE archivada = false;
@@ -427,8 +429,10 @@ CREATE TABLE IF NOT EXISTS lista_aprobaciones (
   estado TEXT DEFAULT 'pendiente',
   solicitado_por TEXT,
   decidido_por TEXT,
+  aprobador TEXT,
   comentario TEXT,
   decidido_en TIMESTAMPTZ,
+  fecha_limite TIMESTAMPTZ,
   creado_en TIMESTAMPTZ DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_lista_aprobaciones_registro ON lista_aprobaciones (registro_id, creado_en DESC);
@@ -460,3 +464,27 @@ CREATE TABLE IF NOT EXISTS lista_adjuntos (
   creado_en TIMESTAMPTZ DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_lista_adjuntos_lista ON lista_adjuntos (lista_id, creado_en DESC);
+
+
+-- Favoritos del menú sincronizados por usuario.
+CREATE TABLE IF NOT EXISTS menu_favoritos (
+  usuario_email TEXT NOT NULL,
+  path TEXT NOT NULL,
+  creado_en TIMESTAMPTZ DEFAULT now(),
+  PRIMARY KEY (usuario_email, path)
+);
+
+
+-- Plantillas creadas por usuarios (snapshot de campos y vistas).
+CREATE TABLE IF NOT EXISTS lista_plantillas_usuario (
+  id TEXT PRIMARY KEY,
+  area_id TEXT NOT NULL,
+  nombre TEXT NOT NULL,
+  descripcion TEXT,
+  icono TEXT DEFAULT 'clipboard',
+  campos JSONB NOT NULL DEFAULT '[]'::jsonb,
+  vistas JSONB NOT NULL DEFAULT '[]'::jsonb,
+  creada_por TEXT,
+  creado_en TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_lista_plantillas_area ON lista_plantillas_usuario (area_id, creado_en DESC);

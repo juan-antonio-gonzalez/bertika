@@ -580,6 +580,10 @@ async function asegurarCodigos() {
   await query('ALTER TABLE listas ADD COLUMN IF NOT EXISTS requiere_aprobacion BOOLEAN DEFAULT FALSE');
   await query("ALTER TABLE lista_registros ADD COLUMN IF NOT EXISTS aprobacion_estado TEXT DEFAULT 'no_requiere'");
   await query("ALTER TABLE listas ADD COLUMN IF NOT EXISTS acceso_categorias JSONB DEFAULT '[]'::jsonb");
+  await query('ALTER TABLE listas ADD COLUMN IF NOT EXISTS aprobador_email TEXT');
+  await query('ALTER TABLE listas ADD COLUMN IF NOT EXISTS aprobacion_dias INTEGER DEFAULT 3');
+  await query('ALTER TABLE lista_aprobaciones ADD COLUMN IF NOT EXISTS aprobador TEXT');
+  await query('ALTER TABLE lista_aprobaciones ADD COLUMN IF NOT EXISTS fecha_limite TIMESTAMPTZ');
   // Fase 3: formularios públicos por lista (token no adivinable).
   await query(`CREATE TABLE IF NOT EXISTS lista_formularios (
     id TEXT PRIMARY KEY,
@@ -629,6 +633,24 @@ async function asegurarCodigos() {
     creado_en TIMESTAMPTZ DEFAULT now()
   )`);
   await query('CREATE INDEX IF NOT EXISTS idx_lista_adjuntos_lista ON lista_adjuntos (lista_id, creado_en DESC)');
+  await query(`CREATE TABLE IF NOT EXISTS menu_favoritos (
+    usuario_email TEXT NOT NULL,
+    path TEXT NOT NULL,
+    creado_en TIMESTAMPTZ DEFAULT now(),
+    PRIMARY KEY (usuario_email, path)
+  )`);
+  await query(`CREATE TABLE IF NOT EXISTS lista_plantillas_usuario (
+    id TEXT PRIMARY KEY,
+    area_id TEXT NOT NULL,
+    nombre TEXT NOT NULL,
+    descripcion TEXT,
+    icono TEXT DEFAULT 'clipboard',
+    campos JSONB NOT NULL DEFAULT '[]'::jsonb,
+    vistas JSONB NOT NULL DEFAULT '[]'::jsonb,
+    creada_por TEXT,
+    creado_en TIMESTAMPTZ DEFAULT now()
+  )`);
+  await query('CREATE INDEX IF NOT EXISTS idx_lista_plantillas_area ON lista_plantillas_usuario (area_id, creado_en DESC)');
   await query("ALTER TABLE lista_reglas ADD COLUMN IF NOT EXISTS accion TEXT DEFAULT 'email'");
   await query('ALTER TABLE lista_reglas ADD COLUMN IF NOT EXISTS campo_destino TEXT');
   await query('ALTER TABLE lista_reglas ADD COLUMN IF NOT EXISTS mensaje TEXT');
@@ -3079,6 +3101,23 @@ app.delete('/api/notificaciones/:id', authRequired, async (req, res) => {
 app.delete('/api/notificaciones', authRequired, async (req, res) => {
   const { clause, params } = notifWhere(req);
   await query(`DELETE FROM notificaciones n WHERE ${clause}`, params);
+  return res.json({ ok: true });
+});
+
+// ---------- Favoritos del menú (sincronizados por usuario) ----------
+app.get('/api/menu/favoritos', authRequired, async (req, res) => {
+  const filas = await query('SELECT path FROM menu_favoritos WHERE usuario_email = $1 ORDER BY creado_en', [req.user.email]);
+  return res.json(filas.map((f) => f.path));
+});
+
+app.post('/api/menu/favoritos', authRequired, async (req, res) => {
+  const ruta = String(req.body?.path || '').trim().slice(0, 200);
+  if (!ruta.startsWith('/')) return res.status(400).json({ error: 'Ruta inválida.' });
+  if (req.body?.activo === false) {
+    await query('DELETE FROM menu_favoritos WHERE usuario_email = $1 AND path = $2', [req.user.email, ruta]);
+  } else {
+    await query('INSERT INTO menu_favoritos (usuario_email, path) VALUES ($1,$2) ON CONFLICT DO NOTHING', [req.user.email, ruta]);
+  }
   return res.json({ ok: true });
 });
 

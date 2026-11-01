@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useStore } from '../../store/store';
+import { api } from '../../store/api';
 import { puedeVer } from '../../data/permisos';
 import { Icon } from '../ui';
 import { AltasForm, NewOrdenForm } from '../AccionesGlobales';
@@ -159,6 +160,7 @@ export default function AppShell({ children }) {
   const user = useStore((s) => s.user);
   const data = useStore((s) => s.data);
   const logout = useStore((s) => s.logout);
+  const toastShow = useStore((s) => s.toastShow);
   const location = useLocation();
   const navigate = useNavigate();
   const [abierto, setAbierto] = useState(false); // drawer en movil
@@ -223,6 +225,21 @@ export default function AppShell({ children }) {
   useEffect(() => { localStorage.setItem('bertika-menu-favs', JSON.stringify(favoritos)); }, [favoritos]);
   useEffect(() => { localStorage.setItem('bertika-menu-recientes', JSON.stringify(recientes)); }, [recientes]);
 
+  useEffect(() => {
+    if (!user) return;
+    let vivo = true;
+    api('/menu/favoritos')
+      .then((paths) => {
+        if (!vivo || !Array.isArray(paths)) return;
+        if (paths.length) setFavoritos(paths);
+        else if (favoritos.length) {
+          for (const path of favoritos) api('/menu/favoritos', { method: 'POST', body: { path, activo: true } }).catch(() => {});
+        }
+      })
+      .catch(() => {});
+    return () => { vivo = false; };
+  }, [user?.email]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const itemsMenu = useMemo(() => {
     const salida = [];
     for (const g of gruposConAreas) {
@@ -246,7 +263,16 @@ export default function AppShell({ children }) {
   }, [location.pathname, user, itemsMenu]);
 
   const toggleGrupo = (nombre) => setGruposCerrados((prev) => ({ ...prev, [nombre]: !prev[nombre] }));
-  const toggleFavorito = (to) => setFavoritos((prev) => (prev.includes(to) ? prev.filter((x) => x !== to) : [...prev, to]));
+  const toggleFavorito = async (to) => {
+    const activo = !favoritos.includes(to);
+    setFavoritos((prev) => (activo ? [...prev, to] : prev.filter((x) => x !== to)));
+    try {
+      await api('/menu/favoritos', { method: 'POST', body: { path: to, activo } });
+    } catch (e) {
+      setFavoritos((prev) => (activo ? prev.filter((x) => x !== to) : [...prev, to]));
+      toastShow?.(e.message || 'No se pudo guardar el favorito', 'error');
+    }
+  };
   const itemsFavoritos = favoritos.map((to) => itemsMenu.find((i) => i.to === to)).filter(Boolean);
   const itemsRecientes = recientes.map((to) => itemsMenu.find((i) => i.to === to)).filter(Boolean);
   const gruposFiltrados = useMemo(() => {

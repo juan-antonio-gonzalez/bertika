@@ -4,7 +4,7 @@ import { etiquetaTipo } from '../../data/listas';
 import { api } from '../../store/api';
 
 export default function ListaConfigModal({
-  lista, busy, onGuardarLista, onNuevoCampo, onEditarCampo, onEliminarCampo, onArchivarLista, onDuplicar, onPapelera, onReglas, onFormulario, onAuditoria, onClose,
+  lista, busy, onGuardarLista, onNuevoCampo, onEditarCampo, onEliminarCampo, onArchivarLista, onDuplicar, onPapelera, onReglas, onFormulario, onAuditoria, onGuardarPlantilla, onClose,
 }) {
   const [nombre, setNombre] = useState(lista.nombre || '');
   const [descripcion, setDescripcion] = useState(lista.descripcion || '');
@@ -13,6 +13,8 @@ export default function ListaConfigModal({
   const [verFilas, setVerFilas] = useState(lista.ver_filas || 'todos');
   const [verCampo, setVerCampo] = useState(lista.ver_campo || '');
   const [requiereAprobacion, setRequiereAprobacion] = useState(lista.requiere_aprobacion === true);
+  const [aprobadorEmail, setAprobadorEmail] = useState(lista.aprobador_email || '');
+  const [aprobacionDias, setAprobacionDias] = useState(lista.aprobacion_dias || 3);
   const [categorias, setCategorias] = useState([]);
   const [restringirAcceso, setRestringirAcceso] = useState(Array.isArray(lista.acceso_categorias) && lista.acceso_categorias.length > 0);
   const [categoriasAcceso, setCategoriasAcceso] = useState(Array.isArray(lista.acceso_categorias) ? lista.acceso_categorias : []);
@@ -39,7 +41,7 @@ export default function ListaConfigModal({
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          if (nombre.trim().length >= 2) onGuardarLista({ nombre: nombre.trim(), descripcion: descripcion.trim(), permiso_filas: permisoFilas, permiso_campo: permisoCampo || null, ver_filas: verFilas, ver_campo: verCampo || null, requiere_aprobacion: requiereAprobacion, acceso_categorias: restringirAcceso ? categoriasAcceso : [] });
+          if (nombre.trim().length >= 2) onGuardarLista({ nombre: nombre.trim(), descripcion: descripcion.trim(), permiso_filas: permisoFilas, permiso_campo: permisoCampo || null, ver_filas: verFilas, ver_campo: verCampo || null, requiere_aprobacion: requiereAprobacion, aprobador_email: aprobadorEmail.trim() || null, aprobacion_dias: Number(aprobacionDias) || 3, acceso_categorias: restringirAcceso ? categoriasAcceso : [] });
         }}
         className="col"
         style={{ gap: 12 }}
@@ -76,6 +78,16 @@ export default function ListaConfigModal({
             <span>Exigir aprobación antes de publicar o modificar filas</span>
           </label>
           <small className="ayuda">Si está activo, las altas y ediciones de usuarios comunes quedan pendientes hasta que un gestor las apruebe. Los formularios públicos también quedan pendientes.</small>
+          <div className="row" style={{ gap: 8, marginTop: 8 }}>
+            <div className="field grow">
+              <label>Aprobador asignado (email)</label>
+              <input className="input" type="email" value={aprobadorEmail} onChange={(e) => setAprobadorEmail(e.target.value)} placeholder="Opcional; si está vacío avisa a los gestores" />
+            </div>
+            <div className="field" style={{ width: 130 }}>
+              <label>Días para aprobar</label>
+              <input className="input" type="number" min="1" max="60" value={aprobacionDias} onChange={(e) => setAprobacionDias(e.target.value)} />
+            </div>
+          </div>
         </div>
         <div className="field">
           <label>¿Quién puede editar o archivar filas?</label>
@@ -182,9 +194,14 @@ export default function ListaConfigModal({
               <Icon name="recycl" size={13} /> Papelera de registros
             </button>
           )}
+          {onGuardarPlantilla && (
+            <button type="button" className="btn sm" onClick={onGuardarPlantilla}>
+              <Icon name="folder" size={13} /> Guardar como plantilla
+            </button>
+          )}
           {onDuplicar && (
             <button type="button" className="btn sm" onClick={onDuplicar}>
-              <Icon name="grid" size={13} /> Duplicar como plantilla
+              <Icon name="grid" size={13} /> Duplicar lista
             </button>
           )}
           {onArchivarLista && (

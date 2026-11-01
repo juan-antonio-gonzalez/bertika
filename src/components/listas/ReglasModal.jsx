@@ -50,7 +50,9 @@ export default function ReglasModal({ lista, campos, onClose }) {
     setError('');
     if (!form.nombre.trim()) return setError('La regla necesita un nombre.');
     if (!form.campo) return setError('Elegí el campo que dispara el aviso.');
-    if (form.accion === 'whatsapp') {
+    if (form.accion === 'campo') {
+      if (!form.campo_destino) return setError('Elegí el campo que va a cambiar la regla.');
+    } else if (form.accion === 'whatsapp') {
       if (!form.campo_destino) return setError('Elegí el campo de teléfono para el WhatsApp.');
     } else if (!/^\S+@\S+\.\S+$/.test(form.destinatario.trim())) return setError('El email del aviso no es válido.');
     setBusy(true);
@@ -103,7 +105,7 @@ export default function ReglasModal({ lista, campos, onClose }) {
                 <b>{r.nombre}</b>
                 <span className={`badge ${r.activo ? 'green' : 'gray'}`} style={{ marginLeft: 6 }}>{r.activo ? 'Activa' : 'Apagada'}</span>
                 <div className="muted" style={{ fontSize: 11.5 }}>
-                  {r.evento} · {c?.nombre || 'campo'} {r.op} {r.valor || ''} · {r.accion === 'whatsapp' ? `WhatsApp a ${campos.find((x) => x.id === r.campo_destino)?.nombre || 'teléfono'}` : `email a ${r.destinatario}`}
+                  {r.evento} · {c?.nombre || 'campo'} {r.op} {r.valor || ''} · {r.accion === 'whatsapp' ? `WhatsApp a ${campos.find((x) => x.id === r.campo_destino)?.nombre || 'teléfono'}` : r.accion === 'campo' ? `cambia ${campos.find((x) => x.id === r.campo_destino)?.nombre || 'campo'} a “${r.mensaje || ''}”` : `email a ${r.destinatario}`}
                 </div>
               </div>
               <button type="button" className="btn sm" onClick={() => editar(r)}><Icon name="gear" size={12} /> Editar</button>
@@ -136,6 +138,7 @@ export default function ReglasModal({ lista, campos, onClose }) {
             <select className="input" value={form.accion} onChange={(e) => set('accion', e.target.value)}>
               <option value="email">Enviar email</option>
               <option value="whatsapp">Enviar WhatsApp</option>
+              <option value="campo">Cambiar un campo</option>
             </select>
           </div>
           <div className="field">
@@ -154,7 +157,22 @@ export default function ReglasModal({ lista, campos, onClose }) {
               {form.op !== 'vacio' && <input className="input" value={form.valor} onChange={(e) => set('valor', e.target.value)} placeholder="Valor" />}
             </div>
           </div>
-          {form.accion === 'whatsapp' ? (
+          {form.accion === 'campo' ? (
+            <>
+              <div className="field">
+                <label>Campo a cambiar *</label>
+                <select className="input" value={form.campo_destino} onChange={(e) => set('campo_destino', e.target.value)}>
+                  <option value="">Elegir campo...</option>
+                  {campos.filter((c) => c.tipo !== 'calculado').map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                </select>
+              </div>
+              <div className="field" style={{ gridColumn: '1 / -1' }}>
+                <label>Nuevo valor</label>
+                <input className="input" value={form.mensaje} onChange={(e) => set('mensaje', e.target.value)} placeholder="Ej.: Revisado" />
+                <small className="ayuda">La regla escribe este valor cuando se cumple la condición.</small>
+              </div>
+            </>
+          ) : form.accion === 'whatsapp' ? (
             <>
               <div className="field">
                 <label>Campo de teléfono *</label>

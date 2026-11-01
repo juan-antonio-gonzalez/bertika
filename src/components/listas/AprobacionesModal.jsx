@@ -75,6 +75,7 @@ export default function AprobacionesModal({ lista, registro, puedeSolicitar, pue
                 <span className="muted" style={{ fontSize: 11 }}>{fmtFecha(f.creado_en)}</span>
               </div>
               {f.comentario && <p>{f.comentario}</p>}
+              {f.aprobador && <small className="muted">Aprobador: {f.aprobador}{f.fecha_limite ? ` · vence ${fmtFecha(f.fecha_limite)}` : ''}</small>}
               {f.decidido_por && <small className="muted">Decidió {f.decidido_por} · {f.decidido_en ? fmtFecha(f.decidido_en) : ''}</small>}
             </div>
           ))}
