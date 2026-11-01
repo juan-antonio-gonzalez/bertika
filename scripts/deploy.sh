@@ -31,7 +31,7 @@ echo "OK: dist sin 'Vertika' y con marca Bertika."
 echo "== Snapshot previo para rollback =="
 STAMP="$(date +%Y%m%d%H%M%S)"
 BACKUP="/var/backups/bertika/deploy-pre-$STAMP.tgz"
-if ! ssh $SSH_ARGS "root@$SSH_HOST" "mkdir -p /var/backups/bertika && tar czf '$BACKUP' -C /var/www bertika --exclude='bertika/uploads' --exclude='bertika/api/uploads-private' --exclude='bertika/api/node_modules'"; then
+if ! ssh $SSH_ARGS "root@$SSH_HOST" "mkdir -p /var/backups/bertika && tar czf '$BACKUP' --exclude='bertika/uploads' --exclude='bertika/api/uploads-private' --exclude='bertika/api/node_modules' -C /var/www bertika"; then
   echo "ERROR: no se pudo crear el snapshot previo; no se despliega."
   exit 1
 fi
