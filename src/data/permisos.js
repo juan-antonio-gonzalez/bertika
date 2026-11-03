@@ -190,6 +190,7 @@ export const SECCION_POR_RUTA = {
   '/hub/clientes': 'clientes',
   '/hub/whatsapp': 'whatsapp',
   '/ventas': 'ventas',
+  '/prospectos': 'ventas',
   '/hub/cotizador': 'cotizador',
   '/hub/inventario': 'inventario',
   '/hub/tecnicos': 'tecnicos',

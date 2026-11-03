@@ -626,3 +626,40 @@ CREATE TABLE IF NOT EXISTS rate_limit_hits (
   expira TIMESTAMPTZ NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_rate_limit_expira ON rate_limit_hits (expira);
+
+
+-- Prospectos comerciales (separados de clientes y oportunidades).
+CREATE TABLE IF NOT EXISTS prospecto_estados (
+  clave TEXT PRIMARY KEY,
+  nombre TEXT NOT NULL,
+  color TEXT DEFAULT 'gray',
+  orden INTEGER DEFAULT 0,
+  activo BOOLEAN DEFAULT TRUE
+);
+INSERT INTO prospecto_estados (clave, nombre, color, orden) VALUES
+  ('nuevo','Nuevo','blue',10),('contactado','Contactado','amber',20),
+  ('interesado','Interesado','purple',30),('cotizado','Cotizado','orange',40),
+  ('negociacion','Negociación','yellow',50),('ganado','Ganado','green',60),
+  ('perdido','Perdido','red',70),('convertido','Convertido a cliente','teal',80)
+ON CONFLICT (clave) DO NOTHING;
+CREATE TABLE IF NOT EXISTS prospectos (
+  id TEXT PRIMARY KEY, empresa TEXT NOT NULL, empresa_normalizada TEXT NOT NULL,
+  cuit TEXT, localidad TEXT, direccion TEXT, rubro TEXT, perfil_redes TEXT,
+  contacto_nombre TEXT, contacto_cargo TEXT, email TEXT, telefono TEXT, tipo_contacto TEXT,
+  estado TEXT NOT NULL DEFAULT 'nuevo', observaciones TEXT, notas TEXT,
+  origen TEXT DEFAULT 'manual', origen_id TEXT, responsable TEXT,
+  proxima_accion TEXT, fecha_proxima_accion DATE, ultimo_contacto TIMESTAMPTZ,
+  email_normalizado TEXT, telefono_normalizado TEXT, cliente_id TEXT, convertido_en TIMESTAMPTZ,
+  archivado BOOLEAN DEFAULT FALSE, creado_por TEXT, actualizado_por TEXT,
+  creado_en TIMESTAMPTZ DEFAULT now(), actualizado_en TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_prospectos_estado ON prospectos (estado, archivado, actualizado_en DESC);
+CREATE INDEX IF NOT EXISTS idx_prospectos_empresa ON prospectos (empresa_normalizada);
+CREATE INDEX IF NOT EXISTS idx_prospectos_email ON prospectos (email_normalizado);
+CREATE INDEX IF NOT EXISTS idx_prospectos_telefono ON prospectos (telefono_normalizado);
+CREATE INDEX IF NOT EXISTS idx_prospectos_cuit ON prospectos (cuit);
+CREATE TABLE IF NOT EXISTS prospecto_importaciones (
+  id TEXT PRIMARY KEY, usuario_email TEXT NOT NULL, nombre_archivo TEXT,
+  filas JSONB NOT NULL, resumen JSONB NOT NULL, usado BOOLEAN DEFAULT FALSE,
+  creado_en TIMESTAMPTZ DEFAULT now()
+);

@@ -30,6 +30,7 @@ const RAIZ = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const API_DIR = path.join(RAIZ, 'api');
 const requireApi = createRequire(path.join(API_DIR, 'package.json'));
 const { Client } = requireApi('pg');
+const ExcelJS = requireApi('exceljs');
 
 const DB_URL = process.env.TEST_DATABASE_URL;
 if (!DB_URL) {
@@ -996,6 +997,54 @@ async function main() {
     const nuevo = await pedir('/auth/me', { token: res.json.token });
     assert.equal(nuevo.status, 200, 'el token nuevo mantiene la sesión');
     tokenAdmin = res.json.token;
+  });
+
+  await test('prospectos: alta manual, estados, importación XLSX y exportación', async () => {
+    const sufijo = Date.now();
+    const empresa = `Prospecto E2E ${sufijo}`;
+    const email = `prospecto.${sufijo}@bertika.com`;
+    const creado = await pedir('/prospectos', {
+      method: 'POST', token: tokenAdmin,
+      body: { empresa, localidad: 'Haedo', email, telefono: '+54 11 5555-0101', estado: 'nuevo', observaciones: 'Prueba E2E' },
+    });
+    assert.equal(creado.status, 201, creado.texto);
+    const listado = await pedir(`/prospectos?q=${encodeURIComponent(empresa)}`, { token: tokenAdmin });
+    assert.equal(listado.status, 200);
+    assert.ok(listado.json.filas.some((x) => x.empresa === empresa));
+    assert.ok(listado.json.estados.length >= 6);
+
+    const estado = await pedir('/prospectos/estados', { method: 'POST', token: tokenAdmin, body: { nombre: `Estado E2E ${sufijo}`, color: 'purple' } });
+    assert.equal(estado.status, 201, estado.texto);
+    const patchEstado = await pedir(`/prospectos/estados/${estado.json.clave}`, { method: 'PATCH', token: tokenAdmin, body: { color: 'green', activo: true } });
+    assert.equal(patchEstado.status, 200, patchEstado.texto);
+
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Prospectos');
+    ws.addRow(['ID', 'Empresa / Prospecto', 'Zona / Localidad', 'Dirección / Ubicación', 'Rubro / Equipamiento Principal', 'Perfil Redes Sociales', 'Contacto LinkedIn (Nombre y Cargo)', 'Email de Contacto', 'Teléfono / WhatsApp Directo', 'Tipo de Contacto Directo', 'Estado de Contacto', 'Observaciones / Foco Comercial']);
+    ws.addRow([String(sufijo), `Importado E2E ${sufijo}`, 'Morón', 'Calle 1', 'Metalúrgica', 'linkedin.com/company/e2e', 'Ana Pérez - Compras', `importado.${sufijo}@bertika.com`, '+54 11 5555-0202', 'Mail', 'Pendiente', 'Foco E2E']);
+    const buffer = Buffer.from(await wb.xlsx.writeBuffer());
+    const form = new FormData();
+    form.append('archivo', new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), 'prospectos.xlsx');
+    const preview = await fetch(`${API}/prospectos/importar/preview`, { method: 'POST', headers: { Authorization: `Bearer ${tokenAdmin}` }, body: form });
+    if (!preview.ok) assert.fail(await preview.text());
+    assert.equal(preview.status, 200);
+    const vista = await preview.json();
+    assert.ok(vista.filas.some((x) => x.clasificacion === 'nuevo'));
+    const confirmar = await pedir('/prospectos/importar', { method: 'POST', token: tokenAdmin, body: { importacion_id: vista.importacion_id, decisiones: Object.fromEntries(vista.filas.map((f, i) => [String(i), f.clasificacion === 'error' ? 'omitir' : 'crear'])) } });
+    assert.equal(confirmar.status, 200, confirmar.texto);
+    assert.ok(confirmar.json.creados >= 1);
+
+    // El mismo archivo ya existe: debe clasificarse como exacto/omitido.
+    const form2 = new FormData();
+    form2.append('archivo', new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), 'prospectos.xlsx');
+    const preview2 = await fetch(`${API}/prospectos/importar/preview`, { method: 'POST', headers: { Authorization: `Bearer ${tokenAdmin}` }, body: form2 });
+    const vista2 = await preview2.json();
+    assert.ok(vista2.resumen.exactos + vista2.resumen.parciales >= 1);
+
+    const exportado = await fetch(`${API}/prospectos/exportar?formato=xlsx&q=${encodeURIComponent(empresa)}`, { headers: { Authorization: `Bearer ${tokenAdmin}` } });
+    assert.equal(exportado.status, 200);
+    assert.match(exportado.headers.get('content-type') || '', /spreadsheetml/);
+    await exportado.arrayBuffer();
   });
 
   await test('la salud ve la cola con el envío fallido', async () => {

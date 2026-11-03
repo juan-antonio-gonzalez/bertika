@@ -17,6 +17,7 @@ import { migrarLegacy } from './migraciones-legacy.js';
 import { migrarHardening } from './migraciones-hardening.js';
 import { crearRespaldosRouter } from './respaldos-routes.js';
 import { crearEstadoRouter } from './estado-routes.js';
+import { prospectosRouter } from './prospectos-routes.js';
 import { nextId } from './ids.js';
 import { signToken, authRequired, requireRol, permisoRequerido, SECRET } from './middleware/auth.js';
 import { PERMISOS, COLUMNAS, agruparPermisos, permisosPorDefecto, normalizarPermisos, permisosEfectivos, puedeVer, tienePermiso } from './permisos.js';
@@ -2564,6 +2565,7 @@ app.delete('/api/categorias/:id', authRequired, requireRol('admin'), async (req,
 
 // ---------- Motor de listas dinámicas ----------
 app.use('/api', crearEstadoRouter({ authRequired, puedeVer, areasVisibles }));
+app.use('/api', prospectosRouter);
 app.use('/api', crearRespaldosRouter({ authRequired, permisoRequerido }));
 app.use('/api', ventasRouter);
 app.use('/api', listasRouter);

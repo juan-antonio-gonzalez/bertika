@@ -105,6 +105,7 @@ function menuDe(rol, c, esFlotilla) {
     ] },
     { grupo: 'Comercial', items: [
       { to: '/ventas', label: 'Ventas', icon: 'dollar' , seccion: 'ventas' },
+      { to: '/prospectos', label: 'Prospectos', icon: 'users' , seccion: 'ventas' },
       { to: '/hub/clientes', label: 'Clientes', icon: 'users' , seccion: 'clientes' },
       { to: '/hub/tareas', label: 'Tareas', icon: 'clock', contador: c.tareas , seccion: 'tareas' },
       { to: '/hub/whatsapp', label: 'WhatsApp', icon: 'mail' , seccion: 'whatsapp' },

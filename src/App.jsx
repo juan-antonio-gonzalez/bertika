@@ -37,6 +37,7 @@ const Reportes = lazy(() => import('./pages/Reportes'));
 const Usuarios = lazy(() => import('./pages/Usuarios'));
 const Listas = lazy(() => import('./pages/Listas'));
 const Ventas = lazy(() => import('./pages/Ventas'));
+const Prospectos = lazy(() => import('./pages/Prospectos'));
 const FormularioPublico = lazy(() => import('./pages/FormularioPublico'));
 const Respaldos = lazy(() => import('./pages/Respaldos'));
 const Sistema = lazy(() => import('./pages/Sistema'));
@@ -205,6 +206,7 @@ export default function App() {
         <Route path="/tracker/:orden_id" element={<Tracker />} />
         <Route path="/ventas" element={<AppLayout><RequireSeccion><Ventas /></RequireSeccion></AppLayout>} />
         <Route path="/ventas/:tab" element={<AppLayout><RequireSeccion><Ventas /></RequireSeccion></AppLayout>} />
+        <Route path="/prospectos" element={<AppLayout><RequireSeccion><Prospectos /></RequireSeccion></AppLayout>} />
         <Route path="/listas" element={<AppLayout><RequireListas><Listas /></RequireListas></AppLayout>} />
         <Route path="/listas/:areaSlug" element={<AppLayout><RequireListas><Listas /></RequireListas></AppLayout>} />
         <Route path="/listas/:areaSlug/:listaId" element={<AppLayout><RequireListas><Listas /></RequireListas></AppLayout>} />
