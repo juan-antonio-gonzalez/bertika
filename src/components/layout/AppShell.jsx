@@ -358,12 +358,8 @@ export default function AppShell({ children }) {
     <div className="shell-app">
       <aside className={`shell-side${abierto ? ' open' : ''}`}>
         <div className="shell-brand">
-          <Link to="/home" className="brand">
-            <span className="logo"><Icon name="bolt" size={20} /></span>
-            <span className="shell-brand-t">
-              BERTIKA<sup>®</sup>
-              <small>Energia bajo control</small>
-            </span>
+          <Link to="/home" className="brand" aria-label="Bertika — inicio">
+            <img src="/img/logo-bertika.png" alt="Bertika®" className="shell-brand-logo" width="460" height="82" />
           </Link>
           <button className="shell-side-x" aria-label="Cerrar menú" onClick={() => setAbierto(false)}>
             <Icon name="x" size={16} />

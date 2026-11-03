@@ -90,6 +90,7 @@ input, select, textarea { font-family: inherit; color: var(--text); }
 }
 .shell-brand { display: flex; align-items: center; justify-content: space-between; padding: 14px 14px 8px; }
 .shell-brand .brand { color: #fff; }
+.shell-brand-logo { display: block; width: auto; height: 30px; max-width: 190px; object-fit: contain; }
 .shell-brand-t { display: block; line-height: 1.08; letter-spacing: 0.4px; }
 .shell-brand-t small { color: rgba(255, 255, 255, 0.52); letter-spacing: 0.4px; }
 .shell-side-x { display: none; background: transparent; border: 0; color: rgba(255, 255, 255, 0.7); cursor: pointer; padding: 6px; }
@@ -224,6 +225,7 @@ input, select, textarea { font-family: inherit; color: var(--text); }
 
 /* En movil el sidebar se vuelve un cajon (drawer) con fondo oscurecido. */
 @media (max-width: 980px) {
+  .shell-brand-logo { height: 28px; max-width: 176px; }
   .shell-side {
     position: fixed; top: 0; left: 0; height: 100vh; width: 268px;
     transform: translateX(-102%); transition: transform 0.2s ease;
