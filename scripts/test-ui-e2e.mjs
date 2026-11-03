@@ -161,6 +161,11 @@ try {
   await esperar("document.body.innerText.toLowerCase().includes('pipeline abierto')", 'pantalla de Ventas', 30000);
   await esperar('!!document.querySelector(".ventas-pipeline") || document.body.innerText.includes("Nueva oportunidad")', 'pipeline de Ventas');
 
+  paso = 'prospectos';
+  await navegar(`${BASE}/prospectos`);
+  await esperar("document.body.innerText.includes('Prospectos') && document.body.innerText.includes('Nuevo prospecto')", 'pantalla de Prospectos', 30000);
+  await esperar('!!document.querySelector("table.tbl") || document.body.innerText.includes("No hay prospectos")', 'tabla o estado vacío de Prospectos');
+
   paso = 'buscador del menú';
   await escribir('.shell-menu-search input', 'Taller');
   await sleep(500);
