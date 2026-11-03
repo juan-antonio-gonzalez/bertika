@@ -33,6 +33,7 @@ if (!CHROME) {
 const PORT = Number(process.env.BERTIKA_UI_DEBUG_PORT || 9333);
 const PERFIL = mkdtempSync(path.join(os.tmpdir(), 'bertika-ui-e2e-'));
 const SHOT = path.join(os.tmpdir(), 'bertika-ui-e2e.png');
+const SHOT_PROSPECTOS = path.join(os.tmpdir(), 'bertika-prospectos.png');
 const chrome = spawn(CHROME, [
   '--headless=new', '--no-sandbox', '--disable-gpu', '--hide-scrollbars', '--no-first-run',
   `--user-data-dir=${PERFIL}`, `--remote-debugging-port=${PORT}`, 'about:blank',
@@ -165,6 +166,7 @@ try {
   await navegar(`${BASE}/prospectos`);
   await esperar("document.body.innerText.includes('Prospectos') && document.body.innerText.includes('Nuevo prospecto')", 'pantalla de Prospectos', 30000);
   await esperar('!!document.querySelector("table.tbl") || document.body.innerText.includes("No hay prospectos")', 'tabla o estado vacío de Prospectos');
+  { const { data } = await send('Page.captureScreenshot', { format: 'png' }); writeFileSync(SHOT_PROSPECTOS, Buffer.from(data, 'base64')); }
 
   paso = 'buscador del menú';
   await escribir('.shell-menu-search input', 'Taller');
@@ -179,6 +181,7 @@ try {
   writeFileSync(SHOT, Buffer.from(data, 'base64'));
   console.log(`OK E2E UI · login, ${tarjetas} listas de Taller, vista de lista, búsqueda global y menú.`);
   console.log(`Captura: ${SHOT}`);
+  console.log(`Captura Prospectos: ${SHOT_PROSPECTOS}`);
   process.exitCode = 0;
 } catch (e) {
   try {

@@ -1047,6 +1047,30 @@ async function main() {
     await exportado.arrayBuffer();
   });
 
+  await test('prospecto obligatorio y conversión automática al aceptar cotización', async () => {
+    const sufijo = Date.now();
+    const sinContacto = await pedir('/prospectos', { method: 'POST', token: tokenAdmin, body: { empresa: `Sin contacto ${sufijo}` } });
+    assert.equal(sinContacto.status, 400, 'sin email, teléfono ni CUIT no se crea');
+    const email = `auto.${sufijo}@bertika.com`;
+    const p = await pedir('/prospectos', { method: 'POST', token: tokenAdmin, body: { empresa: `Auto Cliente ${sufijo}`, email, telefono: '+54 11 5555-0303', localidad: 'Haedo' } });
+    assert.equal(p.status, 201, p.texto);
+    const dup = await pedir('/prospectos', { method: 'POST', token: tokenAdmin, body: { empresa: `Auto Cliente dup ${sufijo}`, email } });
+    assert.equal(dup.status, 409, 'el email repetido se rechaza');
+    const opp = await pedir('/oportunidades', { method: 'POST', token: tokenAdmin, body: { titulo: `Venta Auto ${sufijo}`, prospecto_id: p.json.id, serie: `AUTO-${sufijo}` } });
+    assert.equal(opp.status, 201, opp.texto);
+    const cot = await pedir(`/oportunidades/${opp.json.id}/cotizaciones`, { method: 'POST', token: tokenAdmin, body: { items: [{ descripcion: 'Servicio', cantidad: 1, precio_unitario: 100 }], iva_pct: 0 } });
+    assert.equal(cot.status, 201, cot.texto);
+    const envio = await pedir(`/cotizaciones/${cot.json.id}/enviar`, { method: 'POST', token: tokenAdmin });
+    assert.equal(envio.status, 200, envio.texto);
+    const aceptar = await pedir(`/public/cotizacion-venta/${envio.json.token}`, { method: 'POST', body: { decision: 'aceptada' } });
+    assert.equal(aceptar.status, 200, aceptar.texto);
+    const oppFinal = await pedir(`/oportunidades/${opp.json.id}`, { token: tokenAdmin });
+    assert.ok(oppFinal.json.cliente_id, 'la oportunidad queda vinculada al cliente');
+    const prospectoFinal = await pedir(`/prospectos?q=${encodeURIComponent(`Auto Cliente ${sufijo}`)}`, { token: tokenAdmin });
+    assert.equal(prospectoFinal.json.filas[0].estado, 'convertido');
+    assert.equal(prospectoFinal.json.filas[0].cliente_id, oppFinal.json.cliente_id);
+  });
+
   await test('la salud ve la cola con el envío fallido', async () => {
     const r = await pedir('/salud', { token: tokenAdmin });
     assert.equal(r.status, 200);

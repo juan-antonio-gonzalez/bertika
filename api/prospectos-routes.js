@@ -44,6 +44,21 @@ const subirExcel = memoryUpload({
   },
 });
 
+async function duplicadoProspecto(d, exceptoId = null) {
+  const filas = await query(
+    `SELECT id, empresa, email, telefono FROM prospectos
+      WHERE archivado = false
+        AND (($1 <> '' AND cuit = $1)
+          OR ($2 <> '' AND email_normalizado = $2)
+          OR ($3 <> '' AND telefono_normalizado = $3)
+          OR ($4 <> '' AND $5 <> '' AND empresa_normalizada = $4 AND lower(COALESCE(localidad,'')) = lower($5)))
+        AND ($6::text IS NULL OR id <> $6)
+      LIMIT 1`,
+    [d.cuit || '', d.email_normalizado || '', d.telefono_normalizado || '', d.empresa_normalizada || '', d.localidad || '', exceptoId]
+  );
+  return filas[0] || null;
+}
+
 async function estados() {
   return query('SELECT * FROM prospecto_estados ORDER BY orden, lower(nombre)');
 }
@@ -202,6 +217,9 @@ async function clasificar(filas) {
       },
     };
     if (!empresa) return { ...base, clasificacion: 'error', error: 'Falta la empresa.' };
+    if (!limStr(f.cuit, 30) && !normalizarEmail(f.email) && !normalizarTelefono(f.telefono)) {
+      return { ...base, clasificacion: 'error', error: 'Falta CUIT, email o teléfono para identificar el prospecto.' };
+    }
     const cuit = limStr(f.cuit, 30) || null;
     const email = normalizarEmail(f.email);
     const telefono = normalizarTelefono(f.telefono);
@@ -321,8 +339,11 @@ prospectosRouter.get('/prospectos', authRequired, permisoRequerido('ventas'), as
 prospectosRouter.post('/prospectos', authRequired, permisoRequerido('ventas_editar'), async (req, res) => {
   const d = datosProspecto(req.body);
   if (!d.empresa) return res.status(400).json({ error: 'La empresa es obligatoria.' });
+  if (!d.cuit && !d.email && !d.telefono) return res.status(400).json({ error: 'Cargá CUIT, email o teléfono para poder identificar el prospecto y evitar duplicados.' });
   if (d.fecha_proxima_accion === undefined) return res.status(400).json({ error: 'Fecha de próxima acción inválida.' });
   if (!(await estadoValido(d.estado, false))) return res.status(400).json({ error: 'Estado inválido.' });
+  const repetido = await duplicadoProspecto(d);
+  if (repetido) return res.status(409).json({ error: `Ya existe un prospecto similar: ${repetido.empresa}.`, existente_id: repetido.id });
   const id = await crearProspecto(req.body, req);
   return res.status(201).json({ id });
 });
@@ -334,6 +355,11 @@ prospectosRouter.patch('/prospectos/:id', authRequired, permisoRequerido('ventas
   if (req.body?.estado !== undefined && !(await estadoValido(limStr(req.body.estado, 40), false))) return res.status(400).json({ error: 'Estado inválido.' });
   const f = fechaISO(req.body?.fecha_proxima_accion);
   if (req.body?.fecha_proxima_accion !== undefined && f === undefined) return res.status(400).json({ error: 'Fecha inválida.' });
+  if (['empresa', 'cuit', 'email', 'telefono', 'localidad'].some((k) => req.body?.[k] !== undefined)) {
+    const posible = datosProspecto({ ...p, ...req.body });
+    const repetido = await duplicadoProspecto(posible, p.id);
+    if (repetido) return res.status(409).json({ error: `Ya existe un prospecto similar: ${repetido.empresa}.`, existente_id: repetido.id });
+  }
   if (!(await actualizarProspecto(p.id, req.body, req))) return res.status(400).json({ error: 'Sin cambios.' });
   return res.json({ ok: true });
 });
