@@ -2,7 +2,7 @@ import { lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Toast } from './components/ui';
 import AppShell from './components/layout/AppShell';
-import { puedeVer, seccionDeRuta, inicioDe } from './data/permisos';
+import { puedeVer, seccionDeRuta, inicioDe, LISTA_INICIO_ADMIN } from './data/permisos';
 import SiteHeader from './components/SiteHeader';
 import SiteFooter from './components/SiteFooter';
 import Chatbot from './components/Chatbot';
@@ -132,10 +132,16 @@ function AppLayout({ children }) {
   return <AppShell>{children}</AppShell>;
 }
 
+function LandingInicio() {
+  const user = useStore((s) => s.user);
+  if (user?.rol === 'admin') return <Navigate to={LISTA_INICIO_ADMIN} replace />;
+  return <Landing />;
+}
+
 function Plataforma() {
   const user = useStore((s) => s.user);
   if (!user) return <Navigate to="/auth" replace />;
-  const dest = user.rol === 'admin' ? '/hub' : user.rol === 'tecnico' ? '/tecnico' : '/cliente';
+  const dest = user.rol === 'admin' ? LISTA_INICIO_ADMIN : user.rol === 'tecnico' ? '/tecnico' : '/cliente';
   return <Navigate to={dest} replace />;
 }
 
@@ -165,7 +171,7 @@ export default function App() {
       <Suspense fallback={<CargandoRuta />}>
       <Routes>
         {/* Sitio público */}
-        <Route path="/" element={<PublicLayout><Landing /></PublicLayout>} />
+        <Route path="/" element={<PublicLayout><LandingInicio /></PublicLayout>} />
         <Route path="/empresa" element={<PublicLayout><Empresa /></PublicLayout>} />
         <Route path="/productos" element={<PublicLayout><Productos /></PublicLayout>} />
         <Route path="/productos/:id" element={<PublicLayout><ProductoDetalle /></PublicLayout>} />

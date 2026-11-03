@@ -214,9 +214,14 @@ export function seccionDeRuta(ruta) {
   return match ? SECCION_POR_RUTA[match] : (limpia.startsWith('/hub/') ? 'tablero' : null);
 }
 
+// Inicio de la plataforma para el administrador. Es la lista de Prospectos
+// de Ventas; se usa al entrar, recargar /home y abrir /plataforma.
+export const LISTA_INICIO_ADMIN = '/listas/ventas/lst_bc1a6a61-0243-4784-9c9e-7c950519ffb6';
+
 // Primera pantalla a la que puede entrar el usuario (para redirigir cuando no
 // tiene permiso sobre la que pidio). /home siempre esta disponible.
 export function inicioDe(usuario) {
+  if (usuario?.rol === 'admin') return LISTA_INICIO_ADMIN;
   const orden = [
     ['/hub', 'tablero'], ['/hub/dashboard', 'dashboard'], ['/ventas', 'ventas'], ['/hub/clientes', 'clientes'], ['/hub/tareas', 'tareas'],
     ['/hub/whatsapp', 'whatsapp'], ['/hub/inventario', 'inventario'], ['/hub/garantias', 'garantias'],
