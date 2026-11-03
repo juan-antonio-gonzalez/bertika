@@ -79,13 +79,14 @@ function ImportarModal({ abierto, onClose, onImportado }) {
   const [decisiones, setDecisiones] = useState({});
   const [busy, setBusy] = useState(false);
   const [resultado, setResultado] = useState(null);
+  const [erroresArchivo, setErroresArchivo] = useState([]);
 
-  useEffect(() => { if (!abierto) { setArchivo(null); setPreview(null); setDecisiones({}); setResultado(null); } }, [abierto]);
+  useEffect(() => { if (!abierto) { setArchivo(null); setPreview(null); setDecisiones({}); setResultado(null); setErroresArchivo([]); } }, [abierto]);
 
   const previsualizar = async (e) => {
     e.preventDefault();
     if (!archivo) return toastShow('Elegí un archivo .xlsx.', 'warn');
-    setBusy(true);
+    setBusy(true); setErroresArchivo([]);
     try {
       const form = new FormData();
       form.append('archivo', archivo);
@@ -96,7 +97,7 @@ function ImportarModal({ abierto, onClose, onImportado }) {
         inicial[i] = f.clasificacion === 'nuevo' ? 'crear' : 'omitir';
       });
       setDecisiones(inicial);
-    } catch (err) { toastShow(err.message, 'error'); } finally { setBusy(false); }
+    } catch (err) { toastShow(err.message, 'error'); setErroresArchivo(Array.isArray(err.detalles) ? err.detalles : []); } finally { setBusy(false); }
   };
 
   const confirmar = async () => {
@@ -135,6 +136,15 @@ function ImportarModal({ abierto, onClose, onImportado }) {
           <small className="ayuda">Se procesa la primera hoja. Máximo 2000 prospectos por archivo.</small>
         </div>
       </form>
+      {erroresArchivo.length > 0 && (
+        <div className="banner-warn" style={{ marginTop: 12, alignItems: 'flex-start' }}>
+          <Icon name="warn" size={16} />
+          <div>
+            <b>El archivo no se puede importar.</b>
+            <ul style={{ margin: '6px 0 0 18px', padding: 0 }}>{erroresArchivo.map((x, i) => <li key={i}>{x}</li>)}</ul>
+          </div>
+        </div>
+      )}
       {resultado && (
         <div className="card" style={{ marginTop: 12 }}>
           <b>Resultado:</b> {resultado.creados} creados · {resultado.actualizados} actualizados · {resultado.omitidos} omitidos · {resultado.errores} errores.

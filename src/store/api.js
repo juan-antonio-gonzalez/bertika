@@ -43,6 +43,7 @@ export async function api(path, { method = 'GET', body, form } = {}) {
   if (!res.ok) {
     const err = new Error((data && data.error) || `Error ${res.status}`);
     err.status = res.status;
+    err.detalles = data?.detalles;
     throw err;
   }
   return data;

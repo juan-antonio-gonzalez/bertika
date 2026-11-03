@@ -1020,8 +1020,8 @@ async function main() {
 
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Prospectos');
-    ws.addRow(['ID', 'Empresa / Prospecto', 'Zona / Localidad', 'Dirección / Ubicación', 'Rubro / Equipamiento Principal', 'Perfil Redes Sociales', 'Contacto LinkedIn (Nombre y Cargo)', 'Email de Contacto', 'Teléfono / WhatsApp Directo', 'Tipo de Contacto Directo', 'Estado de Contacto', 'Observaciones / Foco Comercial', 'CUIT', 'Columna nueva']);
-    ws.addRow([String(sufijo), `Importado E2E ${sufijo}`, 'Morón', 'Calle 1', 'Metalúrgica', 'linkedin.com/company/e2e', 'Ana Pérez - Compras', `importado.${sufijo}@bertika.com`, '+54 11 5555-0202', 'Mail', 'Pendiente', 'Foco E2E', '27-87654321-4', 'valor nuevo']);
+    ws.addRow(['ID', 'Empresa / Prospecto', 'Zona / Localidad', 'Dirección / Ubicación', 'Rubro / Equipamiento Principal', 'Perfil Redes Sociales', 'Contacto LinkedIn (Nombre y Cargo)', 'Email de Contacto', 'Teléfono / WhatsApp Directo', 'Tipo de Contacto Directo', 'Estado de Contacto', 'Observaciones / Foco Comercial', 'CUIT']);
+    ws.addRow([String(sufijo), `Importado E2E ${sufijo}`, 'Morón', 'Calle 1', 'Metalúrgica', 'linkedin.com/company/e2e', 'Ana Pérez - Compras', `importado.${sufijo}@bertika.com`, '+54 11 5555-0202', 'Mail', 'Pendiente', 'Foco E2E', '27-78765432-6']);
     const buffer = Buffer.from(await wb.xlsx.writeBuffer());
     const form = new FormData();
     form.append('archivo', new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), 'prospectos.xlsx');
@@ -1030,10 +1030,21 @@ async function main() {
     assert.equal(preview.status, 200);
     const vista = await preview.json();
     assert.ok(vista.filas.some((x) => x.clasificacion === 'nuevo'));
-    assert.ok(vista.columnas_nuevas.includes('Columna nueva'), 'el parser detecta columnas nuevas');
     const confirmar = await pedir('/prospectos/importar', { method: 'POST', token: tokenAdmin, body: { importacion_id: vista.importacion_id, decisiones: Object.fromEntries(vista.filas.map((f, i) => [String(i), f.clasificacion === 'error' ? 'omitir' : 'crear'])) } });
     assert.equal(confirmar.status, 200, confirmar.texto);
     assert.ok(confirmar.json.creados >= 1);
+
+    const wbMal = new ExcelJS.Workbook();
+    const wsMal = wbMal.addWorksheet('Prospectos');
+    wsMal.addRow(['Empresa / Prospecto', 'Email de Contacto']);
+    wsMal.addRow(['Sin CUIT', 'sin.cuit@bertika.com']);
+    const malBuffer = Buffer.from(await wbMal.xlsx.writeBuffer());
+    const malForm = new FormData();
+    malForm.append('archivo', new Blob([malBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), 'invalido.xlsx');
+    const invalido = await fetch(`${API}/prospectos/importar/preview`, { method: 'POST', headers: { Authorization: `Bearer ${tokenAdmin}` }, body: malForm });
+    const invalidoJson = await invalido.json();
+    assert.equal(invalido.status, 400, 'el archivo sin CUIT se rechaza');
+    assert.ok(invalidoJson.detalles.some((x) => x.includes('CUIT')), 'el rechazo explica que falta CUIT');
 
     // El mismo archivo ya existe: debe clasificarse como exacto/omitido.
     const form2 = new FormData();

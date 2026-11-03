@@ -17,6 +17,36 @@ const emailsDe = (...valores) => [...new Set(valores.flatMap((v) => String(v || 
 const emailNorm = (v) => emailsDe(v)[0] || '';
 const telNorm = (v) => String(v || '').replace(/\D/g, '').slice(-15);
 const docNorm = (v) => String(v || '').replace(/\D/g, '');
+const MAX_FILAS = 2000;
+const EMAIL_RE = /^\S+@\S+\.\S+$/;
+function cuitValido(valor) {
+  const d = docNorm(valor);
+  if (/^\d{7,8}$/.test(d)) return true; // DNI
+  if (!/^\d{11}$/.test(d)) return false;
+  const mult = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2];
+  const suma = mult.reduce((acc, n, i) => acc + Number(d[i]) * n, 0);
+  const resto = 11 - (suma % 11);
+  const verificador = resto === 11 ? 0 : resto === 10 ? 9 : resto;
+  return Number(d[10]) === verificador;
+}
+function emailsTokens(valor) {
+  return String(valor || '').split(/[,;/]/).map((x) => x.trim()).filter(Boolean);
+}
+const ESTADO_ALIAS = { pendiente: 'nuevo', calificado: 'interesado', descartado: 'perdido', descartada: 'perdido', convertidoacliente: 'convertido' };
+function normalizarEstadoLabel(label) { const s = slugEstado(label); return ESTADO_ALIAS[s] || s; }
+function validarFila(f, F) {
+  const errores = [];
+  if (!limStr(f.empresa, 180)) errores.push('Falta Empresa / Prospecto.');
+  if (!docNorm(f.cuit)) errores.push('Falta CUIT/CUIL/DNI.');
+  else if (!cuitValido(f.cuit)) errores.push('CUIT/CUIL/DNI inválido.');
+  const tokens = emailsTokens(f.email);
+  if (!tokens.length && !docNorm(f.telefono)) errores.push('Falta email o teléfono.');
+  const invalidos = tokens.filter((x) => !EMAIL_RE.test(x));
+  if (invalidos.length) errores.push(`Email inválido: ${invalidos.slice(0, 2).join(', ')}.`);
+  if (f.telefono && docNorm(f.telefono).length < 6) errores.push('Teléfono inválido.');
+  if (f.estado_label && !estadoPorSlug(F, normalizarEstadoLabel(f.estado_label))) errores.push(`Estado inválido: ${f.estado_label}.`);
+  return errores;
+}
 const fechaISO = (v) => { const t = limStr(v, 10); return !t ? null : (/^\d{4}-\d{2}-\d{2}$/.test(t) ? t : undefined); };
 const ARCHIVO_XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 const colorDe = (nombre) => ({ nuevo: 'blue', contactado: 'amber', interesado: 'purple', cotizado: 'orange', negociacion: 'yellow', ganado: 'green', perdido: 'red', convertido: 'teal', convertidoacliente: 'teal' }[norm(nombre).replace(/\s+/g, '')] || 'gray');
@@ -251,7 +281,7 @@ async function leerExcel(buffer) {
 }
 async function clasificar(filas, existentes) {
   return filas.map((f) => {
-    const estadoImportado = slugEstado(f.estado_label || '');
+    const estadoImportado = normalizarEstadoLabel(f.estado_label || '');
     const estado = estadoPorSlug(F, estadoImportado) ? estadoImportado : slugEstado(opciones(F)[0] || 'Nuevo');
     const base = { fila: f.fila, datos: { ...f, estado, origen: 'excel' } };
     if (!f.empresa) return { ...base, clasificacion: 'error', error: 'Falta la empresa.' };
@@ -268,9 +298,27 @@ let F = {};
 
 prospectosRouter.post('/prospectos/importar/preview', authRequired, permisoRequerido('ventas_editar'), subirExcel.single('archivo'), async (req, res) => {
   if (!req.file?.buffer?.length) return res.status(400).json({ error: 'Subí un archivo .xlsx.' });
-  let parsed; try { parsed = await leerExcel(req.file.buffer); } catch { return res.status(400).json({ error: 'Excel inválido.' }); }
-  if (!parsed.filas.length) return res.status(400).json({ error: 'No se encontraron prospectos.' });
+  if (req.file.buffer[0] !== 0x50 || req.file.buffer[1] !== 0x4b) return res.status(400).json({ error: 'El archivo no es un .xlsx válido.' });
+  let parsed; try { parsed = await leerExcel(req.file.buffer); } catch { return res.status(400).json({ error: 'No pudimos leer el Excel. Verificá que sea un .xlsx válido.' }); }
+  const m = mapHeaders(parsed.columnas);
+  const faltantes = [];
+  if (m.empresa < 0) faltantes.push('Empresa / Prospecto');
+  if (m.cuit < 0) faltantes.push('CUIT');
+  if (m.email < 0 && m.telefono < 0) faltantes.push('Email de Contacto o Teléfono / WhatsApp');
+  const detalles = [];
+  if (faltantes.length) detalles.push(`Faltan columnas obligatorias: ${faltantes.join(', ')}.`);
+  if (parsed.nuevas?.length) detalles.push(`Columnas no permitidas: ${parsed.nuevas.join(', ')}. Usá la plantilla oficial.`);
+  if (!parsed.filas.length) detalles.push('No hay filas de prospectos para importar.');
+  if (parsed.filas.length > MAX_FILAS) detalles.push(`El archivo tiene ${parsed.filas.length} filas; el máximo es ${MAX_FILAS}.`);
   const { lista, F: campos } = await contexto(); F = campos; setLista(F, lista);
+  const vistos = new Map();
+  for (const f of parsed.filas) {
+    const clave = docNorm(f.cuit);
+    if (clave && vistos.has(clave)) detalles.push(`Fila ${f.fila}: el CUIT/CUIL/DNI ${f.cuit} está repetido en la fila ${vistos.get(clave)}.`);
+    else if (clave) vistos.set(clave, f.fila);
+    for (const e of validarFila(f, F)) detalles.push(`Fila ${f.fila}: ${e}`);
+  }
+  if (detalles.length) return res.status(400).json({ error: 'El archivo no cumple el formato de la plantilla.', detalles: detalles.slice(0, 30) });
   const clasificados = await clasificar(parsed.filas, await filas(F));
   const resumen = { total: clasificados.length, nuevos: clasificados.filter((x) => x.clasificacion === 'nuevo').length, exactos: clasificados.filter((x) => x.clasificacion === 'exacto').length, parciales: clasificados.filter((x) => x.clasificacion === 'parcial').length, errores: clasificados.filter((x) => x.clasificacion === 'error').length };
   const id = idNuevo('imp');
