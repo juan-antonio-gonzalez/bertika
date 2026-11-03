@@ -426,6 +426,41 @@ async function conflictoUnico(listaId, campos, datos, excluirId = null) {
   return null;
 }
 
+async function validarConfigLookup(lista, config) {
+  const relacionId = limStr(config?.relacion_id, 80);
+  const campoOrigen = limStr(config?.campo_origen, 80);
+  if (!relacionId) return 'Elegí el campo de relación del lookup.';
+  if (!campoOrigen) return 'Elegí el campo que querés mostrar en el lookup.';
+  const relacion = await one('SELECT id, config FROM lista_campos WHERE id = $1 AND lista_id = $2 AND activo = true AND tipo = $3', [relacionId, lista.id, 'relacion']);
+  if (!relacion) return 'El campo de relación no existe en esta lista.';
+  const objetivoId = relacion.config?.lista_id;
+  if (!objetivoId) return 'El campo de relación no tiene una lista configurada.';
+  const objetivo = await one('SELECT id, area_id FROM listas WHERE id = $1 AND archivada = false', [objetivoId]);
+  if (!objetivo || objetivo.area_id !== lista.area_id) return 'La lista relacionada no está disponible.';
+  const origen = await one('SELECT id FROM lista_campos WHERE id = $1 AND lista_id = $2 AND activo = true', [campoOrigen, objetivoId]);
+  if (!origen) return 'El campo a mostrar no pertenece a la lista relacionada.';
+  return null;
+}
+
+async function resolverLookups(listaId, campos, registros) {
+  const lookups = (campos || []).filter((c) => c.tipo === 'lookup' && c.config?.relacion_id && c.config?.campo_origen);
+  if (!lookups.length || !registros.length) return registros;
+  for (const lookup of lookups) {
+    const relacion = (campos || []).find((c) => c.id === lookup.config.relacion_id && c.tipo === 'relacion');
+    const objetivoId = relacion?.config?.lista_id;
+    if (!objetivoId) continue;
+    const ids = [...new Set(registros.map((r) => r.datos?.[relacion.id]?.id).filter(Boolean))];
+    if (!ids.length) { for (const r of registros) r.datos[lookup.id] = null; continue; }
+    const objetivos = await query(
+      'SELECT id, datos FROM lista_registros WHERE lista_id = $1 AND archivado = false AND id = ANY($2::text[])',
+      [objetivoId, ids]
+    );
+    const porId = new Map(objetivos.map((r) => [r.id, r.datos?.[lookup.config.campo_origen] ?? null]));
+    for (const r of registros) r.datos[lookup.id] = porId.get(r.datos?.[relacion.id]?.id) ?? null;
+  }
+  return registros;
+}
+
 function normalizarConfigCampo(tipo, config) {
   const entrada = esObjeto(config) ? config : {};
   const salida = {};
@@ -438,6 +473,8 @@ function normalizarConfigCampo(tipo, config) {
   }
   if (tipo === 'relacion' && entrada.lista_id) salida.lista_id = limStr(entrada.lista_id, 80);
   if (tipo === 'relacion' && entrada.campo_mostrar) salida.campo_mostrar = limStr(entrada.campo_mostrar, 80);
+  if (tipo === 'lookup' && entrada.relacion_id) salida.relacion_id = limStr(entrada.relacion_id, 80);
+  if (tipo === 'lookup' && entrada.campo_origen) salida.campo_origen = limStr(entrada.campo_origen, 80);
   if (tipo === 'calculado' && entrada.formula) salida.formula = String(entrada.formula).slice(0, 1000);
   if (entrada.defecto !== undefined && entrada.defecto !== null && entrada.defecto !== '') {
     salida.defecto = entrada.defecto;
@@ -1380,6 +1417,10 @@ listasRouter.post('/listas/:id/campos', authRequired, async (req, res) => {
       if (!campoMostrar) return res.status(400).json({ error: 'El campo a mostrar no pertenece a la lista relacionada.' });
     }
   }
+  if (tipo === 'lookup') {
+    const errorLookup = await validarConfigLookup(lista, config);
+    if (errorLookup) return res.status(400).json({ error: errorLookup });
+  }
   if (tipo === 'calculado') {
     if (!config.formula) return res.status(400).json({ error: 'Escribí la fórmula del campo calculado.' });
     try { evaluarFormula(config.formula, {}); } catch (e) { return res.status(400).json({ error: e.message }); }
@@ -1450,6 +1491,11 @@ listasRouter.patch('/lista-campos/:id', authRequired, async (req, res) => {
       const campoMostrar = await one('SELECT id FROM lista_campos WHERE id = $1 AND lista_id = $2 AND activo = true', [mostrarId, objetivoId]);
       if (!campoMostrar) return res.status(400).json({ error: 'El campo a mostrar no pertenece a la lista relacionada.' });
     }
+  }
+  if ((req.body?.tipo || campo.tipo) === 'lookup') {
+    const configLookup = req.body?.config !== undefined ? req.body.config : campo.config;
+    const errorLookup = await validarConfigLookup(lista, configLookup);
+    if (errorLookup) return res.status(400).json({ error: errorLookup });
   }
   if ((req.body?.tipo || campo.tipo) === 'calculado') {
     const formula = req.body?.config?.formula ?? campo.config?.formula;
@@ -1611,8 +1657,10 @@ listasRouter.get('/listas/:id/registros', authRequired, async (req, res) => {
   params.push(limit, offset);
   sql += ` ORDER BY creado_en DESC LIMIT $${params.length - 1} OFFSET $${params.length}`;
   const registros = await query(sql, params);
-  const ocultos = idsCamposOcultos(req.user, await camposDe(lista.id));
+  const todosCampos = await camposDe(lista.id);
+  const ocultos = idsCamposOcultos(req.user, todosCampos);
   const regsVisibles = ocultos.size ? registros.map((r) => ({ ...r, datos: sinCamposOcultos(r.datos, ocultos) })) : registros;
+  await resolverLookups(lista.id, todosCampos, regsVisibles);
   const paramsTotal = [lista.id, ...vis.params];
   const [total] = await query(`SELECT count(*)::int AS n FROM lista_registros WHERE lista_id = $1 AND archivado = false ${vis.sql}`, paramsTotal);
   return res.json({ registros: regsVisibles, total: total.n, restringido: Boolean(vis.sql) });

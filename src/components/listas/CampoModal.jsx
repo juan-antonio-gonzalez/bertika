@@ -13,6 +13,8 @@ export default function CampoModal({ campo, listas = [], listaActual, camposActu
   const [max, setMax] = useState(campo?.config?.max ?? '');
   const [ayuda, setAyuda] = useState(campo?.config?.ayuda || '');
   const [relacionId, setRelacionId] = useState(campo?.config?.lista_id || '');
+  const [lookupRelacion, setLookupRelacion] = useState(campo?.config?.relacion_id || '');
+  const [lookupCampo, setLookupCampo] = useState(campo?.config?.campo_origen || '');
   const [formula, setFormula] = useState(campo?.config?.formula || '');
   const [camposDestino, setCamposDestino] = useState([]);
   const [mostrar, setMostrar] = useState(campo?.config?.campo_mostrar || '');
@@ -22,7 +24,10 @@ export default function CampoModal({ campo, listas = [], listaActual, camposActu
   const esSeleccion = tipo === 'seleccion' || tipo === 'multiseleccion';
   const esNumero = tipo === 'numero' || tipo === 'moneda';
   const esRelacion = tipo === 'relacion';
+  const esLookup = tipo === 'lookup';
   const esCalculado = tipo === 'calculado';
+  const relacionParaLookup = (camposActuales || []).find((c) => c.id === lookupRelacion && c.tipo === 'relacion');
+  const targetLookup = relacionParaLookup?.config?.lista_id || '';
   useEffect(() => {
     let vivo = true;
     api('/listas/categorias')
@@ -32,13 +37,14 @@ export default function CampoModal({ campo, listas = [], listaActual, camposActu
   }, []);
 
   useEffect(() => {
-    if (!esRelacion || !relacionId) { setCamposDestino([]); return undefined; }
+    const target = esRelacion ? relacionId : (esLookup ? targetLookup : '');
+    if (!target) { setCamposDestino([]); return undefined; }
     let vivo = true;
-    api(`/listas/${relacionId}`)
+    api(`/listas/${target}`)
       .then((det) => { if (vivo) setCamposDestino(det.campos || []); })
       .catch(() => { if (vivo) setCamposDestino([]); });
     return () => { vivo = false; };
-  }, [esRelacion, relacionId]);
+  }, [esRelacion, esLookup, relacionId, targetLookup]);
   const camposCalculables = (camposActuales || []).filter((c) => ['numero', 'moneda', 'calculado'].includes(c.tipo) && c.id !== campo?.id);
   const otrasListas = (listas || []).filter((l) => l.id !== listaActual?.id);
 
@@ -58,6 +64,14 @@ export default function CampoModal({ campo, listas = [], listaActual, camposActu
       setError('Elegí la lista con la que se relaciona este campo.');
       return;
     }
+    if (esLookup && !lookupRelacion) {
+      setError('Elegí el campo de relación del lookup.');
+      return;
+    }
+    if (esLookup && !lookupCampo) {
+      setError('Elegí el campo que querés mostrar en el lookup.');
+      return;
+    }
     if (esCalculado) {
       const err = validarFormula(formula);
       if (err) { setError(err); return; }
@@ -66,6 +80,7 @@ export default function CampoModal({ campo, listas = [], listaActual, camposActu
     if (esSeleccion) config.opciones = ops;
     if (esRelacion) config.lista_id = relacionId;
     if (esRelacion && mostrar) config.campo_mostrar = mostrar;
+    if (esLookup) { config.relacion_id = lookupRelacion; config.campo_origen = lookupCampo; }
     if (esCalculado) config.formula = formula;
     if (esNumero) {
       if (min !== '') config.min = Number(min);
@@ -166,6 +181,37 @@ export default function CampoModal({ campo, listas = [], listaActual, camposActu
                 </div>
               )}
               <small className="ayuda">El registro guarda el vínculo; la etiqueta la resuelve la API con el campo que elijas.</small>
+            </div>
+          )}
+
+          {esLookup && (
+            <div className="field" style={{ gridColumn: '1 / -1' }}>
+              <label>Campo de relación *</label>
+              {(!camposActuales || camposActuales.filter((c) => c.tipo === 'relacion').length === 0) ? (
+                <div className="banner-info">
+                  <Icon name="info" size={15} />
+                  <span>Primero creá un campo de tipo <b>Relación con otra lista</b> en esta lista. El lookup usa ese vínculo para traer una columna de la lista relacionada.</span>
+                </div>
+              ) : (
+                <select
+                  className="input"
+                  value={lookupRelacion}
+                  onChange={(e) => { setLookupRelacion(e.target.value); setLookupCampo(''); }}
+                >
+                  <option value="">Elegir campo de relación...</option>
+                  {camposActuales.filter((c) => c.tipo === 'relacion').map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                </select>
+              )}
+              {lookupRelacion && (
+                <div className="field" style={{ marginTop: 8 }}>
+                  <label>Campo a mostrar *</label>
+                  <select className="input" value={lookupCampo} onChange={(e) => setLookupCampo(e.target.value)}>
+                    <option value="">Elegir campo...</option>
+                    {camposDestino.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                  </select>
+                </div>
+              )}
+              <small className="ayuda">Se actualiza solo: si cambia el dato en la lista relacionada, la columna lookup muestra el valor nuevo.</small>
             </div>
           )}
 

@@ -64,6 +64,7 @@ export const TIPOS_CAMPO = [
   { tipo: 'adjunto', etiqueta: 'Adjunto' },
   { tipo: 'imagen', etiqueta: 'Imagen' },
   { tipo: 'relacion', etiqueta: 'Relación con otra lista' },
+  { tipo: 'lookup', etiqueta: 'Lookup (desde otra lista)' },
   { tipo: 'calculado', etiqueta: 'Campo calculado' },
 ];
 
@@ -252,6 +253,10 @@ export function validarRegistro(campos, datos, { parcial = false } = {}) {
       };
       continue;
     }
+    if (tipo === 'lookup') {
+      salida[id] = null;
+      continue;
+    }
     if (tipo === 'relacion') {
       if (!esObjeto(valor) || !valor.id) return { ok: false, error: `“${campo.nombre}”: elegí un registro válido.` };
       salida[id] = {
@@ -284,6 +289,7 @@ export function valorVisible(campo, valor) {
   if (campo?.tipo === 'adjunto') return String(valor?.nombre || 'Adjunto');
   if (campo?.tipo === 'imagen') return String(valor?.nombre || 'Imagen');
   if (campo?.tipo === 'relacion') return String(valor?.etiqueta || valor?.id || '');
+  if (campo?.tipo === 'lookup' && esObjeto(valor)) return String(valor.etiqueta || valor.nombre || valor.id || '');
   if (campo?.tipo === 'calculado') {
     const n = Number(valor);
     return Number.isFinite(n) ? new Intl.NumberFormat('es-AR', { maximumFractionDigits: 2 }).format(n) : '';

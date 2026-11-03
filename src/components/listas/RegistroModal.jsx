@@ -221,6 +221,8 @@ export function CampoInput({ campo, value, onChange, listaId }) {
     control = <AdjuntoInput listaId={listaId} campoId={campo?.id} value={value} onChange={onChange} soloImagen={tipo === 'imagen'} />;
   } else if (tipo === 'relacion') {
     control = <RelacionInput campo={campo} value={value} onChange={onChange} />;
+  } else if (tipo === 'lookup') {
+    control = <input className="input" value={valorVisible(campo, value)} disabled placeholder="Se completa desde la relación" />;
   } else if (tipo === 'calculado') {
     control = <input className="input" value={value ?? ''} disabled placeholder="Se calcula al guardar" />;
   } else if (tipo === 'persona') {
