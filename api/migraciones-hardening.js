@@ -9,7 +9,7 @@ export async function migrarHardening() {
     id TEXT PRIMARY KEY,
     aplicada_en TIMESTAMPTZ DEFAULT now()
   )`);
-  const hecha = await one("SELECT id FROM schema_migrations WHERE id = '008_prospectos_documento_unico'");
+  const hecha = await one("SELECT id FROM schema_migrations WHERE id = '009_prospectos_documento_obligatorio'");
   if (hecha) return;
   await query('ALTER TABLE lista_adjuntos ADD COLUMN IF NOT EXISTS campo_id TEXT');
   await query('ALTER TABLE lista_adjuntos ADD COLUMN IF NOT EXISTS registro_id TEXT');
@@ -107,6 +107,7 @@ export async function migrarHardening() {
       await query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_prospectos_documento ON lista_registros ((${expr}))
         WHERE lista_id = '${listaProspectos.id}' AND archivado = false AND ${expr} <> ''`);
     }
+    if (campoDocumento) await query('UPDATE lista_campos SET requerido=true WHERE id=$1', [campoDocumento.id]);
     const campoEstado = await one("SELECT id, config FROM lista_campos WHERE lista_id=$1 AND lower(nombre)='estado' AND activo=true", [listaProspectos.id]);
     if (campoEstado) {
       const opciones = ['Nuevo', 'Contactado', 'Interesado', 'Cotizado', 'Negociación', 'Ganado', 'Perdido', 'Convertido a cliente'];
@@ -136,5 +137,6 @@ export async function migrarHardening() {
   await query("INSERT INTO schema_migrations (id) VALUES ('006_prospecto_oportunidad') ON CONFLICT DO NOTHING");
   await query("INSERT INTO schema_migrations (id) VALUES ('007_prospectos_lista_unica') ON CONFLICT DO NOTHING");
   await query("INSERT INTO schema_migrations (id) VALUES ('008_prospectos_documento_unico') ON CONFLICT DO NOTHING");
+  await query("INSERT INTO schema_migrations (id) VALUES ('009_prospectos_documento_obligatorio') ON CONFLICT DO NOTHING");
   console.log('[hardening] fin');
 }

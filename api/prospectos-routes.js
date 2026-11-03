@@ -189,6 +189,7 @@ prospectosRouter.post('/prospectos', authRequired, permisoRequerido('ventas_edit
   const { lista, F } = await contexto(); setLista(F, lista);
   const p = { ...req.body, estado: req.body?.estado || slugEstado(opciones(F)[0] || 'Nuevo') };
   if (!limStr(p.empresa, 180)) return res.status(400).json({ error: 'La empresa es obligatoria.' });
+  if (!docNorm(p.cuit)) return res.status(400).json({ error: 'El CUIT/CUIL/DNI es obligatorio.' });
   if (!p.cuit && !emailNorm(p.email) && !telNorm(p.telefono)) return res.status(400).json({ error: 'Cargá CUIT, email o teléfono para identificarlo y evitar duplicados.' });
   if (!estadoPorSlug(F, p.estado)) return res.status(400).json({ error: 'Estado inválido.' });
   if (fechaISO(p.fecha_proxima_accion) === undefined) return res.status(400).json({ error: 'Fecha inválida.' });
@@ -203,6 +204,7 @@ prospectosRouter.patch('/prospectos/:id', authRequired, permisoRequerido('ventas
   if (!actual) return res.status(404).json({ error: 'Prospecto no encontrado.' });
   const p = { ...actual, ...req.body, fecha_proxima_accion: req.body?.fecha_proxima_accion ?? actual.fecha_proxima_accion };
   if (req.body?.empresa !== undefined && !limStr(req.body.empresa, 180)) return res.status(400).json({ error: 'La empresa es obligatoria.' });
+  if (!docNorm(p.cuit)) return res.status(400).json({ error: 'El CUIT/CUIL/DNI es obligatorio.' });
   if (req.body?.estado !== undefined && !estadoPorSlug(F, req.body.estado)) return res.status(400).json({ error: 'Estado inválido.' });
   if (fechaISO(p.fecha_proxima_accion) === undefined) return res.status(400).json({ error: 'Fecha inválida.' });
   if (['empresa', 'cuit', 'email', 'telefono', 'localidad'].some((k) => req.body?.[k] !== undefined)) {
@@ -224,7 +226,7 @@ prospectosRouter.delete('/prospectos/:id', authRequired, permisoRequerido('venta
 function mapHeaders(headers) {
   const h = headers.map((x) => norm(x));
   const buscar = (...ops) => h.findIndex((x) => ops.some((o) => x.includes(norm(o))));
-  return { empresa: buscar('empresa / prospecto', 'empresa'), cuit: buscar('cuit', 'cuil', 'dni', 'documento'), localidad: buscar('zona / localidad', 'zona', 'localidad'), direccion: buscar('direccion / ubicacion', 'direccion'), rubro: buscar('rubro / equipamiento', 'rubro'), perfil_redes: buscar('perfil redes', 'redes sociales'), contacto: buscar('contacto linkedin', 'nombre y cargo', 'contacto'), email: buscar('email de contacto', 'email'), telefono: buscar('telefono / whatsapp', 'telefono'), tipo_contacto: buscar('tipo de contacto'), observaciones: buscar('observaciones', 'foco comercial'), origen_id: buscar('id') };
+  return { empresa: buscar('empresa / prospecto', 'empresa'), cuit: buscar('cuit', 'cuil', 'dni', 'documento'), localidad: buscar('zona / localidad', 'zona', 'localidad'), direccion: buscar('direccion / ubicacion', 'direccion'), rubro: buscar('rubro / equipamiento', 'rubro'), perfil_redes: buscar('perfil redes', 'redes sociales'), contacto: buscar('contacto linkedin', 'nombre y cargo', 'contacto'), email: buscar('email de contacto', 'email'), telefono: buscar('telefono / whatsapp', 'telefono'), tipo_contacto: buscar('tipo de contacto'), estado: buscar('estado de contacto', 'estado'), observaciones: buscar('observaciones', 'foco comercial'), origen_id: buscar('id') };
 }
 async function leerExcel(buffer) {
   const wb = new ExcelJS.Workbook(); await wb.xlsx.load(buffer);
@@ -243,14 +245,17 @@ async function leerExcel(buffer) {
   const data = filas.slice(hi + 1).map((f, i) => {
     const g = (k) => (k >= 0 ? (f[k] || '') : '');
     const c = g(m.contacto).split(/\s+-\s+/);
-    return { fila: i + hi + 2, origen_id: g(m.origen_id) || null, cuit: g(m.cuit), empresa: g(m.empresa), localidad: g(m.localidad), direccion: g(m.direccion), rubro: g(m.rubro), perfil_redes: g(m.perfil_redes), contacto_nombre: (c[0] || '').trim(), contacto_cargo: c.slice(1).join(' - ').trim(), email: g(m.email), telefono: g(m.telefono), tipo_contacto: g(m.tipo_contacto), observaciones: g(m.observaciones) };
+    return { fila: i + hi + 2, origen_id: g(m.origen_id) || null, cuit: g(m.cuit), empresa: g(m.empresa), localidad: g(m.localidad), direccion: g(m.direccion), rubro: g(m.rubro), perfil_redes: g(m.perfil_redes), contacto_nombre: (c[0] || '').trim(), contacto_cargo: c.slice(1).join(' - ').trim(), email: g(m.email), telefono: g(m.telefono), tipo_contacto: g(m.tipo_contacto), estado_label: g(m.estado), observaciones: g(m.observaciones) };
   }).filter((f) => f.empresa || f.email || f.telefono);
   return { filas: data, columnas: headers.filter(Boolean), nuevas };
 }
 async function clasificar(filas, existentes) {
   return filas.map((f) => {
-    const base = { fila: f.fila, datos: { ...f, estado: slugEstado(opciones(F)[0] || 'Nuevo'), origen: 'excel' } };
+    const estadoImportado = slugEstado(f.estado_label || '');
+    const estado = estadoPorSlug(F, estadoImportado) ? estadoImportado : slugEstado(opciones(F)[0] || 'Nuevo');
+    const base = { fila: f.fila, datos: { ...f, estado, origen: 'excel' } };
     if (!f.empresa) return { ...base, clasificacion: 'error', error: 'Falta la empresa.' };
+    if (!docNorm(f.cuit)) return { ...base, clasificacion: 'error', error: 'Falta el CUIT/CUIL/DNI.' };
     if (!emailNorm(f.email) && !telNorm(f.telefono)) return { ...base, clasificacion: 'error', error: 'Falta email o teléfono.' };
     let match = existentes.find((p) => (docNorm(f.cuit) && docNorm(p.cuit) === docNorm(f.cuit))) || existentes.find((p) => (emailsDe(f.email).some((e) => emailsDe(p.email, p.email_secundario).includes(e))) || (telNorm(f.telefono) && telNorm(p.telefono) === telNorm(f.telefono)) || (norm(f.origen_id) && norm(p.origen_id) === norm(f.origen_id)));
     let tipo = match ? 'clave' : null;

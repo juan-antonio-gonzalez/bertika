@@ -47,7 +47,7 @@ function ProspectoForm({ abierto, inicial, estados, onGuardar, onClose, busy }) 
           <div className="field"><label>Empresa / Prospecto *</label><input className="input" value={form.empresa} onChange={(e) => set('empresa', e.target.value)} required /></div>
           <div className="field"><label>Zona / Localidad</label><input className="input" value={form.localidad} onChange={(e) => set('localidad', e.target.value)} /></div>
           <div className="field"><label>Dirección / Ubicación</label><input className="input" value={form.direccion} onChange={(e) => set('direccion', e.target.value)} /></div>
-          <div className="field"><label>CUIT / CUIL / DNI</label><input className="input" value={form.cuit} onChange={(e) => set('cuit', e.target.value)} placeholder="Documento único" /></div>
+          <div className="field"><label>CUIT / CUIL / DNI *</label><input className="input" value={form.cuit} onChange={(e) => set('cuit', e.target.value)} placeholder="Documento único" /></div>
           <div className="field"><label>Rubro / Equipamiento principal</label><input className="input" value={form.rubro} onChange={(e) => set('rubro', e.target.value)} /></div>
           <div className="field"><label>Perfil redes sociales</label><input className="input" value={form.perfil_redes} onChange={(e) => set('perfil_redes', e.target.value)} /></div>
           <div className="field"><label>Contacto</label><input className="input" value={form.contacto_nombre} onChange={(e) => set('contacto_nombre', e.target.value)} /></div>

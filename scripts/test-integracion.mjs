@@ -1005,7 +1005,7 @@ async function main() {
     const email = `prospecto.${sufijo}@bertika.com`;
     const creado = await pedir('/prospectos', {
       method: 'POST', token: tokenAdmin,
-      body: { empresa, localidad: 'Haedo', email, telefono: '+54 11 5555-0101', estado: 'nuevo', observaciones: 'Prueba E2E' },
+      body: { empresa, cuit: '23-12345678-5', localidad: 'Haedo', email, telefono: '+54 11 5555-0101', estado: 'nuevo', observaciones: 'Prueba E2E' },
     });
     assert.equal(creado.status, 201, creado.texto);
     const listado = await pedir(`/prospectos?q=${encodeURIComponent(empresa)}`, { token: tokenAdmin });
