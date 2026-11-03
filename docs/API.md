@@ -343,6 +343,30 @@ node api/backfill-ventas.js --aplicar # crea oportunidades desde conversaciones 
 
 Es idempotente por `(origen_dato, origen_id)`.
 
+## Prospectos (lista Ventas → Prospectos)
+
+Los prospectos se guardan en la lista dinámica **Ventas → Prospectos**
+(`lista_registros`). No existe una tabla `prospectos` separada.
+
+| Método | Ruta | Descripción |
+| --- | --- | --- |
+| `GET` | `/prospectos` | Filas de la lista. Filtros: `q`, `estado`, `localidad`, `responsable`, `origen`, `documento`, `desde`, `hasta`, `limit`, `offset`. Devuelve `{ filas, total, limit, offset, estados }`. |
+| `POST` | `/prospectos` | Alta manual. `empresa` y `CUIT/CUIL/DNI` obligatorios, más email o teléfono. Rechaza duplicados con `409`. |
+| `PATCH` | `/prospectos/:id` | Edita una fila. También exige documento. |
+| `DELETE` | `/prospectos/:id` | Archiva el prospecto. |
+| `GET` | `/prospectos/estados` | Estados activos del campo `Estado`. |
+| `POST` | `/prospectos/estados` | Crea un estado. |
+| `PATCH` | `/prospectos/estados/:clave` | Renombra o desactiva un estado. |
+| `POST` | `/prospectos/importar/preview` | `multipart/form-data` con `archivo` `.xlsx`. Valida firma, columnas obligatorias, columnas desconocidas, máximo 2000 filas, CUIT con verificador, emails, teléfonos, estados y CUIT repetido dentro del archivo. Si falla devuelve `400 { error, detalles[] }`. |
+| `POST` | `/prospectos/importar` | Confirma una previsualización con `{ importacion_id, decisiones }`. |
+| `GET` | `/prospectos/exportar?formato=xlsx\|csv` | Exporta las filas filtradas. |
+| `POST` | `/prospectos/:id/convertir` | Convierte el prospecto en cliente y marca el estado `Convertido`. |
+
+El CUIT/CUIL/DNI se normaliza a dígitos y tiene un **índice único parcial**
+(`uq_prospectos_documento`) para las filas no archivadas con documento no vacío.
+La importación de Excel también rechaza columnas que no estén en la plantilla.
+La plantilla oficial está en [Plantilla_Prospectos.xlsx](Plantilla_Prospectos.xlsx).
+
 ## Listas dinámicas
 
 El motor vive en `api/listas-routes.js`. Resuelve permisos **en el servidor** contra el área,
@@ -366,7 +390,7 @@ la categoría, la lista, la fila y el campo. El frontend solo dibuja lo que la A
 
 | Método | Ruta | Descripción |
 | --- | --- | --- |
-| `POST` / `PATCH` / `DELETE` | `/listas/:id/campos` / `/lista-campos/:id` | Campos. Tipos: texto, número, moneda, fecha, selección, checkbox, email, teléfono, URL, persona, cliente, adjunto, imagen, relación y calculado. |
+| `POST` / `PATCH` / `DELETE` | `/listas/:id/campos` / `/lista-campos/:id` | Campos. Tipos: texto, texto largo, número, moneda, fecha, selección, multiselección, checkbox, email, teléfono, URL, persona, cliente, adjunto, imagen, relación, **lookup** y calculado. El orden de columnas se guarda en `config.columnas` de la vista; la grilla pagina de a 12 en la UI. |
 | `GET` / `POST` / `PATCH` / `DELETE` | `/listas/:id/vistas` / `/lista-vistas/:id` | Vistas de grilla, formulario, Kanban, calendario o galería. |
 | `GET/POST` | `/listas/:id/registros` | Lista y crea registros. |
 | `PATCH/DELETE` | `/lista-registros/:id` | Edita o archiva un registro. |

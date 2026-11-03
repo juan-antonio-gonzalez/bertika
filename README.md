@@ -9,8 +9,11 @@ Aplicacion web para gestionar el ciclo completo de una bateria en el taller: rec
 - **Fase 1 — Robustez:** ✅ implementada y en producción (cola de salida de WhatsApp, auditoría, salud/alertas, CSV seguro, tests y CI).
 - **Fase 2 — CRM comercial:** ✅ implementada y en producción (cotizar desde el chat, embudo automático, SLA/reparto, automatizaciones de seguimiento).
 - **Privacidad, cookies y legales:** ✅ implementada (páginas legales, banner de consentimiento, registro con hash, retiro de derechos, versionado y panel de privacidad). Ver [docs/PRIVACIDAD.md](docs/PRIVACIDAD.md).
-- **Listas dinámicas (tipo SharePoint/MS Lists):** ✅ implementada y en producción. Áreas, listas, campos, vistas, formularios públicos, permisos por lista/categoría/campo, aprobaciones, plantillas, adjuntos privados, búsqueda global y automatizaciones. Ver [docs/API.md](docs/API.md) y el [manual](INSTRUCTIVO_USO.md).
+- **Listas dinámicas (tipo SharePoint/MS Lists):** ✅ implementada y en producción. Áreas, listas, campos tipados, columnas lookup, vistas, formularios públicos, permisos por lista/categoría/campo, aprobaciones, plantillas, adjuntos privados, búsqueda global y automatizaciones. Las tablas paginan de a **12 registros** y las columnas se pueden reordenar arrastrando.
+- **Prospectos:** ✅ integrado a la lista **Ventas → Prospectos**. No hay tabla duplicada: los datos viven en `lista_registros`. Incluye importación/exportación XLSX, plantilla oficial, validación estricta de archivos, CUIT/CUIL/DNI obligatorio y único, emails múltiples y conversión automática al aceptar una cotización.
 - **Ventas V2 (oportunidades + cotizaciones):** ✅ MVP en producción. Pipeline `/ventas`, oportunidades sin depender de WhatsApp, cotizaciones con ítems y link público, pronóstico, seguimiento y conversión a orden.
+- **Inicio del admin:** ✅ entra directo a la lista de Prospectos de Ventas (`/listas/ventas/...`) al iniciar sesión, abrir la raíz, `/home` o `/plataforma`.
+- **Menú y WhatsApp:** ✅ menú en acordeón, listas como navegación principal, módulos no-lista en **Módulos**, y bandeja de WhatsApp con estética y flujo tipo WhatsApp Web.
 - **Fase 3 y pendientes de infraestructura:** ver [docs/FUTURO.md](docs/FUTURO.md).
 
 ## Como ejecutar
@@ -38,10 +41,11 @@ y cubren login, permisos, auditoría, outbox con reintentos, export CSV, webhook
 y Ventas (oportunidad, cotización, link público y orden). En GitHub Actions corre todo
 (`.github/workflows/ci.yml`) con un servicio PostgreSQL 16.
 
-La suite completa se ejecutó contra una base `_test` descartable: **37 pruebas OK**.
+La suite completa se ejecutó contra una base `_test` descartable: **45 pruebas OK**.
 
-El smoke E2E de navegador verifica login, menú, Ventas, las listas de Taller, la búsqueda
-global y el buscador del menú. Es **solo lectura**: no crea ni modifica datos.
+El smoke E2E de navegador verifica login, inicio del admin en la lista de Prospectos, menú
+en acordeón, las listas de Taller, Ventas, la paginación de 12, la búsqueda global y el
+buscador del menú. Es **solo lectura**: no crea ni modifica datos.
 
 ## Seguridad y operación
 
@@ -102,8 +106,9 @@ La conversación de WhatsApp sigue siendo el canal de atención, pero ya no es l
 El módulo `/listas` permite crear tablas y formularios por área sin tocar código:
 
 - **Áreas y listas** separadas para Taller, Ventas y Administración.
-- **Campos**: texto, número, moneda, fecha, selección, checkbox, email, teléfono, URL,
-  persona, cliente, adjunto, imagen, relación con otra lista y calculado.
+- **Campos**: texto corto/largo, número, moneda, fecha, selección, multiselección, checkbox,
+  email, teléfono, URL, persona, cliente, adjunto, imagen, relación con otra lista, **lookup**
+  y calculado. Cada columna define su tipo y formato al crearse.
 - **Vistas**: grilla, formulario, Kanban, calendario y galería; compartidas o privadas.
 - **Permisos**: por área, por lista y por categoría (incluido solo lectura y permisos
   granulares), por fila y por campo (un campo puede ocultarse a una categoría).
@@ -114,7 +119,7 @@ El módulo `/listas` permite crear tablas y formularios por área sin tocar cód
 - **Plantillas**: seis base y plantillas propias guardadas desde una lista.
 - **Automatizaciones**: email, WhatsApp, cambio de campo, webhook HTTPS y creación
   automática de una orden de taller con el campo Cliente + serie.
-- **Búsqueda global**, favoritos y recientes del menú sincronizados por usuario.
+- **Búsqueda global** y favoritos del menú sincronizados por usuario.
 - **Activos/arrancadores** del cliente, seleccionables al crear una orden.
 
 La API completa está en [docs/API.md](docs/API.md); el recorrido de uso, en
@@ -183,11 +188,13 @@ Las paginas publicas (contacto, seguimiento, tracker, cotizacion) y los paneles 
 | `/seguimiento` | Busqueda publica por codigo de 16 digitos o N° de serie |
 | `/cotizacion/:orden_id` | Cotizacion publica con enlace firmado (`?t=`) para aprobar/rechazar |
 | `/auth` | Login real (JWT) de Admin / Tecnico / Cliente |
-| `/home` | Redireccion segun rol |
+| `/home` | Admin: lista de Prospectos; otros roles: su pantalla inicial |
 | `/ventas` | Pipeline de oportunidades y cotizaciones |
+| `/prospectos` | Vista especializada de Prospectos sobre la lista de Ventas |
 | `/ventas/:tab` | Pipeline, cotizaciones o bandeja Hoy |
 | `/cotizacion-venta/:token` | Cotización pública para aceptar o rechazar |
 | `/listas` | Inicio del módulo de listas por área |
+| `/listas/ventas/lst_bc1a6a61-0243-4784-9c9e-7c950519ffb6` | Inicio del admin: lista Prospectos de Ventas |
 | `/listas/:area` | Listas de un área (Taller, Ventas, Administración) |
 | `/listas/:area/:listaId` | Lista, registros y vistas |
 | `/f/:token` | Formulario público de una lista |

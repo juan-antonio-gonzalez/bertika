@@ -72,7 +72,11 @@ Pasos:
 
 1. Entra a `/auth` (botón **LOGIN** en la landing).
 2. Escribi email y contrasena.
-3. El sistema redirige segun rol: Admin → `/hub` · Tecnico → `/tecnico` · Cliente → `/cliente`.
+3. El sistema redirige según el rol:
+   - **Admin** → lista **Ventas → Prospectos** (`/listas/ventas/lst_bc1a6a61-0243-4784-9c9e-7c950519ffb6`).
+   - **Técnico** → `/tecnico`.
+   - **Cliente** → `/cliente`.
+   El admin también cae en esa lista al abrir la raíz, `/home` o `/plataforma`.
 
 La sesion se puede cerrar desde `/settings` (**Salir / cambiar de usuario**).
 
@@ -127,7 +131,15 @@ la base y viceversa.
 ## 4. Hub administrativo (`/hub`)
 
 Panel principal para administrar la operacion. Cada seccion tiene **su propia
-direccion** (se puede guardar en favoritos y el menu marca donde estas):
+direccion** (se puede guardar en favoritos y el menu marca donde estas).
+
+> **Navegación actual:** el menú lateral es un acordeón. Al entrar, todas las categorías
+> están cerradas; al abrir una se cierra la anterior. La navegación principal son las listas
+> de **Ventas** y **Taller**. Los módulos que no son listas (Clientes, Tareas, WhatsApp,
+> Cotizador, Flotillas, Garantías, Baja) están en **Módulos**.
+
+Las pantallas históricas `/hub/inventario` y `/hub/tecnicos` siguen existiendo, pero el
+trabajo diario de **Inventario** y **Técnicos** se hace en las listas del área **Taller**.
 
 | Seccion | Direccion | Funcion |
 | --- | --- | --- |
@@ -137,8 +149,8 @@ direccion** (se puede guardar en favoritos y el menu marca donde estas):
 | **Clientes (CRM)** | `/hub/clientes` | Cartera con KPIs por cliente (ordenes activas, entregadas, flotilla, garantias, cobrado), buscador, orden por columna, **Editar**, **Dar de baja** y la ficha con ordenes, equipos, garantias y datos comerciales (direccion, CUIT, condicion de pago, como nos conocio, vendedor). |
 | **WhatsApp** | `/hub/whatsapp` | Canal oficial: estado de la conexion, envio de prueba, **bandeja** (responsable, etiquetas con color, notas internas, ficha 360, respuestas rapidas), **Embudo comercial** por etapa con monto y **Metricas** (conversion, tasa de cierre, tiempo por etapa y motivos de perdida), **avisos automaticos** y **busqueda dentro de los mensajes**. |
 | **Tareas** | `/hub/tareas` | Recordatorios con vencimiento y responsable: pendientes, vencidas (en ambar), para hoy y sin fecha; cerrar, reabrir y crear. |
-| **Inventario** | `/hub/inventario` | Stock con valorizacion, **agregar stock**, **editar** datos del insumo (nombre, categoria, precio, minimo), **Movimientos** (auditoria con autor y motivo) y **Ajustar** (recuento fisico con motivo). |
-| **Tecnicos** | `/hub/tecnicos` | Catalogo, especialidad, certificaciones, carga de trabajo y **editar / dar de alta o baja**. |
+| **Inventario** | Lista en **Taller** | Stock, código, categoría, cantidad, precio, mínimo, ubicación, estado y notas. También queda la pantalla histórica `/hub/inventario`. |
+| **Técnicos** | Lista en **Taller** | Nombre, documento, email, teléfono, especialidad, estado, ingreso y notas. También queda la pantalla histórica `/hub/tecnicos`. |
 | **Flotillas** | `/hub/flotillas` | Baterias activas de clientes corporativos y estado de garantia. |
 | **Garantias** | `/hub/garantias` | Garantias vigentes y por vencer. |
 | **Baja / reciclaje** | `/hub/baja` | Baterias dadas de baja con motivo y disposicion; trazabilidad para reciclaje. |
@@ -149,9 +161,11 @@ direccion** (se puede guardar en favoritos y el menu marca donde estas):
 | **Respaldos** | `/respaldos` | Solo admin. Boton **Respaldar ahora**: respalda la base en el servidor y baja la copia al navegador cuando vos quieras (no hay respaldo programado de tu lado). Abajo, la lista de copias del servidor con su fecha y tamano para bajar cualquiera. |
 | **Mi cuenta** | `/settings` | Datos propios y cambio de contrasena. |
 
-El **menu lateral** agrupa todo por rol (Operacion · Comercial · Taller · Sistema) y
-**solo muestra lo que el usuario tiene permitido**; si entra por una direccion que no
-le corresponde, ve un cartel claro en vez de la pantalla.
+El **menu lateral** funciona en acordeón: al entrar todas las categorías están cerradas;
+al abrir una se cierra la anterior. La navegación principal son las listas de **Ventas** y
+**Taller**, y los módulos que no son listas están en **Módulos**. Solo se muestra lo que el
+usuario tiene permitido; si entra por una dirección que no le corresponde, ve un cartel claro
+en vez de la pantalla.
 
 ### Crear orden de trabajo
 
@@ -356,6 +370,11 @@ cada 5 minutos la base, la cola, el respaldo y los errores 500, y avisa por emai
 
 ## 12. CRM comercial de WhatsApp (cotizar, atender y seguir)
 
+La bandeja tiene una estética tipo **WhatsApp Web**: barra lateral de chats con búsqueda y
+filtros compactos (Todos, Sin leer, Sin responder, Míos y Filtros), panel de conversación
+a pantalla completa, burbujas, adjuntos y composer inferior. Los filtros avanzados (buscar
+en mensajes y etiquetas) se abren desde **Filtros**.
+
 ### Cotizar desde el chat
 En el hilo de una conversación vinculada a un cliente aparece la tarjeta **Orden**:
 
@@ -425,19 +444,30 @@ AAIP) figuran **en trámite** en los textos hasta que se completen.
 
 ---
 
-## 14. Listas dinámicas (`/listas`)
+## 14. Prospectos (`Ventas → Prospectos`)
+
+Los prospectos no tienen una tabla aparte: viven en la lista **Ventas → Prospectos**.
+
+- **Importar Excel** usa la [plantilla oficial](docs/Plantilla_Prospectos.xlsx) y valida extensión, columnas, filas, CUIT, emails, teléfonos y estados. Si el archivo no cumple, no importa nada y muestra los errores por fila.
+- **CUIT/CUIL/DNI** es obligatorio y único. Se normaliza a números y se compara también contra la base.
+- Se guardan todos los emails: el primero en `Email` y el resto en `Emails adicionales`.
+- **Exportar** descarga los datos actuales; no es una plantilla de carga.
+- Al aceptar una cotización, el prospecto se convierte en cliente automáticamente.
+- La tabla tiene paginación de **12** y filtros por estado, localidad, responsable, origen y documento.
+
+## 15. Listas dinámicas (`/listas`)
 
 El modulo **Listas** permite crear tablas y formularios por area, sin tocar codigo.
 
 ### Crear una lista
 
 1. Entrar a **Listas**.
-2. Elegir el area: **Taller**, **Ventas** o **Administracion**.
-3. **Nueva lista**.
-4. Elegir una **plantilla** (Materiales, Herramientas, Insumos, Prospectos, Oportunidades,
-   Actividades o una plantilla propia) o empezar vacia.
+2. **Nueva lista**.
+3. Elegir la **Categoría**: **Taller**, **Ventas** o **Administración**. La lista aparece en esa categoría del menú.
+4. Elegir una **plantilla** (Materiales, Herramientas, Insumos, Inventario, Técnicos, Prospectos,
+   Oportunidades, Actividades o una plantilla propia) o empezar vacía.
 5. Definir campos en **Configurar → Campos**.
-6. Crear vistas en **Vistas**: grilla, formulario, Kanban, calendario o galeria.
+6. Crear vistas en **Vistas**: grilla, formulario, Kanban, calendario o galería.
 
 ### Campos
 
@@ -449,11 +479,15 @@ Tipos disponibles:
 - Persona (equipo interno).
 - **Cliente** (usa la cartera real de clientes).
 - Adjunto e imagen.
-- Relacion con otra lista.
+- Relación con otra lista.
+- **Lookup**: muestra un campo de la lista relacionada y se actualiza solo.
 - Calculado.
 
-Cada campo puede ser obligatorio, unico y **oculto para determinadas categorias**.
+Cada campo puede ser obligatorio, único y **oculto para determinadas categorías**.
 El campo oculto no aparece en la tabla, el formulario, el historial ni la API.
+
+Las tablas de listas muestran **12 registros por página**. El orden de las columnas se puede
+cambiar arrastrando los encabezados o desde **Columnas**, y queda guardado en la vista.
 
 ### Permisos
 
@@ -504,7 +538,7 @@ La plantilla aparece en **Nueva lista → Empezar desde** para esa area.
 ### Búsqueda y menú
 
 - **Busqueda global** en la portada de Listas.
-- **Favoritos** y **Recientes** en el menu, sincronizados por usuario.
+- **Favoritos** en el menú, sincronizados por usuario. La sección Recientes fue retirada.
 - El buscador del menu filtra areas y listas.
 
 ### Activos y ordenes
@@ -517,7 +551,7 @@ La plantilla aparece en **Nueva lista → Empezar desde** para esa area.
 
 ---
 
-## 15. Ventas V2 (`/ventas`)
+## 16. Ventas V2 (`/ventas`)
 
 La venta ahora vive en una **oportunidad**, no en una conversación de WhatsApp.
 
