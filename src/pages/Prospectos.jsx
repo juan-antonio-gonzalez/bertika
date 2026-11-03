@@ -6,7 +6,7 @@ import { useStore, usePermiso } from '../store/store';
 
 const VACIO = {
   empresa: '', cuit: '', localidad: '', direccion: '', rubro: '', perfil_redes: '',
-  contacto_nombre: '', contacto_cargo: '', email: '', telefono: '', tipo_contacto: '',
+  contacto_nombre: '', contacto_cargo: '', email: '', email_secundario: '', telefono: '', tipo_contacto: '',
   estado: 'nuevo', observaciones: '', notas: '', responsable: '', proxima_accion: '',
   fecha_proxima_accion: '',
 };
@@ -53,6 +53,7 @@ function ProspectoForm({ abierto, inicial, estados, onGuardar, onClose, busy }) 
           <div className="field"><label>Contacto</label><input className="input" value={form.contacto_nombre} onChange={(e) => set('contacto_nombre', e.target.value)} /></div>
           <div className="field"><label>Cargo</label><input className="input" value={form.contacto_cargo} onChange={(e) => set('contacto_cargo', e.target.value)} /></div>
           <div className="field"><label>Email de contacto</label><input className="input" value={form.email} onChange={(e) => set('email', e.target.value)} /></div>
+          <div className="field"><label>Emails adicionales</label><input className="input" value={form.email_secundario || ''} onChange={(e) => set('email_secundario', e.target.value)} placeholder="Separados por coma" /></div>
           <div className="field"><label>Teléfono / WhatsApp</label><input className="input" value={form.telefono} onChange={(e) => set('telefono', e.target.value)} /></div>
           <div className="field"><label>Tipo de contacto</label><input className="input" value={form.tipo_contacto} onChange={(e) => set('tipo_contacto', e.target.value)} /></div>
           <div className="field"><label>Estado de seguimiento</label>
@@ -141,6 +142,11 @@ function ImportarModal({ abierto, onClose, onImportado }) {
       )}
       {preview && (
         <div className="col" style={{ marginTop: 14 }}>
+          {preview.columnas_nuevas?.length > 0 && (
+            <div className="banner-warn" style={{ marginBottom: 10 }}>
+              <Icon name="warn" size={14} /> El Excel trae columnas nuevas que no están en la lista: <b>{preview.columnas_nuevas.join(', ')}</b>. Se importan los campos conocidos; para guardar esos datos, agregalos como campos de la lista.
+            </div>
+          )}
           <div className="row wrap" style={{ gap: 8 }}>
             <span className="badge blue">{preview.resumen.nuevos} nuevos</span>
             <span className="badge gray">{preview.resumen.exactos} exactos</span>
@@ -357,7 +363,7 @@ export default function Prospectos() {
                     <td>{p.localidad || '—'}</td>
                     <td>{p.rubro || '—'}</td>
                     <td>{p.contacto_nombre || '—'}{p.contacto_cargo ? <div className="muted" style={{ fontSize: 11 }}>{p.contacto_cargo}</div> : null}</td>
-                    <td>{p.email || '—'}{p.telefono ? <div className="muted" style={{ fontSize: 11 }}>{p.telefono}</div> : null}</td>
+                    <td>{p.email || '—'}{p.email_secundario ? <div className="muted" style={{ fontSize: 11 }}>{p.email_secundario}</div> : null}{p.telefono ? <div className="muted" style={{ fontSize: 11 }}>{p.telefono}</div> : null}</td>
                     <td>{badge(p.estado, estados)}</td>
                     <td>{p.proxima_accion || '—'}{p.fecha_proxima_accion ? <div className="muted" style={{ fontSize: 11 }}>{fmtFecha(p.fecha_proxima_accion)}</div> : null}</td>
                     <td>

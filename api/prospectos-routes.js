@@ -1,5 +1,6 @@
-// Prospectos comerciales. Es una tabla separada de clientes y oportunidades:
-// un prospecto pasa a cliente recién cuando se concreta una venta o reparación.
+// Prospectos: vista especializada sobre la lista dinámica "Prospectos" del
+// área Ventas. No hay una tabla física separada: la fuente única es
+// lista_registros. Esto evita duplicar prospectos en dos lugares.
 import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
 import ExcelJS from 'exceljs';
@@ -9,32 +10,15 @@ import { auditar } from './auditoria.js';
 import { memoryUpload } from './upload.js';
 
 export const prospectosRouter = Router();
-const limStr = (v, max = 300) => String(v ?? '').trim().slice(0, max);
-const idNuevo = (prefijo) => `${prefijo}_${randomUUID()}`;
-const fechaISO = (v) => {
-  const t = limStr(v, 10);
-  if (!t) return null;
-  return /^\d{4}-\d{2}-\d{2}$/.test(t) ? t : undefined;
-};
-const normalizar = (v) => limStr(v, 300)
-  .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
-  .replace(/\b(s\.?a\.?|s\.?r\.?l\.?|sas|ltda|group|grupo)\b/g, ' ')
-  .replace(/[^a-z0-9]+/g, ' ').trim();
-const normalizarEmail = (v) => {
-  const email = String(v || '').split(/[,;/]/).map((x) => x.trim()).find((x) => x.includes('@')) || '';
-  return email.toLowerCase().slice(0, 200);
-};
-const normalizarTelefono = (v) => String(v || '').replace(/\D/g, '').slice(-15);
-const tokens = (v) => new Set(normalizar(v).split(' ').filter((x) => x.length > 2));
-const parecido = (a, b) => {
-  const sa = tokens(a); const sb = tokens(b);
-  if (!sa.size || !sb.size) return false;
-  let comunes = 0;
-  for (const t of sa) if (sb.has(t)) comunes += 1;
-  return comunes / new Set([...sa, ...sb]).size >= 0.72;
-};
-const colorValido = (v) => ['gray', 'blue', 'green', 'amber', 'orange', 'red', 'purple', 'yellow', 'teal'].includes(v) ? v : 'gray';
+const limStr = (v, max = 400) => String(v ?? '').trim().slice(0, max);
+const idNuevo = (p) => `${p}_${randomUUID()}`;
+const norm = (v) => limStr(v, 300).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+const emailsDe = (...valores) => [...new Set(valores.flatMap((v) => String(v || '').split(/[,;/]/)).map((x) => x.trim().toLowerCase()).filter((x) => /^\S+@\S+\.\S+$/.test(x)))];
+const emailNorm = (v) => emailsDe(v)[0] || '';
+const telNorm = (v) => String(v || '').replace(/\D/g, '').slice(-15);
+const fechaISO = (v) => { const t = limStr(v, 10); return !t ? null : (/^\d{4}-\d{2}-\d{2}$/.test(t) ? t : undefined); };
 const ARCHIVO_XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+const colorDe = (nombre) => ({ nuevo: 'blue', contactado: 'amber', interesado: 'purple', cotizado: 'orange', negociacion: 'yellow', ganado: 'green', perdido: 'red', convertido: 'teal', convertidoacliente: 'teal' }[norm(nombre).replace(/\s+/g, '')] || 'gray');
 
 const subirExcel = memoryUpload({
   limits: { fileSize: 8 * 1024 * 1024, files: 1 },
@@ -44,452 +28,343 @@ const subirExcel = memoryUpload({
   },
 });
 
-async function duplicadoProspecto(d, exceptoId = null) {
-  const filas = await query(
-    `SELECT id, empresa, email, telefono FROM prospectos
-      WHERE archivado = false
-        AND (($1 <> '' AND cuit = $1)
-          OR ($2 <> '' AND email_normalizado = $2)
-          OR ($3 <> '' AND telefono_normalizado = $3)
-          OR ($4 <> '' AND $5 <> '' AND empresa_normalizada = $4 AND lower(COALESCE(localidad,'')) = lower($5)))
-        AND ($6::text IS NULL OR id <> $6)
-      LIMIT 1`,
-    [d.cuit || '', d.email_normalizado || '', d.telefono_normalizado || '', d.empresa_normalizada || '', d.localidad || '', exceptoId]
-  );
-  return filas[0] || null;
+async function contexto() {
+  const lista = await one(`
+    SELECT l.* FROM listas l JOIN areas a ON a.id = l.area_id
+     WHERE a.slug = 'ventas' AND lower(l.nombre) LIKE '%prospect%' AND l.archivada = false
+     ORDER BY l.creado_en LIMIT 1`);
+  if (!lista) { const e = new Error('No existe la lista Prospectos en el área Ventas.'); e.status = 503; throw e; }
+  const campos = await query('SELECT * FROM lista_campos WHERE lista_id = $1 AND activo = true ORDER BY orden, lower(nombre)', [lista.id]);
+  const F = {};
+  for (const c of campos) F[norm(c.nombre)] = c;
+  return { lista, campos, F };
 }
-
-async function estados() {
-  return query('SELECT * FROM prospecto_estados ORDER BY orden, lower(nombre)');
+function campo(F, nombre) { return F[norm(nombre)] || null; }
+function opciones(F) {
+  const c = campo(F, 'Estado');
+  return Array.isArray(c?.config?.opciones) ? c.config.opciones : [];
 }
-async function estadoValido(clave, activo = true) {
-  const e = await one(`SELECT clave FROM prospecto_estados WHERE clave = $1 ${activo ? 'AND activo = true' : ''}`, [clave]);
-  return Boolean(e);
-}
-function datosProspecto(body = {}, parcial = false) {
-  const empresa = limStr(body.empresa, 180);
-  const email = limStr(body.email, 240);
-  const telefono = limStr(body.telefono, 80);
-  const fecha = body.fecha_proxima_accion === undefined ? (parcial ? undefined : null) : fechaISO(body.fecha_proxima_accion);
-  const salida = {
-    empresa,
-    empresa_normalizada: normalizar(empresa),
-    cuit: limStr(body.cuit, 30) || null,
-    localidad: limStr(body.localidad, 120) || null,
-    direccion: limStr(body.direccion, 240) || null,
-    rubro: limStr(body.rubro, 240) || null,
-    perfil_redes: limStr(body.perfil_redes, 240) || null,
-    contacto_nombre: limStr(body.contacto_nombre, 180) || null,
-    contacto_cargo: limStr(body.contacto_cargo, 180) || null,
-    email: email || null,
-    telefono: telefono || null,
-    tipo_contacto: limStr(body.tipo_contacto, 120) || null,
-    estado: limStr(body.estado, 40) || 'nuevo',
-    observaciones: limStr(body.observaciones, 4000) || null,
-    notas: limStr(body.notas, 4000) || null,
-    origen: limStr(body.origen, 60) || 'manual',
-    origen_id: limStr(body.origen_id, 80) || null,
-    responsable: limStr(body.responsable, 180) || null,
-    proxima_accion: limStr(body.proxima_accion, 300) || null,
-    fecha_proxima_accion: fecha,
-    ultimo_contacto: body.ultimo_contacto ? new Date(body.ultimo_contacto).toISOString() : null,
-    email_normalizado: normalizarEmail(email) || null,
-    telefono_normalizado: normalizarTelefono(telefono) || null,
-  };
-  if (parcial) {
-    const derivados = { empresa_normalizada: 'empresa', email_normalizado: 'email', telefono_normalizado: 'telefono' };
-    for (const clave of Object.keys(salida)) {
-      const fuente = derivados[clave] || clave;
-      if (body[fuente] === undefined) delete salida[clave];
-    }
-  }
-  return salida;
-}
-
-function whereFiltros(req) {
-  const cond = ['archivado = false']; const params = [];
-  const add = (sql, valor) => { params.push(valor); cond.push(sql.replace('?', `$${params.length}`)); };
-  const q = limStr(req.query?.q, 120);
-  if (q) {
-    const vals = Array.from({ length: 6 }, () => `%${q}%`);
-    const nums = vals.map((v) => { params.push(v); return `$${params.length}`; });
-    cond.push(`(empresa ILIKE ${nums[0]} OR localidad ILIKE ${nums[1]} OR rubro ILIKE ${nums[2]} OR contacto_nombre ILIKE ${nums[3]} OR email ILIKE ${nums[4]} OR telefono ILIKE ${nums[5]})`);
-  }
-  if (req.query?.estado) add('estado = ?', limStr(req.query.estado, 40));
-  if (req.query?.responsable) add('responsable = ?', limStr(req.query.responsable, 180));
-  if (req.query?.origen) add('origen = ?', limStr(req.query.origen, 60));
-  if (req.query?.localidad) add('localidad ILIKE ?', `%${limStr(req.query.localidad, 120)}%`);
-  if (req.query?.desde) add('creado_en >= ?::date', limStr(req.query.desde, 10));
-  if (req.query?.hasta) add('creado_en < (?::date + interval \'1 day\')', limStr(req.query.hasta, 10));
-  return { sql: cond.join(' AND '), params };
-}
-
-async function listaFiltrada(req) {
-  const { sql, params } = whereFiltros(req);
-  const limit = Math.min(500, Math.max(1, Number(req.query?.limit) || 100));
-  const offset = Math.max(0, Number(req.query?.offset) || 0);
-  const filas = await query(`SELECT * FROM prospectos WHERE ${sql} ORDER BY actualizado_en DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`, [...params, limit, offset]);
-  const [total] = await query(`SELECT count(*)::int AS n FROM prospectos WHERE ${sql}`, params);
-  return { filas, total: total.n, limit, offset };
-}
-
-function camposExcel(headers) {
-  const h = headers.map((x) => normalizar(x));
-  const buscar = (...opciones) => h.findIndex((x) => opciones.some((o) => x.includes(normalizar(o))));
+function slugEstado(nombre) { const n = norm(nombre).replace(/\s+/g, '_') || 'nuevo'; return n.startsWith('convertido') ? 'convertido' : n; }
+function estadoPorSlug(F, slug) { return opciones(F).find((x) => slugEstado(x) === slug) || null; }
+function estadoDeFila(F, label) { return slugEstado(label || opciones(F)[0] || 'Nuevo'); }
+function getDato(F, datos, nombre) { const c = campo(F, nombre); return c ? datos?.[c.id] : ''; }
+function fila(F, r) {
+  const d = r.datos || {};
+  const estadoLabel = getDato(F, d, 'Estado') || 'Nuevo';
   return {
-    empresa: buscar('empresa / prospecto', 'empresa', 'prospecto'),
-    localidad: buscar('zona / localidad', 'zona', 'localidad'),
-    direccion: buscar('direccion / ubicacion', 'direccion', 'ubicacion'),
-    rubro: buscar('rubro / equipamiento', 'rubro'),
-    perfil_redes: buscar('perfil redes', 'redes sociales'),
-    contacto: buscar('contacto linkedin', 'nombre y cargo', 'contacto'),
-    email: buscar('email de contacto', 'email'),
-    telefono: buscar('telefono / whatsapp', 'telefono'),
-    tipo_contacto: buscar('tipo de contacto'),
-    estado_excel: buscar('estado de contacto', 'estado'),
-    observaciones: buscar('observaciones', 'foco comercial'),
-    origen_id: buscar('id'),
+    id: r.id, empresa: getDato(F, d, 'Empresa') || '',
+    contacto_nombre: getDato(F, d, 'Contacto') || getDato(F, d, 'Nombre') || '',
+    contacto_cargo: getDato(F, d, 'Cargo') || '', email: getDato(F, d, 'Email') || '',
+    telefono: getDato(F, d, 'Teléfono') || '', email_secundario: getDato(F, d, 'Emails adicionales') || '', localidad: getDato(F, d, 'Zona / Localidad') || '',
+    direccion: getDato(F, d, 'Dirección / Ubicación') || '', rubro: getDato(F, d, 'Rubro / Equipamiento Principal') || '',
+    perfil_redes: getDato(F, d, 'Perfil Redes Sociales') || '', tipo_contacto: getDato(F, d, 'Tipo de Contacto Directo') || '',
+    cuit: getDato(F, d, 'CUIT') || '', origen_id: getDato(F, d, 'ID Origen') || '',
+    observaciones: getDato(F, d, 'Observaciones / Foco Comercial') || getDato(F, d, 'Notas') || '',
+    notas: getDato(F, d, 'Notas') || '', estado: estadoDeFila(F, estadoLabel),
+    origen: norm(getDato(F, d, 'Origen')) === 'excel' ? 'excel' : 'manual',
+    responsable: getDato(F, d, 'Responsable') || '', proxima_accion: getDato(F, d, 'Próxima acción') || '',
+    cliente_id: getDato(F, d, 'Cliente convertido') || '', fecha_proxima_accion: getDato(F, d, 'Próxima acción') || null,
+    creado_en: r.creado_en, actualizado_en: r.actualizado_en,
   };
 }
-
-async function leerExcel(buffer) {
-  const wb = new ExcelJS.Workbook();
-  await wb.xlsx.load(buffer);
-  const ws = wb.worksheets[0];
-  if (!ws) return [];
-  const filas = [];
-  ws.eachRow({ includeEmpty: false }, (row) => {
-    const vals = [];
-    for (let i = 1; i <= Math.max(ws.columnCount, row.cellCount); i += 1) {
-      const c = row.getCell(i);
-      vals.push(String(c?.text ?? c?.value ?? '').trim());
-    }
-    if (vals.some(Boolean)) filas.push(vals);
-  });
-  const headerIdx = filas.findIndex((f) => f.some((v) => normalizar(v).includes('empresa')));
-  if (headerIdx < 0) return [];
-  const map = camposExcel(filas[headerIdx]);
-  if (map.empresa < 0) return [];
-  return filas.slice(headerIdx + 1).map((f, i) => {
-    const get = (idx) => (idx >= 0 ? (f[idx] || '') : '');
-    const contacto = get(map.contacto);
-    const partes = contacto.split(/\s+-\s+/);
-    return {
-      fila: i + headerIdx + 2,
-      origen_id: get(map.origen_id) || null,
-      empresa: get(map.empresa),
-      localidad: get(map.localidad),
-      direccion: get(map.direccion),
-      rubro: get(map.rubro),
-      perfil_redes: get(map.perfil_redes),
-      contacto_nombre: (partes[0] || '').trim(),
-      contacto_cargo: partes.slice(1).join(' - ').trim(),
-      email: get(map.email),
-      telefono: get(map.telefono),
-      tipo_contacto: get(map.tipo_contacto),
-      estado_excel: get(map.estado_excel),
-      observaciones: get(map.observaciones),
-    };
-  }).filter((f) => f.empresa || f.email || f.telefono);
+function datosLista(F, p, base = {}) {
+  const d = { ...base };
+  const put = (nombre, valor) => { const c = campo(F, nombre); if (c) d[c.id] = valor; };
+  put('Empresa', limStr(p.empresa, 180));
+  put('Nombre', limStr(p.contacto_nombre || p.empresa, 180));
+  put('Contacto', limStr(p.contacto_nombre, 180));
+  put('Cargo', limStr(p.contacto_cargo, 180));
+  const emails = emailsDe(p.email, p.email_secundario);
+  put('Email', emails[0] || '');
+  put('Emails adicionales', emails.slice(1).join(', '));
+  put('Teléfono', limStr(p.telefono, 80));
+  put('Zona / Localidad', limStr(p.localidad, 120));
+  put('Dirección / Ubicación', limStr(p.direccion, 240));
+  put('Rubro / Equipamiento Principal', limStr(p.rubro, 240));
+  put('Perfil Redes Sociales', limStr(p.perfil_redes, 240));
+  put('Tipo de Contacto Directo', limStr(p.tipo_contacto, 120));
+  put('CUIT', limStr(p.cuit, 30));
+  put('ID Origen', limStr(p.origen_id, 80));
+  put('Observaciones / Foco Comercial', limStr(p.observaciones, 4000));
+  put('Notas', limStr(p.notas || p.observaciones, 4000));
+  put('Origen', p.origen === 'excel' ? 'Excel' : 'Manual');
+  put('Cliente convertido', limStr(p.cliente_id, 80));
+  const fecha = fechaISO(p.fecha_proxima_accion);
+  if (fecha !== undefined) put('Próxima acción', fecha);
+  const estadoNombre = estadoPorSlug(F, p.estado) || opciones(F)[0] || 'Nuevo';
+  put('Estado', estadoNombre);
+  return d;
 }
+async function filas(F) {
+  const rows = await query('SELECT * FROM lista_registros WHERE lista_id = $1 AND archivado = false ORDER BY actualizado_en DESC', [F.__lista.id]);
+  return rows.map((r) => fila(F, r));
+}
+function setLista(F, lista) { F.__lista = lista; }
 
-async function clasificar(filas) {
-  const existentes = await query('SELECT * FROM prospectos WHERE archivado = false');
-  const porCuit = new Map(); const porEmail = new Map(); const porTelefono = new Map(); const porEmpresa = new Map();
-  for (const p of existentes) {
-    if (p.cuit) porCuit.set(String(p.cuit), p);
-    if (p.email_normalizado) porEmail.set(p.email_normalizado, p);
-    if (p.telefono_normalizado) porTelefono.set(p.telefono_normalizado, p);
-    const k = `${p.empresa_normalizada}|${normalizar(p.localidad)}`;
-    if (!porEmpresa.has(k)) porEmpresa.set(k, p);
-  }
-  const vistosArchivo = new Map();
-  return filas.map((f) => {
-    const empresa = limStr(f.empresa, 180);
-    const base = {
-      fila: f.fila, datos: {
-        empresa, localidad: limStr(f.localidad, 120), direccion: limStr(f.direccion, 240),
-        rubro: limStr(f.rubro, 240), perfil_redes: limStr(f.perfil_redes, 240),
-        contacto_nombre: limStr(f.contacto_nombre, 180), contacto_cargo: limStr(f.contacto_cargo, 180),
-        email: limStr(f.email, 240), telefono: limStr(f.telefono, 80),
-        tipo_contacto: limStr(f.tipo_contacto, 120), observaciones: limStr(f.observaciones, 4000),
-        estado: 'nuevo', origen: 'excel', origen_id: f.origen_id || null,
-      },
-    };
-    if (!empresa) return { ...base, clasificacion: 'error', error: 'Falta la empresa.' };
-    if (!limStr(f.cuit, 30) && !normalizarEmail(f.email) && !normalizarTelefono(f.telefono)) {
-      return { ...base, clasificacion: 'error', error: 'Falta CUIT, email o teléfono para identificar el prospecto.' };
-    }
-    const cuit = limStr(f.cuit, 30) || null;
-    const email = normalizarEmail(f.email);
-    const telefono = normalizarTelefono(f.telefono);
-    const kEmp = `${normalizar(empresa)}|${normalizar(f.localidad)}`;
-    let match = null; let tipo = null;
-    if (f.origen_id && existentes.some((p) => p.origen === 'excel' && p.origen_id === f.origen_id)) {
-      match = existentes.find((p) => p.origen === 'excel' && p.origen_id === f.origen_id); tipo = 'origen_id';
-    }
-    if (!match && cuit && porCuit.has(cuit)) { match = porCuit.get(cuit); tipo = 'cuit'; }
-    if (!match && email && porEmail.has(email)) { match = porEmail.get(email); tipo = 'email'; }
-    if (!match && telefono && porTelefono.has(telefono)) { match = porTelefono.get(telefono); tipo = 'telefono'; }
-    if (!match && porEmpresa.has(kEmp)) { match = porEmpresa.get(kEmp); tipo = 'empresa_localidad'; }
-    const archivo = vistosArchivo.get(`${normalizar(empresa)}|${email}|${telefono}`);
-    if (!match && archivo) { match = archivo; tipo = 'archivo'; }
-    if (!match) {
-      const parecida = existentes.find((p) => normalizar(p.localidad) === normalizar(f.localidad) && parecido(p.empresa, empresa));
-      if (parecida) { match = parecida; tipo = 'empresa_parecida'; }
-    }
-    if (!match) {
-      vistosArchivo.set(`${normalizar(empresa)}|${email}|${telefono}`, base.datos);
-      return { ...base, clasificacion: 'nuevo' };
-    }
-    const diferencias = [];
-    for (const clave of ['localidad', 'direccion', 'rubro', 'email', 'telefono', 'contacto_nombre', 'contacto_cargo']) {
-      const a = normalizar(match[clave]); const b = normalizar(base.datos[clave]);
-      if (a && b && a !== b) diferencias.push(clave);
-    }
-    const clasificacion = tipo === 'empresa_parecida' || (tipo === 'archivo') || diferencias.length ? 'parcial' : 'exacto';
-    return {
-      ...base,
-      clasificacion,
-      coincidencia: {
-        id: match.id, empresa: match.empresa, estado: match.estado,
-        localidad: match.localidad, email: match.email, telefono: match.telefono,
-        motivo: tipo, diferencias,
-      },
-    };
+function filtros(req, filas) {
+  const q = norm(req.query?.q);
+  return filas.filter((p) => {
+    if (q && !norm([p.empresa, p.localidad, p.rubro, p.contacto_nombre, p.email, p.email_secundario, p.telefono, p.observaciones].join(' ')).includes(q)) return false;
+    if (req.query?.estado && p.estado !== slugEstado(req.query.estado)) return false;
+    if (req.query?.localidad && !norm(p.localidad).includes(norm(req.query.localidad))) return false;
+    if (req.query?.responsable && !norm(p.responsable).includes(norm(req.query.responsable))) return false;
+    if (req.query?.origen && p.origen !== req.query.origen) return false;
+    if (req.query?.desde && new Date(p.creado_en) < new Date(`${req.query.desde}T00:00:00`)) return false;
+    if (req.query?.hasta && new Date(p.creado_en) > new Date(`${req.query.hasta}T23:59:59`)) return false;
+    return true;
   });
 }
 
-async function crearProspecto(datos, req) {
-  const d = datosProspecto(datos);
-  const id = idNuevo('prs');
+async function existeDuplicado(F, p, excepto = null) {
+  const lista = await filas(F);
+  return lista.find((x) => x.id !== excepto && (
+    (p.cuit && norm(x.cuit) === norm(p.cuit)) ||
+    (emailsDe(p.email, p.email_secundario).some((e) => emailsDe(x.email, x.email_secundario).includes(e))) ||
+    (telNorm(p.telefono) && telNorm(x.telefono) === telNorm(p.telefono)) ||
+    (norm(p.empresa) && norm(x.empresa) === norm(p.empresa) && norm(p.localidad) && norm(x.localidad) === norm(p.localidad))
+  )) || null;
+}
+async function crear(F, p, req) {
+  const id = idNuevo('reg');
+  const datos = datosLista(F, p);
   await query(
-    `INSERT INTO prospectos
-       (id, empresa, empresa_normalizada, cuit, localidad, direccion, rubro, perfil_redes,
-        contacto_nombre, contacto_cargo, email, telefono, tipo_contacto, estado, observaciones,
-        notas, origen, origen_id, responsable, proxima_accion, fecha_proxima_accion, ultimo_contacto,
-        email_normalizado, telefono_normalizado, creado_por, actualizado_por)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$25)`,
-    [id, d.empresa, d.empresa_normalizada, d.cuit, d.localidad, d.direccion, d.rubro, d.perfil_redes,
-      d.contacto_nombre, d.contacto_cargo, d.email, d.telefono, d.tipo_contacto, d.estado, d.observaciones,
-      d.notas, d.origen, d.origen_id, d.responsable, d.proxima_accion, d.fecha_proxima_accion, d.ultimo_contacto,
-      d.email_normalizado, d.telefono_normalizado, req.user.email]
+    `INSERT INTO lista_registros (id, lista_id, datos, creado_por, actualizado_por)
+     VALUES ($1,$2,$3::jsonb,$4,$4)`,
+    [id, F.__lista.id, JSON.stringify(datos), req.user?.email || 'sistema']
   );
-  await auditar({ req, tabla: 'prospectos', registroId: id, accion: 'crear', despues: d });
+  await auditar({ req, tabla: 'lista_registros', registroId: id, accion: 'crear_prospecto', detalle: F.__lista.id });
   return id;
 }
-
-async function actualizarProspecto(id, datos, req) {
-  const d = datosProspecto(datos, true);
-  const campos = ['empresa', 'empresa_normalizada', 'cuit', 'localidad', 'direccion', 'rubro', 'perfil_redes',
-    'contacto_nombre', 'contacto_cargo', 'email', 'telefono', 'tipo_contacto', 'estado', 'observaciones', 'notas',
-    'origen', 'origen_id', 'responsable', 'proxima_accion', 'fecha_proxima_accion', 'ultimo_contacto',
-    'email_normalizado', 'telefono_normalizado'];
-  const sets = []; const params = [];
-  for (const c of campos) {
-    if (datos[c] === undefined) continue;
-    params.push(d[c]); sets.push(`${c} = $${params.length}`);
-  }
-  if (!sets.length) return false;
-  params.push(req.user.email); sets.push(`actualizado_por = $${params.length}`);
-  params.push(id); sets.push(`actualizado_en = now()`);
-  await query(`UPDATE prospectos SET ${sets.join(', ')} WHERE id = $${params.length}`, params);
-  await auditar({ req, tabla: 'prospectos', registroId: id, accion: 'editar', despues: d });
+async function actualizar(F, id, p, req) {
+  const r = await one('SELECT * FROM lista_registros WHERE id = $1 AND lista_id = $2 AND archivado = false', [id, F.__lista.id]);
+  if (!r) return false;
+  const datos = datosLista(F, p, r.datos || {});
+  await query('UPDATE lista_registros SET datos = $2::jsonb, actualizado_por = $3, actualizado_en = now() WHERE id = $1', [id, JSON.stringify(datos), req.user?.email || 'sistema']);
+  await auditar({ req, tabla: 'lista_registros', registroId: id, accion: 'editar_prospecto', detalle: F.__lista.id });
   return true;
 }
 
 // ---------- Estados ----------
-prospectosRouter.get('/prospectos/estados', authRequired, permisoRequerido('ventas'), async (req, res) => res.json(await estados()));
-
+prospectosRouter.get('/prospectos/estados', authRequired, permisoRequerido('ventas'), async (req, res) => {
+  const { F } = await contexto();
+  return res.json(opciones(F).map((nombre) => ({ clave: slugEstado(nombre), nombre, color: colorDe(nombre), activo: true })));
+});
 prospectosRouter.post('/prospectos/estados', authRequired, permisoRequerido('ventas_editar'), async (req, res) => {
+  const { F } = await contexto();
   const nombre = limStr(req.body?.nombre, 60);
   if (!nombre) return res.status(400).json({ error: 'El estado necesita un nombre.' });
-  const clave = normalizar(nombre).replace(/\s+/g, '_').slice(0, 50);
-  if (!clave) return res.status(400).json({ error: 'Nombre de estado inválido.' });
-  const color = colorValido(req.body?.color);
-  const [max] = await query('SELECT COALESCE(MAX(orden),0)::int AS n FROM prospecto_estados');
-  try {
-    await query('INSERT INTO prospecto_estados (clave,nombre,color,orden) VALUES ($1,$2,$3,$4)', [clave, nombre, color, max.n + 10]);
-  } catch (e) {
-    if (e.code === '23505') return res.status(400).json({ error: 'Ya existe un estado con ese nombre.' });
-    throw e;
-  }
-  await auditar({ req, tabla: 'prospecto_estados', registroId: clave, accion: 'crear', despues: { nombre, color } });
-  return res.status(201).json({ clave, nombre, color });
+  const c = campo(F, 'Estado');
+  if (!c) return res.status(503).json({ error: 'La lista no tiene campo Estado.' });
+  const actuales = opciones(F);
+  if (actuales.some((x) => slugEstado(x) === slugEstado(nombre))) return res.status(400).json({ error: 'Ese estado ya existe.' });
+  const config = { ...c.config, opciones: [...actuales, nombre] };
+  await query('UPDATE lista_campos SET config = $2::jsonb WHERE id = $1', [c.id, JSON.stringify(config)]);
+  return res.status(201).json({ clave: slugEstado(nombre), nombre, color: colorDe(nombre) });
 });
-
 prospectosRouter.patch('/prospectos/estados/:clave', authRequired, permisoRequerido('ventas_editar'), async (req, res) => {
-  const sets = []; const params = [];
-  if (req.body?.nombre !== undefined) { const n = limStr(req.body.nombre, 60); if (!n) return res.status(400).json({ error: 'Nombre inválido.' }); params.push(n); sets.push(`nombre = $${params.length}`); }
-  if (req.body?.color !== undefined) { params.push(colorValido(req.body.color)); sets.push(`color = $${params.length}`); }
-  if (req.body?.activo !== undefined) { params.push(Boolean(req.body.activo)); sets.push(`activo = $${params.length}`); }
-  if (!sets.length) return res.status(400).json({ error: 'Sin cambios.' });
-  params.push(req.params.clave);
-  const r = await query(`UPDATE prospecto_estados SET ${sets.join(', ')} WHERE clave = $${params.length} RETURNING *`, params);
-  if (!r.length) return res.status(404).json({ error: 'Estado no encontrado.' });
-  return res.json(r[0]);
+  const { F } = await contexto();
+  const c = campo(F, 'Estado');
+  if (!c) return res.status(503).json({ error: 'La lista no tiene campo Estado.' });
+  const actuales = opciones(F);
+  const idx = actuales.findIndex((x) => slugEstado(x) === req.params.clave);
+  if (idx < 0) return res.status(404).json({ error: 'Estado no encontrado.' });
+  let nuevas = [...actuales];
+  if (req.body?.activo === false) nuevas = nuevas.filter((_, i) => i !== idx);
+  else if (req.body?.nombre !== undefined) { const n = limStr(req.body.nombre, 60); if (!n) return res.status(400).json({ error: 'Nombre inválido.' }); nuevas[idx] = n; }
+  await query('UPDATE lista_campos SET config = $2::jsonb WHERE id = $1', [c.id, JSON.stringify({ ...c.config, opciones: nuevas })]);
+  return res.json({ ok: true });
 });
 
 // ---------- CRUD ----------
 prospectosRouter.get('/prospectos', authRequired, permisoRequerido('ventas'), async (req, res) => {
-  const data = await listaFiltrada(req);
-  return res.json({ ...data, estados: await estados() });
+  const { lista, F } = await contexto(); setLista(F, lista);
+  const todas = filtros(req, await filas(F));
+  const limit = Math.min(500, Math.max(1, Number(req.query?.limit) || 100));
+  const offset = Math.max(0, Number(req.query?.offset) || 0);
+  return res.json({ filas: todas.slice(offset, offset + limit), total: todas.length, limit, offset, estados: opciones(F).map((n) => ({ clave: slugEstado(n), nombre: n, color: colorDe(n), activo: true })) });
 });
-
 prospectosRouter.post('/prospectos', authRequired, permisoRequerido('ventas_editar'), async (req, res) => {
-  const d = datosProspecto(req.body);
-  if (!d.empresa) return res.status(400).json({ error: 'La empresa es obligatoria.' });
-  if (!d.cuit && !d.email && !d.telefono) return res.status(400).json({ error: 'Cargá CUIT, email o teléfono para poder identificar el prospecto y evitar duplicados.' });
-  if (d.fecha_proxima_accion === undefined) return res.status(400).json({ error: 'Fecha de próxima acción inválida.' });
-  if (!(await estadoValido(d.estado, false))) return res.status(400).json({ error: 'Estado inválido.' });
-  const repetido = await duplicadoProspecto(d);
-  if (repetido) return res.status(409).json({ error: `Ya existe un prospecto similar: ${repetido.empresa}.`, existente_id: repetido.id });
-  const id = await crearProspecto(req.body, req);
+  const { lista, F } = await contexto(); setLista(F, lista);
+  const p = { ...req.body, estado: req.body?.estado || slugEstado(opciones(F)[0] || 'Nuevo') };
+  if (!limStr(p.empresa, 180)) return res.status(400).json({ error: 'La empresa es obligatoria.' });
+  if (!p.cuit && !emailNorm(p.email) && !telNorm(p.telefono)) return res.status(400).json({ error: 'Cargá CUIT, email o teléfono para identificarlo y evitar duplicados.' });
+  if (!estadoPorSlug(F, p.estado)) return res.status(400).json({ error: 'Estado inválido.' });
+  if (fechaISO(p.fecha_proxima_accion) === undefined) return res.status(400).json({ error: 'Fecha inválida.' });
+  const dup = await existeDuplicado(F, p);
+  if (dup) return res.status(409).json({ error: `Ya existe un prospecto similar: ${dup.empresa}.`, existente_id: dup.id });
+  const id = await crear(F, p, req);
   return res.status(201).json({ id });
 });
-
 prospectosRouter.patch('/prospectos/:id', authRequired, permisoRequerido('ventas_editar'), async (req, res) => {
-  const p = await one('SELECT * FROM prospectos WHERE id = $1 AND archivado = false', [req.params.id]);
-  if (!p) return res.status(404).json({ error: 'Prospecto no encontrado.' });
+  const { lista, F } = await contexto(); setLista(F, lista);
+  const actual = (await filas(F)).find((x) => x.id === req.params.id);
+  if (!actual) return res.status(404).json({ error: 'Prospecto no encontrado.' });
+  const p = { ...actual, ...req.body, fecha_proxima_accion: req.body?.fecha_proxima_accion ?? actual.fecha_proxima_accion };
   if (req.body?.empresa !== undefined && !limStr(req.body.empresa, 180)) return res.status(400).json({ error: 'La empresa es obligatoria.' });
-  if (req.body?.estado !== undefined && !(await estadoValido(limStr(req.body.estado, 40), false))) return res.status(400).json({ error: 'Estado inválido.' });
-  const f = fechaISO(req.body?.fecha_proxima_accion);
-  if (req.body?.fecha_proxima_accion !== undefined && f === undefined) return res.status(400).json({ error: 'Fecha inválida.' });
+  if (req.body?.estado !== undefined && !estadoPorSlug(F, req.body.estado)) return res.status(400).json({ error: 'Estado inválido.' });
+  if (fechaISO(p.fecha_proxima_accion) === undefined) return res.status(400).json({ error: 'Fecha inválida.' });
   if (['empresa', 'cuit', 'email', 'telefono', 'localidad'].some((k) => req.body?.[k] !== undefined)) {
-    const posible = datosProspecto({ ...p, ...req.body });
-    const repetido = await duplicadoProspecto(posible, p.id);
-    if (repetido) return res.status(409).json({ error: `Ya existe un prospecto similar: ${repetido.empresa}.`, existente_id: repetido.id });
+    const dup = await existeDuplicado(F, p, actual.id);
+    if (dup) return res.status(409).json({ error: `Ya existe un prospecto similar: ${dup.empresa}.`, existente_id: dup.id });
   }
-  if (!(await actualizarProspecto(p.id, req.body, req))) return res.status(400).json({ error: 'Sin cambios.' });
+  await actualizar(F, actual.id, p, req);
   return res.json({ ok: true });
 });
-
 prospectosRouter.delete('/prospectos/:id', authRequired, permisoRequerido('ventas_editar'), async (req, res) => {
-  const p = await one('SELECT id FROM prospectos WHERE id = $1 AND archivado = false', [req.params.id]);
-  if (!p) return res.status(404).json({ error: 'Prospecto no encontrado.' });
-  await query('UPDATE prospectos SET archivado = true, actualizado_en = now(), actualizado_por = $2 WHERE id = $1', [p.id, req.user.email]);
-  await auditar({ req, tabla: 'prospectos', registroId: p.id, accion: 'archivar' });
+  const { lista, F } = await contexto(); setLista(F, lista);
+  const r = await one('SELECT id FROM lista_registros WHERE id = $1 AND lista_id = $2 AND archivado = false', [req.params.id, lista.id]);
+  if (!r) return res.status(404).json({ error: 'Prospecto no encontrado.' });
+  await query('UPDATE lista_registros SET archivado = true, actualizado_en = now(), actualizado_por = $2 WHERE id = $1', [r.id, req.user.email]);
   return res.json({ ok: true });
 });
 
-// ---------- Importación XLSX ----------
+// ---------- Parser XLSX ----------
+function mapHeaders(headers) {
+  const h = headers.map((x) => norm(x));
+  const buscar = (...ops) => h.findIndex((x) => ops.some((o) => x.includes(norm(o))));
+  return { empresa: buscar('empresa / prospecto', 'empresa'), localidad: buscar('zona / localidad', 'zona', 'localidad'), direccion: buscar('direccion / ubicacion', 'direccion'), rubro: buscar('rubro / equipamiento', 'rubro'), perfil_redes: buscar('perfil redes', 'redes sociales'), contacto: buscar('contacto linkedin', 'nombre y cargo', 'contacto'), email: buscar('email de contacto', 'email'), telefono: buscar('telefono / whatsapp', 'telefono'), tipo_contacto: buscar('tipo de contacto'), observaciones: buscar('observaciones', 'foco comercial'), origen_id: buscar('id') };
+}
+async function leerExcel(buffer) {
+  const wb = new ExcelJS.Workbook(); await wb.xlsx.load(buffer);
+  const ws = wb.worksheets[0]; if (!ws) return { filas: [], columnas: [], nuevas: [] };
+  const filas = [];
+  ws.eachRow({ includeEmpty: false }, (row) => {
+    const vals = []; for (let i = 1; i <= Math.max(ws.columnCount, row.cellCount); i += 1) vals.push(String(row.getCell(i)?.text ?? '').trim());
+    if (vals.some(Boolean)) filas.push(vals);
+  });
+  const hi = filas.findIndex((f) => f.some((v) => norm(v).includes('empresa'))); if (hi < 0) return { filas: [], columnas: [], nuevas: [] };
+  const headers = filas[hi];
+  const m = mapHeaders(headers); if (m.empresa < 0) return { filas: [], columnas: [], nuevas: [] };
+  const usadas = new Set(Object.values(m).filter((i) => i >= 0));
+  const conocidas = new Set(['id']);
+  const nuevas = headers.filter((h, i) => h && !usadas.has(i) && !conocidas.has(norm(h)));
+  const data = filas.slice(hi + 1).map((f, i) => {
+    const g = (k) => (k >= 0 ? (f[k] || '') : '');
+    const c = g(m.contacto).split(/\s+-\s+/);
+    return { fila: i + hi + 2, origen_id: g(m.origen_id) || null, empresa: g(m.empresa), localidad: g(m.localidad), direccion: g(m.direccion), rubro: g(m.rubro), perfil_redes: g(m.perfil_redes), contacto_nombre: (c[0] || '').trim(), contacto_cargo: c.slice(1).join(' - ').trim(), email: g(m.email), telefono: g(m.telefono), tipo_contacto: g(m.tipo_contacto), observaciones: g(m.observaciones) };
+  }).filter((f) => f.empresa || f.email || f.telefono);
+  return { filas: data, columnas: headers.filter(Boolean), nuevas };
+}
+async function clasificar(filas, existentes) {
+  return filas.map((f) => {
+    const base = { fila: f.fila, datos: { ...f, estado: slugEstado(opciones(F)[0] || 'Nuevo'), origen: 'excel' } };
+    if (!f.empresa) return { ...base, clasificacion: 'error', error: 'Falta la empresa.' };
+    if (!emailNorm(f.email) && !telNorm(f.telefono)) return { ...base, clasificacion: 'error', error: 'Falta email o teléfono.' };
+    let match = existentes.find((p) => (emailsDe(f.email).some((e) => emailsDe(p.email, p.email_secundario).includes(e))) || (telNorm(f.telefono) && telNorm(p.telefono) === telNorm(f.telefono)) || (norm(f.origen_id) && norm(p.origen_id) === norm(f.origen_id)));
+    let tipo = match ? 'clave' : null;
+    if (!match) { match = existentes.find((p) => norm(p.empresa) === norm(f.empresa) && norm(p.localidad) === norm(f.localidad)); tipo = match ? 'empresa_localidad' : null; }
+    if (!match) { match = existentes.find((p) => norm(p.localidad) === norm(f.localidad) && norm(p.empresa).includes(norm(f.empresa)) || norm(f.empresa).includes(norm(p.empresa))); tipo = match ? 'parecida' : null; }
+    return { ...base, clasificacion: match ? (tipo === 'parecida' || ['email', 'telefono', 'empresa_localidad'].includes(tipo) ? 'parcial' : 'exacto') : 'nuevo', coincidencia: match ? { id: match.id, empresa: match.empresa, estado: match.estado, email: match.email, telefono: match.telefono } : null };
+  });
+}
+let F = {};
+
 prospectosRouter.post('/prospectos/importar/preview', authRequired, permisoRequerido('ventas_editar'), subirExcel.single('archivo'), async (req, res) => {
   if (!req.file?.buffer?.length) return res.status(400).json({ error: 'Subí un archivo .xlsx.' });
-  let filas;
-  try { filas = await leerExcel(req.file.buffer); }
-  catch { return res.status(400).json({ error: 'No se pudo leer el Excel. Verificá que sea un .xlsx válido.' }); }
-  if (!filas.length) return res.status(400).json({ error: 'No se encontraron prospectos en la primera hoja.' });
-  if (filas.length > 2000) return res.status(400).json({ error: 'El archivo supera los 2000 prospectos por importación.' });
-  const clasificados = await clasificar(filas);
-  const resumen = {
-    total: clasificados.length,
-    nuevos: clasificados.filter((f) => f.clasificacion === 'nuevo').length,
-    exactos: clasificados.filter((f) => f.clasificacion === 'exacto').length,
-    parciales: clasificados.filter((f) => f.clasificacion === 'parcial').length,
-    errores: clasificados.filter((f) => f.clasificacion === 'error').length,
-  };
+  let parsed; try { parsed = await leerExcel(req.file.buffer); } catch { return res.status(400).json({ error: 'Excel inválido.' }); }
+  if (!parsed.filas.length) return res.status(400).json({ error: 'No se encontraron prospectos.' });
+  const { lista, F: campos } = await contexto(); F = campos; setLista(F, lista);
+  const clasificados = await clasificar(parsed.filas, await filas(F));
+  const resumen = { total: clasificados.length, nuevos: clasificados.filter((x) => x.clasificacion === 'nuevo').length, exactos: clasificados.filter((x) => x.clasificacion === 'exacto').length, parciales: clasificados.filter((x) => x.clasificacion === 'parcial').length, errores: clasificados.filter((x) => x.clasificacion === 'error').length };
   const id = idNuevo('imp');
-  await query(
-    `INSERT INTO prospecto_importaciones (id, usuario_email, nombre_archivo, filas, resumen)
-     VALUES ($1,$2,$3,$4::jsonb,$5::jsonb)`,
-    [id, req.user.email, limStr(req.file.originalname, 180), JSON.stringify(clasificados), JSON.stringify(resumen)]
-  );
-  await query("DELETE FROM prospecto_importaciones WHERE creado_en < now() - interval '1 day' AND usado = true");
-  return res.json({ importacion_id: id, archivo: limStr(req.file.originalname, 180), resumen, filas: clasificados });
+  await query('INSERT INTO prospecto_importaciones (id,usuario_email,nombre_archivo,filas,resumen) VALUES ($1,$2,$3,$4::jsonb,$5::jsonb)', [id, req.user.email, limStr(req.file.originalname, 180), JSON.stringify(clasificados), JSON.stringify(resumen)]);
+  return res.json({ importacion_id: id, resumen, columnas: parsed.columnas, columnas_nuevas: parsed.nuevas, filas: clasificados });
 });
-
 prospectosRouter.post('/prospectos/importar', authRequired, permisoRequerido('ventas_editar'), async (req, res) => {
-  const imp = await one('SELECT * FROM prospecto_importaciones WHERE id = $1 AND usuario_email = $2 AND usado = false', [req.body?.importacion_id, req.user.email]);
-  if (!imp) return res.status(404).json({ error: 'Previsualización no encontrada o ya utilizada.' });
-  const decisiones = req.body?.decisiones && typeof req.body.decisiones === 'object' ? req.body.decisiones : {};
-  const filas = Array.isArray(imp.filas) ? imp.filas : [];
-  const conteo = { creados: 0, actualizados: 0, omitidos: 0, errores: 0 };
-  const errores = [];
-  for (let i = 0; i < filas.length; i += 1) {
-    const fila = filas[i];
-    if (fila.clasificacion === 'error') { conteo.errores += 1; errores.push({ fila: fila.fila, error: fila.error }); continue; }
-    let decision = decisiones[String(i)] || decisiones[i];
-    if (!decision) decision = fila.clasificacion === 'nuevo' ? 'crear' : 'omitir';
-    if (fila.clasificacion === 'parcial' && !decisiones[String(i)] && !decisiones[i]) { conteo.omitidos += 1; continue; }
-    if (decision === 'omitir') { conteo.omitidos += 1; continue; }
+  const imp = await one('SELECT * FROM prospecto_importaciones WHERE id=$1 AND usuario_email=$2 AND usado=false', [req.body?.importacion_id, req.user.email]);
+  if (!imp) return res.status(404).json({ error: 'Previsualización no encontrada.' });
+  const { lista, F: campos } = await contexto(); F = campos; setLista(F, lista);
+  const conteo = { creados: 0, actualizados: 0, omitidos: 0, errores: 0 }; const decisiones = req.body?.decisiones || {};
+  for (let i = 0; i < (imp.filas || []).length; i += 1) {
+    const f = imp.filas[i]; if (f.clasificacion === 'error') { conteo.errores += 1; continue; }
+    const d = decisiones[String(i)] || (f.clasificacion === 'nuevo' ? 'crear' : 'omitir');
+    if (d === 'omitir' || (f.clasificacion === 'parcial' && !decisiones[String(i)])) { conteo.omitidos += 1; continue; }
     try {
-      if (decision === 'actualizar' && fila.coincidencia?.id) {
-        await actualizarProspecto(fila.coincidencia.id, fila.datos, req);
-        conteo.actualizados += 1;
-      } else if (decision === 'crear') {
-        await crearProspecto(fila.datos, req);
-        conteo.creados += 1;
-      } else {
-        conteo.omitidos += 1;
-      }
-    } catch (e) {
-      conteo.errores += 1; errores.push({ fila: fila.fila, error: e.message });
-    }
+      if (d === 'actualizar' && f.coincidencia?.id) { await actualizar(F, f.coincidencia.id, f.datos, req); conteo.actualizados += 1; }
+      else { await crear(F, f.datos, req); conteo.creados += 1; }
+    } catch { conteo.errores += 1; }
   }
-  await query('UPDATE prospecto_importaciones SET usado = true WHERE id = $1', [imp.id]);
-  await auditar({ req, tabla: 'prospecto_importaciones', registroId: imp.id, accion: 'importar', detalle: JSON.stringify(conteo) });
-  return res.json({ ok: true, ...conteo, errores });
+  await query('UPDATE prospecto_importaciones SET usado=true WHERE id=$1', [imp.id]);
+  return res.json({ ok: true, ...conteo });
 });
 
-// ---------- Exportación ----------
-const COLUMNAS_EXPORT = [
-  ['Empresa / Prospecto', 'empresa'], ['CUIT', 'cuit'], ['Zona / Localidad', 'localidad'],
-  ['Dirección / Ubicación', 'direccion'], ['Rubro / Equipamiento', 'rubro'], ['Perfil Redes Sociales', 'perfil_redes'],
-  ['Contacto', 'contacto_nombre'], ['Cargo', 'contacto_cargo'], ['Email', 'email'], ['Teléfono / WhatsApp', 'telefono'],
-  ['Tipo de Contacto', 'tipo_contacto'], ['Estado', 'estado'], ['Observaciones', 'observaciones'],
-  ['Responsable', 'responsable'], ['Próxima acción', 'proxima_accion'], ['Fecha próxima acción', 'fecha_proxima_accion'],
-  ['Último contacto', 'ultimo_contacto'], ['Origen', 'origen'], ['Creado', 'creado_en'],
-];
-
+const COLS = [['Empresa / Prospecto','empresa'],['CUIT','cuit'],['Zona / Localidad','localidad'],['Dirección / Ubicación','direccion'],['Rubro / Equipamiento','rubro'],['Perfil Redes Sociales','perfil_redes'],['Contacto','contacto_nombre'],['Cargo','contacto_cargo'],['Email','email'],['Emails adicionales','email_secundario'],['Teléfono / WhatsApp','telefono'],['Tipo de Contacto','tipo_contacto'],['Estado','estado'],['Observaciones','observaciones'],['Responsable','responsable'],['Próxima acción','proxima_accion'],['Fecha próxima acción','fecha_proxima_accion'],['Origen','origen'],['Creado','creado_en']];
 prospectosRouter.get('/prospectos/exportar', authRequired, permisoRequerido('ventas'), async (req, res) => {
-  const { sql, params } = whereFiltros(req);
-  const filas = await query(`SELECT * FROM prospectos WHERE ${sql} ORDER BY actualizado_en DESC`, params);
-  const formato = String(req.query?.formato || 'xlsx').toLowerCase();
+  const { lista, F: campos } = await contexto(); F = campos; setLista(F, lista);
+  const todas = filtros(req, await filas(F)); const formato = String(req.query?.formato || 'xlsx');
   const nombre = `prospectos-${new Date().toISOString().slice(0, 10)}.${formato === 'csv' ? 'csv' : 'xlsx'}`;
   if (formato === 'csv') {
     const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-    const texto = [COLUMNAS_EXPORT.map(([h]) => esc(h)).join(',')]
-      .concat(filas.map((f) => COLUMNAS_EXPORT.map(([, k]) => esc(f[k])).join(','))).join('\n');
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="${nombre}"`);
-    return res.send(`\uFEFF${texto}`);
+    const texto = [COLS.map(([h]) => esc(h)).join(',')].concat(todas.map((f) => COLS.map(([, k]) => esc(f[k])).join(','))).join('\n');
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8'); res.setHeader('Content-Disposition', `attachment; filename="${nombre}"`); return res.send(`\uFEFF${texto}`);
   }
-  const wb = new ExcelJS.Workbook();
-  const ws = wb.addWorksheet('Prospectos');
-  ws.addRow(COLUMNAS_EXPORT.map(([h]) => h));
-  for (const f of filas) ws.addRow(COLUMNAS_EXPORT.map(([, k]) => f[k] ?? ''));
-  ws.getRow(1).font = { bold: true };
-  ws.columns.forEach((c) => { c.width = 22; });
-  const buffer = await wb.xlsx.writeBuffer();
-  res.setHeader('Content-Type', ARCHIVO_XLSX);
-  res.setHeader('Content-Disposition', `attachment; filename="${nombre}"`);
-  return res.send(Buffer.from(buffer));
+  const wb = new ExcelJS.Workbook(); const ws = wb.addWorksheet('Prospectos');
+  ws.addRow(COLS.map(([h]) => h)); for (const f of todas) ws.addRow(COLS.map(([, k]) => f[k] ?? ''));
+  ws.getRow(1).font = { bold: true }; ws.columns.forEach((c) => { c.width = 22; });
+  const buffer = await wb.xlsx.writeBuffer(); res.setHeader('Content-Type', ARCHIVO_XLSX); res.setHeader('Content-Disposition', `attachment; filename="${nombre}"`); return res.send(Buffer.from(buffer));
 });
 
-// ---------- Conversión ----------
 prospectosRouter.post('/prospectos/:id/convertir', authRequired, permisoRequerido('ventas_cerrar'), async (req, res) => {
-  const p = await one('SELECT * FROM prospectos WHERE id = $1 AND archivado = false', [req.params.id]);
-  if (!p) return res.status(404).json({ error: 'Prospecto no encontrado.' });
-  if (p.cliente_id) return res.json({ cliente_id: p.cliente_id, ya_convertido: true });
-  let cliente = p.email_normalizado
-    ? await one('SELECT id FROM clientes WHERE LOWER(email) = $1 AND deleted_at IS NULL', [p.email_normalizado])
-    : null;
+  const { lista, F: campos } = await contexto(); F = campos; setLista(F, lista);
+  const actual = (await filas(F)).find((x) => x.id === req.params.id); if (!actual) return res.status(404).json({ error: 'Prospecto no encontrado.' });
+  if (actual.cliente_id) return res.json({ cliente_id: actual.cliente_id, ya_convertido: true });
+  let cliente = emailNorm(actual.email) ? await one('SELECT id FROM clientes WHERE LOWER(email)=$1 AND deleted_at IS NULL', [emailNorm(actual.email)]) : null;
   let nuevo = false;
   await tx(async (client) => {
-    if (!cliente) {
-      const id = idNuevo('cli');
-      await client.query(
-        `INSERT INTO clientes (id, nombre, tipo, telefono, contacto, email, empresa)
-         VALUES ($1,$2,'empresa',$3,$4,$5,$6)`,
-        [id, p.empresa, p.telefono || '', p.contacto_nombre || '', p.email || '', p.empresa]
-      );
-      cliente = { id }; nuevo = true;
-    }
-    await client.query(
-      "UPDATE prospectos SET estado = 'convertido', cliente_id = $2, convertido_en = now(), actualizado_en = now(), actualizado_por = $3 WHERE id = $1",
-      [p.id, cliente.id, req.user.email]
-    );
+    if (!cliente) { const id = idNuevo('cli'); await client.query("INSERT INTO clientes (id,nombre,tipo,telefono,contacto,email,empresa) VALUES ($1,$2,'empresa',$3,$4,$5,$6)", [id, actual.empresa || 'Cliente sin nombre', actual.telefono || '', actual.contacto_nombre || '', emailNorm(actual.email) || null, actual.empresa || '']); cliente = { id }; nuevo = true; }
+    const datos = datosLista(F, { ...actual, estado: 'convertido', cliente_id: cliente.id }, (await one('SELECT datos FROM lista_registros WHERE id=$1', [actual.id])).datos || {});
+    await client.query('UPDATE lista_registros SET datos=$2::jsonb, actualizado_en=now(), actualizado_por=$3 WHERE id=$1', [actual.id, JSON.stringify(datos), req.user.email]);
   });
-  await auditar({ req, tabla: 'prospectos', registroId: p.id, accion: 'convertir_cliente', detalle: cliente.id });
   return res.json({ cliente_id: cliente.id, nuevo });
 });
+
+// Convierte el prospecto asociado a una oportunidad cuando se acepta la
+// cotización. La oportunidad puede traer el id de la fila de la lista o solo
+// los datos de contacto; en ambos casos se busca en Ventas → Prospectos.
+export async function convertirProspectoDeOportunidad(o, req) {
+  try {
+    const { lista, F: campos } = await contexto();
+    F = campos; setLista(F, lista);
+    const todas = await filas(F);
+    let prospecto = o.prospecto_id ? todas.find((x) => x.id === o.prospecto_id) : null;
+    if (!prospecto) {
+      const emails = emailsDe(o.prospecto_email);
+      const tel = telNorm(o.prospecto_telefono);
+      prospecto = todas.find((x) => emails.some((e) => emailsDe(x.email, x.email_secundario).includes(e)) || (tel && telNorm(x.telefono) === tel) || (o.prospecto_nombre && norm(x.empresa) === norm(o.prospecto_nombre)));
+    }
+    if (o.cliente_id) {
+      if (prospecto && prospecto.cliente_id !== o.cliente_id) {
+        const datos = datosLista(F, { ...prospecto, estado: 'convertido', cliente_id: o.cliente_id }, (await one('SELECT datos FROM lista_registros WHERE id=$1', [prospecto.id])).datos || {});
+        await query('UPDATE lista_registros SET datos=$2::jsonb, actualizado_en=now(), actualizado_por=$3 WHERE id=$1', [prospecto.id, JSON.stringify(datos), req.user?.email || 'cliente']);
+      }
+      return { cliente_id: o.cliente_id, ya_existia: true, prospecto };
+    }
+    const empresa = prospecto?.empresa || o.prospecto_nombre || o.titulo || '';
+    const emails = emailsDe(prospecto?.email, prospecto?.email_secundario, o.prospecto_email);
+    const email = emails[0] || '';
+    const tel = telNorm(prospecto?.telefono || o.prospecto_telefono);
+    if (!empresa && !emails.length && !tel) return null;
+    let cliente = null;
+    for (const e of emails) { cliente = await one('SELECT id FROM clientes WHERE LOWER(email)=$1 AND deleted_at IS NULL', [e]); if (cliente) break; }
+    if (!cliente && tel) cliente = await one("SELECT id FROM clientes WHERE regexp_replace(COALESCE(telefono,''), '\\\\D', '', 'g')=$1 AND deleted_at IS NULL", [tel]);
+    if (!cliente && empresa) cliente = await one('SELECT id FROM clientes WHERE LOWER(TRIM(nombre))=LOWER(TRIM($1)) AND deleted_at IS NULL', [empresa]);
+    let nuevo = false;
+    await tx(async (client) => {
+      if (!cliente) {
+        const cid = idNuevo('cli');
+        await client.query("INSERT INTO clientes (id,nombre,tipo,telefono,contacto,email,empresa) VALUES ($1,$2,'empresa',$3,$4,$5,$6)", [cid, empresa || 'Cliente sin nombre', prospecto?.telefono || o.prospecto_telefono || '', prospecto?.contacto_nombre || '', email || null, empresa || '']);
+        cliente = { id: cid }; nuevo = true;
+      }
+      if (prospecto) {
+        const actual = (await client.query('SELECT datos FROM lista_registros WHERE id=$1', [prospecto.id])).rows[0];
+        const datos = datosLista(F, { ...prospecto, estado: 'convertido', cliente_id: cliente.id }, actual?.datos || {});
+        await client.query('UPDATE lista_registros SET datos=$2::jsonb, actualizado_en=now(), actualizado_por=$3 WHERE id=$1', [prospecto.id, JSON.stringify(datos), req.user?.email || 'cliente']);
+      }
+      await client.query('UPDATE oportunidades SET cliente_id=$2, prospecto_id=COALESCE(prospecto_id,$3), actualizado_en=now(), actualizado_por=$4 WHERE id=$1', [o.id, cliente.id, prospecto?.id || null, req.user?.email || 'cliente']);
+    });
+    return { cliente_id: cliente.id, nuevo, prospecto };
+  } catch (e) {
+    console.error('[prospectos] no se pudo convertir al aceptar:', e.message);
+    return null;
+  }
+}

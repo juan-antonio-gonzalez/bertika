@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { authRequired, permisoRequerido } from './middleware/auth.js';
 import { query, one, tx } from './db.js';
 import { auditar } from './auditoria.js';
+import { convertirProspectoDeOportunidad } from './prospectos-routes.js';
 import { ETAPAS, normalizarEtapa, normalizarMonto } from '../src/data/crm.js';
 
 const idNuevo = (p) => `${p}_${randomUUID()}`;
@@ -180,8 +181,10 @@ ventasRouter.post('/oportunidades', authRequired, permisoRequerido('ventas_edita
   }
   const prospectoId = limStr(req.body?.prospecto_id, 80) || null;
   if (prospectoId) {
-    const p = await one('SELECT id FROM prospectos WHERE id = $1 AND archivado = false', [prospectoId]);
-    if (!p) return res.status(400).json({ error: 'El prospecto no existe.' });
+    const p = await one(`SELECT r.id FROM lista_registros r
+      JOIN listas l ON l.id = r.lista_id JOIN areas a ON a.id = l.area_id
+      WHERE r.id = $1 AND r.archivado = false AND a.slug = 'ventas' AND lower(l.nombre) LIKE '%prospect%'`, [prospectoId]);
+    if (!p) return res.status(400).json({ error: 'El prospecto no existe en la lista de Ventas.' });
   }
   const etapa = normalizarEtapa(req.body?.etapa);
   const cierre = fechaISO(req.body?.cierre_estimado);
@@ -232,8 +235,10 @@ ventasRouter.patch('/oportunidades/:id', authRequired, permisoRequerido('ventas_
   if (etapa === 'perdido' && !limStr(req.body?.motivo_perdida ?? o.motivo_perdida, 200)) return res.status(400).json({ error: 'Para perder una oportunidad cargá el motivo.' });
   const prospectoId = req.body?.prospecto_id !== undefined ? (limStr(req.body.prospecto_id, 80) || null) : o.prospecto_id;
   if (prospectoId && prospectoId !== o.prospecto_id) {
-    const p = await one('SELECT id FROM prospectos WHERE id = $1 AND archivado = false', [prospectoId]);
-    if (!p) return res.status(400).json({ error: 'El prospecto no existe.' });
+    const p = await one(`SELECT r.id FROM lista_registros r
+      JOIN listas l ON l.id = r.lista_id JOIN areas a ON a.id = l.area_id
+      WHERE r.id = $1 AND r.archivado = false AND a.slug = 'ventas' AND lower(l.nombre) LIKE '%prospect%'`, [prospectoId]);
+    if (!p) return res.status(400).json({ error: 'El prospecto no existe en la lista de Ventas.' });
   }
   const clienteId = req.body?.cliente_id !== undefined ? (limStr(req.body.cliente_id, 80) || null) : o.cliente_id;
   if (clienteId && clienteId !== o.cliente_id) {
@@ -375,79 +380,6 @@ ventasRouter.post('/cotizaciones/:id/decision', authRequired, permisoRequerido('
   return decidirCotizacion(req, res, q, o, req.body?.decision, req.body?.motivo);
 });
 
-const normalizarTexto = (v) => String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-const normalizarEmailProspecto = (v) => String(v || '').split(/[,;/]/).map((x) => x.trim()).find((x) => x.includes('@'))?.toLowerCase() || '';
-const normalizarTelefonoProspecto = (v) => String(v || '').replace(/\D/g, '').slice(-15);
-
-// Al aceptar una cotización, el prospecto deja de ser prospecto: se crea o
-// reutiliza el cliente, se vincula la oportunidad y se conserva el historial.
-// No debe romper la aceptación si algo falla: se registra el error.
-async function convertirProspectoAceptado(o, req) {
-  try {
-    let prospecto = o.prospecto_id
-      ? await one('SELECT * FROM prospectos WHERE id = $1 AND archivado = false', [o.prospecto_id])
-      : null;
-    if (!prospecto && (o.prospecto_email || o.prospecto_telefono || o.prospecto_nombre)) {
-      const email = normalizarEmailProspecto(o.prospecto_email);
-      const tel = normalizarTelefonoProspecto(o.prospecto_telefono);
-      prospecto = await one(
-        `SELECT * FROM prospectos
-          WHERE archivado = false AND (
-            ($1 <> '' AND email_normalizado = $1) OR
-            ($2 <> '' AND telefono_normalizado = $2) OR
-            ($3 <> '' AND empresa_normalizada = $3)
-          )
-          ORDER BY creado_en LIMIT 1`,
-        [email, tel, normalizarTexto(o.prospecto_nombre)]
-      );
-    }
-    if (o.cliente_id) {
-      if (prospecto && prospecto.cliente_id !== o.cliente_id) {
-        await query("UPDATE prospectos SET estado = 'convertido', cliente_id = $2, convertido_en = COALESCE(convertido_en, now()), actualizado_en = now() WHERE id = $1", [prospecto.id, o.cliente_id]);
-      }
-      return { cliente_id: o.cliente_id, ya_existia: true };
-    }
-    const email = prospecto?.email_normalizado || normalizarEmailProspecto(o.prospecto_email);
-    const tel = prospecto?.telefono_normalizado || normalizarTelefonoProspecto(o.prospecto_telefono);
-    const empresa = prospecto?.empresa || o.prospecto_nombre || o.titulo || '';
-    if (!empresa && !email && !tel) return null;
-    let cliente = email
-      ? await one('SELECT id FROM clientes WHERE LOWER(email) = $1 AND deleted_at IS NULL', [email])
-      : null;
-    if (!cliente && tel) cliente = await one("SELECT id FROM clientes WHERE regexp_replace(COALESCE(telefono,''), '\\D', '', 'g') = $1 AND deleted_at IS NULL", [tel]);
-    if (!cliente && empresa) cliente = await one('SELECT id FROM clientes WHERE LOWER(TRIM(nombre)) = LOWER(TRIM($1)) AND deleted_at IS NULL', [empresa]);
-    let nuevo = false;
-    await tx(async (client) => {
-      if (!cliente) {
-        const id = idNuevo('cli');
-        await client.query(
-          `INSERT INTO clientes (id, nombre, tipo, telefono, contacto, email, empresa)
-           VALUES ($1,$2,'empresa',$3,$4,$5,$6)`,
-          [id, empresa || 'Cliente sin nombre', tel ? (prospecto?.telefono || o.prospecto_telefono || '') : '', prospecto?.contacto_nombre || '', email || null, empresa || '']
-        );
-        cliente = { id }; nuevo = true;
-      }
-      if (prospecto) {
-        await client.query(
-          "UPDATE prospectos SET estado = 'convertido', cliente_id = $2, convertido_en = now(), actualizado_en = now(), actualizado_por = $3 WHERE id = $1",
-          [prospecto.id, cliente.id, req.user?.email || 'cliente']
-        );
-      }
-      await client.query(
-        'UPDATE oportunidades SET cliente_id = $2, prospecto_id = COALESCE(prospecto_id, $3), actualizado_en = now(), actualizado_por = $4 WHERE id = $1',
-        [o.id, cliente.id, prospecto?.id || null, req.user?.email || 'cliente']
-      );
-    });
-    await evento(o.id, 'cliente_creado', `${nuevo ? 'Cliente creado' : 'Cliente vinculado'} ${cliente.id} al aceptar la cotización`, req.user?.email || 'cliente');
-    await auditar({ req, tabla: 'prospectos', registroId: prospecto?.id || o.id, accion: 'convertir_cliente', detalle: cliente.id });
-    return { cliente_id: cliente.id, nuevo };
-  } catch (e) {
-    console.error('[ventas] no se pudo convertir el prospecto al aceptar:', e.message);
-    await evento(o.id, 'conversion_error', e.message, req.user?.email || 'cliente');
-    return null;
-  }
-}
-
 async function decidirCotizacion(req, res, q, o, decision, motivo) {
   const estado = decision === 'aceptada' ? 'aceptada' : decision === 'rechazada' ? 'rechazada' : null;
   if (!estado) return res.status(400).json({ error: 'Elegí aceptar o rechazar.' });
@@ -460,7 +392,7 @@ async function decidirCotizacion(req, res, q, o, decision, motivo) {
   if (estado === 'aceptada') {
     await query("UPDATE oportunidades SET etapa='ganado', etapa_desde=now(), actualizado_en=now() WHERE id=$1", [o.id]);
     await evento(o.id, 'ganada', `Cotización v${q.version} aceptada`, req.user?.email || 'cliente');
-    await convertirProspectoAceptado(o, req);
+    await convertirProspectoDeOportunidad(o, req);
   } else {
     await query("UPDATE oportunidades SET etapa='perdido', motivo_perdida=$2, etapa_desde=now(), actualizado_en=now() WHERE id=$1", [o.id, limStr(motivo, 200) || 'Cotización rechazada']);
     await evento(o.id, 'perdida', limStr(motivo, 200) || 'Cotización rechazada', req.user?.email || 'cliente');

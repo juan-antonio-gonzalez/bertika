@@ -1,5 +1,6 @@
 // Migraciones nuevas, separadas del baseline histórico.
 // Cada una se registra en schema_migrations y es idempotente.
+import { randomUUID } from 'node:crypto';
 import { query, one } from './db.js';
 
 export async function migrarHardening() {
@@ -8,7 +9,7 @@ export async function migrarHardening() {
     id TEXT PRIMARY KEY,
     aplicada_en TIMESTAMPTZ DEFAULT now()
   )`);
-  const hecha = await one("SELECT id FROM schema_migrations WHERE id = '006_prospecto_oportunidad'");
+  const hecha = await one("SELECT id FROM schema_migrations WHERE id = '007_prospectos_lista_unica'");
   if (hecha) return;
   await query('ALTER TABLE lista_adjuntos ADD COLUMN IF NOT EXISTS campo_id TEXT');
   await query('ALTER TABLE lista_adjuntos ADD COLUMN IF NOT EXISTS registro_id TEXT');
@@ -80,6 +81,40 @@ export async function migrarHardening() {
   await query('CREATE INDEX IF NOT EXISTS idx_prospectos_cuit ON prospectos (cuit)');
   await query('ALTER TABLE oportunidades ADD COLUMN IF NOT EXISTS prospecto_id TEXT');
   await query('CREATE INDEX IF NOT EXISTS idx_oportunidades_prospecto ON oportunidades (prospecto_id)');
+  // La lista dinámica Ventas → Prospectos es la fuente única. Se retiran las
+  // tablas físicas que se habían creado por error para no duplicar datos.
+  const listaProspectos = await one(`SELECT l.id FROM listas l JOIN areas a ON a.id=l.area_id
+    WHERE a.slug='ventas' AND lower(l.nombre) LIKE '%prospect%' AND l.archivada=false ORDER BY l.creado_en LIMIT 1`);
+  if (listaProspectos) {
+    const extra = [
+      ['Zona / Localidad', 'texto'], ['Dirección / Ubicación', 'texto'],
+      ['Rubro / Equipamiento Principal', 'texto'], ['Perfil Redes Sociales', 'texto'],
+      ['Contacto', 'texto'], ['Cargo', 'texto'], ['Tipo de Contacto Directo', 'texto'],
+      ['Observaciones / Foco Comercial', 'texto_largo'], ['CUIT', 'texto'],
+      ['ID Origen', 'texto'], ['Emails adicionales', 'texto'], ['Cliente convertido', 'texto'],
+    ];
+    const actuales = await query('SELECT lower(nombre) AS nombre FROM lista_campos WHERE lista_id=$1 AND activo=true', [listaProspectos.id]);
+    const tiene = new Set(actuales.map((x) => x.nombre));
+    let orden = Number((await one('SELECT COALESCE(MAX(orden),0)::int AS n FROM lista_campos WHERE lista_id=$1', [listaProspectos.id])).n) || 0;
+    for (const [nombre, tipo] of extra) {
+      if (tiene.has(nombre.toLowerCase())) continue;
+      orden += 10;
+      await query('INSERT INTO lista_campos (id,lista_id,nombre,tipo,config,requerido,unico,oculto_categorias,orden) VALUES ($1,$2,$3,$4,$5::jsonb,false,false,$6::jsonb,$7)', [`cam_${randomUUID()}`, listaProspectos.id, nombre, tipo, '{}', '[]', orden]);
+    }
+    const campoEstado = await one("SELECT id, config FROM lista_campos WHERE lista_id=$1 AND lower(nombre)='estado' AND activo=true", [listaProspectos.id]);
+    if (campoEstado) {
+      const opciones = ['Nuevo', 'Contactado', 'Interesado', 'Cotizado', 'Negociación', 'Ganado', 'Perdido', 'Convertido a cliente'];
+      await query('UPDATE lista_campos SET config=$2::jsonb WHERE id=$1', [campoEstado.id, JSON.stringify({ ...campoEstado.config, opciones })]);
+    }
+    const campoOrigen = await one("SELECT id, config FROM lista_campos WHERE lista_id=$1 AND lower(nombre)='origen' AND activo=true", [listaProspectos.id]);
+    if (campoOrigen) {
+      const actuales = Array.isArray(campoOrigen.config?.opciones) ? campoOrigen.config.opciones : [];
+      const opciones = [...new Set([...actuales, 'Manual', 'Excel'])];
+      await query('UPDATE lista_campos SET config=$2::jsonb WHERE id=$1', [campoOrigen.id, JSON.stringify({ ...campoOrigen.config, opciones })]);
+    }
+  }
+  await query('DROP TABLE IF EXISTS prospectos');
+  await query('DROP TABLE IF EXISTS prospecto_estados');
   await query(`CREATE TABLE IF NOT EXISTS prospecto_importaciones (
     id TEXT PRIMARY KEY,
     usuario_email TEXT NOT NULL,
@@ -93,5 +128,6 @@ export async function migrarHardening() {
   await query("INSERT INTO schema_migrations (id) VALUES ('004_adjuntos_campo') ON CONFLICT DO NOTHING");
   await query("INSERT INTO schema_migrations (id) VALUES ('005_prospectos') ON CONFLICT DO NOTHING");
   await query("INSERT INTO schema_migrations (id) VALUES ('006_prospecto_oportunidad') ON CONFLICT DO NOTHING");
+  await query("INSERT INTO schema_migrations (id) VALUES ('007_prospectos_lista_unica') ON CONFLICT DO NOTHING");
   console.log('[hardening] fin');
 }
