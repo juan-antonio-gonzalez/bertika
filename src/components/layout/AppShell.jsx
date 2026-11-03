@@ -203,6 +203,10 @@ export default function AppShell({ children }) {
   const gruposConAreas = useMemo(() => {
     const areas = data.areas || [];
     if (!user || user.rol === 'cliente' || !areas.length) return grupos;
+    const modulos = grupos
+      .filter((g) => ['Comercial', 'Taller'].includes(g.grupo))
+      .flatMap((g) => g.items)
+      .filter((it) => !['/prospectos', '/ventas'].includes(it.to));
     const base = grupos.filter((g) => !['Comercial', 'Taller'].includes(g.grupo));
     const ordenAreas = ['ventas', 'taller'];
     const areasOrdenadas = [...areas].sort((a, b) => {
@@ -220,10 +224,11 @@ export default function AppShell({ children }) {
           icon: l.icono || 'clipboard',
         })),
       }));
+    const extras = modulos.length ? [{ grupo: 'Módulos', items: modulos }] : [];
     const indiceSistema = base.findIndex((g) => g.grupo === 'Sistema');
-    if (indiceSistema < 0) return [...base, ...gruposAreas];
+    if (indiceSistema < 0) return [...base, ...gruposAreas, ...extras];
     const salida = [...base];
-    salida.splice(indiceSistema, 0, ...gruposAreas);
+    salida.splice(indiceSistema, 0, ...gruposAreas, ...extras);
     return salida;
   }, [grupos, data.areas, user]);
 
