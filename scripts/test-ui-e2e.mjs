@@ -166,6 +166,8 @@ try {
   await navegar(`${BASE}/prospectos`);
   await esperar("document.body.innerText.includes('Prospectos') && document.body.innerText.includes('Nuevo prospecto')", 'pantalla de Prospectos', 30000);
   await esperar('!!document.querySelector("table.tbl") || document.body.innerText.includes("No hay prospectos")', 'tabla o estado vacío de Prospectos');
+  await esperar("document.body.innerText.includes('Mostrando 1–10 de 20') && /página 1 de 2/i.test(document.body.innerText)", 'paginación de 10 en Prospectos', 30000);
+  if (await evaluar("document.body.innerText.includes('Recientes')")) throw new Error('El menú lateral todavía muestra Recientes.');
   { const { data } = await send('Page.captureScreenshot', { format: 'png' }); writeFileSync(SHOT_PROSPECTOS, Buffer.from(data, 'base64')); }
 
   paso = 'buscador del menú';
