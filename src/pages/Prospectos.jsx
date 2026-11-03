@@ -11,7 +11,7 @@ const VACIO = {
   fecha_proxima_accion: '',
 };
 
-const LIMITE = 10;
+const LIMITE = 12;
 const COLORES = ['gray', 'blue', 'green', 'amber', 'orange', 'red', 'purple', 'yellow', 'teal'];
 const badge = (estado, estados) => {
   const e = estados.find((x) => x.clave === estado);
