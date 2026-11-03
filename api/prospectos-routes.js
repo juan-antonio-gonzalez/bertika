@@ -16,6 +16,7 @@ const norm = (v) => limStr(v, 300).normalize('NFD').replace(/[\u0300-\u036f]/g, 
 const emailsDe = (...valores) => [...new Set(valores.flatMap((v) => String(v || '').split(/[,;/]/)).map((x) => x.trim().toLowerCase()).filter((x) => /^\S+@\S+\.\S+$/.test(x)))];
 const emailNorm = (v) => emailsDe(v)[0] || '';
 const telNorm = (v) => String(v || '').replace(/\D/g, '').slice(-15);
+const docNorm = (v) => String(v || '').replace(/\D/g, '');
 const fechaISO = (v) => { const t = limStr(v, 10); return !t ? null : (/^\d{4}-\d{2}-\d{2}$/.test(t) ? t : undefined); };
 const ARCHIVO_XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 const colorDe = (nombre) => ({ nuevo: 'blue', contactado: 'amber', interesado: 'purple', cotizado: 'orange', negociacion: 'yellow', ganado: 'green', perdido: 'red', convertido: 'teal', convertidoacliente: 'teal' }[norm(nombre).replace(/\s+/g, '')] || 'gray');
@@ -83,7 +84,7 @@ function datosLista(F, p, base = {}) {
   put('Rubro / Equipamiento Principal', limStr(p.rubro, 240));
   put('Perfil Redes Sociales', limStr(p.perfil_redes, 240));
   put('Tipo de Contacto Directo', limStr(p.tipo_contacto, 120));
-  put('CUIT', limStr(p.cuit, 30));
+  put('CUIT', docNorm(p.cuit));
   put('ID Origen', limStr(p.origen_id, 80));
   put('Observaciones / Foco Comercial', limStr(p.observaciones, 4000));
   put('Notas', limStr(p.notas || p.observaciones, 4000));
@@ -104,8 +105,9 @@ function setLista(F, lista) { F.__lista = lista; }
 function filtros(req, filas) {
   const q = norm(req.query?.q);
   return filas.filter((p) => {
-    if (q && !norm([p.empresa, p.localidad, p.rubro, p.contacto_nombre, p.email, p.email_secundario, p.telefono, p.observaciones].join(' ')).includes(q)) return false;
+    if (q && !norm([p.empresa, p.cuit, p.localidad, p.rubro, p.contacto_nombre, p.email, p.email_secundario, p.telefono, p.observaciones].join(' ')).includes(q)) return false;
     if (req.query?.estado && p.estado !== slugEstado(req.query.estado)) return false;
+    if (req.query?.documento && docNorm(p.cuit) !== docNorm(req.query.documento)) return false;
     if (req.query?.localidad && !norm(p.localidad).includes(norm(req.query.localidad))) return false;
     if (req.query?.responsable && !norm(p.responsable).includes(norm(req.query.responsable))) return false;
     if (req.query?.origen && p.origen !== req.query.origen) return false;
@@ -118,7 +120,7 @@ function filtros(req, filas) {
 async function existeDuplicado(F, p, excepto = null) {
   const lista = await filas(F);
   return lista.find((x) => x.id !== excepto && (
-    (p.cuit && norm(x.cuit) === norm(p.cuit)) ||
+    (docNorm(p.cuit) && docNorm(x.cuit) === docNorm(p.cuit)) ||
     (emailsDe(p.email, p.email_secundario).some((e) => emailsDe(x.email, x.email_secundario).includes(e))) ||
     (telNorm(p.telefono) && telNorm(x.telefono) === telNorm(p.telefono)) ||
     (norm(p.empresa) && norm(x.empresa) === norm(p.empresa) && norm(p.localidad) && norm(x.localidad) === norm(p.localidad))
@@ -222,7 +224,7 @@ prospectosRouter.delete('/prospectos/:id', authRequired, permisoRequerido('venta
 function mapHeaders(headers) {
   const h = headers.map((x) => norm(x));
   const buscar = (...ops) => h.findIndex((x) => ops.some((o) => x.includes(norm(o))));
-  return { empresa: buscar('empresa / prospecto', 'empresa'), localidad: buscar('zona / localidad', 'zona', 'localidad'), direccion: buscar('direccion / ubicacion', 'direccion'), rubro: buscar('rubro / equipamiento', 'rubro'), perfil_redes: buscar('perfil redes', 'redes sociales'), contacto: buscar('contacto linkedin', 'nombre y cargo', 'contacto'), email: buscar('email de contacto', 'email'), telefono: buscar('telefono / whatsapp', 'telefono'), tipo_contacto: buscar('tipo de contacto'), observaciones: buscar('observaciones', 'foco comercial'), origen_id: buscar('id') };
+  return { empresa: buscar('empresa / prospecto', 'empresa'), cuit: buscar('cuit', 'cuil', 'dni', 'documento'), localidad: buscar('zona / localidad', 'zona', 'localidad'), direccion: buscar('direccion / ubicacion', 'direccion'), rubro: buscar('rubro / equipamiento', 'rubro'), perfil_redes: buscar('perfil redes', 'redes sociales'), contacto: buscar('contacto linkedin', 'nombre y cargo', 'contacto'), email: buscar('email de contacto', 'email'), telefono: buscar('telefono / whatsapp', 'telefono'), tipo_contacto: buscar('tipo de contacto'), observaciones: buscar('observaciones', 'foco comercial'), origen_id: buscar('id') };
 }
 async function leerExcel(buffer) {
   const wb = new ExcelJS.Workbook(); await wb.xlsx.load(buffer);
@@ -241,7 +243,7 @@ async function leerExcel(buffer) {
   const data = filas.slice(hi + 1).map((f, i) => {
     const g = (k) => (k >= 0 ? (f[k] || '') : '');
     const c = g(m.contacto).split(/\s+-\s+/);
-    return { fila: i + hi + 2, origen_id: g(m.origen_id) || null, empresa: g(m.empresa), localidad: g(m.localidad), direccion: g(m.direccion), rubro: g(m.rubro), perfil_redes: g(m.perfil_redes), contacto_nombre: (c[0] || '').trim(), contacto_cargo: c.slice(1).join(' - ').trim(), email: g(m.email), telefono: g(m.telefono), tipo_contacto: g(m.tipo_contacto), observaciones: g(m.observaciones) };
+    return { fila: i + hi + 2, origen_id: g(m.origen_id) || null, cuit: g(m.cuit), empresa: g(m.empresa), localidad: g(m.localidad), direccion: g(m.direccion), rubro: g(m.rubro), perfil_redes: g(m.perfil_redes), contacto_nombre: (c[0] || '').trim(), contacto_cargo: c.slice(1).join(' - ').trim(), email: g(m.email), telefono: g(m.telefono), tipo_contacto: g(m.tipo_contacto), observaciones: g(m.observaciones) };
   }).filter((f) => f.empresa || f.email || f.telefono);
   return { filas: data, columnas: headers.filter(Boolean), nuevas };
 }
@@ -250,7 +252,7 @@ async function clasificar(filas, existentes) {
     const base = { fila: f.fila, datos: { ...f, estado: slugEstado(opciones(F)[0] || 'Nuevo'), origen: 'excel' } };
     if (!f.empresa) return { ...base, clasificacion: 'error', error: 'Falta la empresa.' };
     if (!emailNorm(f.email) && !telNorm(f.telefono)) return { ...base, clasificacion: 'error', error: 'Falta email o teléfono.' };
-    let match = existentes.find((p) => (emailsDe(f.email).some((e) => emailsDe(p.email, p.email_secundario).includes(e))) || (telNorm(f.telefono) && telNorm(p.telefono) === telNorm(f.telefono)) || (norm(f.origen_id) && norm(p.origen_id) === norm(f.origen_id)));
+    let match = existentes.find((p) => (docNorm(f.cuit) && docNorm(p.cuit) === docNorm(f.cuit))) || existentes.find((p) => (emailsDe(f.email).some((e) => emailsDe(p.email, p.email_secundario).includes(e))) || (telNorm(f.telefono) && telNorm(p.telefono) === telNorm(f.telefono)) || (norm(f.origen_id) && norm(p.origen_id) === norm(f.origen_id)));
     let tipo = match ? 'clave' : null;
     if (!match) { match = existentes.find((p) => norm(p.empresa) === norm(f.empresa) && norm(p.localidad) === norm(f.localidad)); tipo = match ? 'empresa_localidad' : null; }
     if (!match) { match = existentes.find((p) => norm(p.localidad) === norm(f.localidad) && norm(p.empresa).includes(norm(f.empresa)) || norm(f.empresa).includes(norm(p.empresa))); tipo = match ? 'parecida' : null; }

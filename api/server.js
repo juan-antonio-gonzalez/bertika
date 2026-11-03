@@ -4889,6 +4889,9 @@ app.post('/api/diagnostico/:orden_id/fotos', authRequired, upload.array('fotos',
 // ---------- server ----------
 const PORT = process.env.PORT || 3001;
 app.use((err, req, res, _next) => {
+  if (err?.code === '23505' && String(err.constraint || '').includes('uq_prospectos_documento')) {
+    return res.status(409).json({ error: 'Ya existe un prospecto con ese CUIT/CUIL/DNI.' });
+  }
   const status = err.status || 400;
   // Log con el request-id: el mismo que ve el usuario en la respuesta.
   console.error(JSON.stringify({

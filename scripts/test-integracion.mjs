@@ -1020,8 +1020,8 @@ async function main() {
 
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Prospectos');
-    ws.addRow(['ID', 'Empresa / Prospecto', 'Zona / Localidad', 'Dirección / Ubicación', 'Rubro / Equipamiento Principal', 'Perfil Redes Sociales', 'Contacto LinkedIn (Nombre y Cargo)', 'Email de Contacto', 'Teléfono / WhatsApp Directo', 'Tipo de Contacto Directo', 'Estado de Contacto', 'Observaciones / Foco Comercial', 'Columna nueva']);
-    ws.addRow([String(sufijo), `Importado E2E ${sufijo}`, 'Morón', 'Calle 1', 'Metalúrgica', 'linkedin.com/company/e2e', 'Ana Pérez - Compras', `importado.${sufijo}@bertika.com`, '+54 11 5555-0202', 'Mail', 'Pendiente', 'Foco E2E', 'valor nuevo']);
+    ws.addRow(['ID', 'Empresa / Prospecto', 'Zona / Localidad', 'Dirección / Ubicación', 'Rubro / Equipamiento Principal', 'Perfil Redes Sociales', 'Contacto LinkedIn (Nombre y Cargo)', 'Email de Contacto', 'Teléfono / WhatsApp Directo', 'Tipo de Contacto Directo', 'Estado de Contacto', 'Observaciones / Foco Comercial', 'CUIT', 'Columna nueva']);
+    ws.addRow([String(sufijo), `Importado E2E ${sufijo}`, 'Morón', 'Calle 1', 'Metalúrgica', 'linkedin.com/company/e2e', 'Ana Pérez - Compras', `importado.${sufijo}@bertika.com`, '+54 11 5555-0202', 'Mail', 'Pendiente', 'Foco E2E', '27-87654321-4', 'valor nuevo']);
     const buffer = Buffer.from(await wb.xlsx.writeBuffer());
     const form = new FormData();
     form.append('archivo', new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), 'prospectos.xlsx');
@@ -1053,10 +1053,13 @@ async function main() {
     const sinContacto = await pedir('/prospectos', { method: 'POST', token: tokenAdmin, body: { empresa: `Sin contacto ${sufijo}` } });
     assert.equal(sinContacto.status, 400, 'sin email, teléfono ni CUIT no se crea');
     const email = `auto.${sufijo}@bertika.com`;
-    const p = await pedir('/prospectos', { method: 'POST', token: tokenAdmin, body: { empresa: `Auto Cliente ${sufijo}`, email, telefono: '+54 11 5555-0303', localidad: 'Haedo' } });
+    const p = await pedir('/prospectos', { method: 'POST', token: tokenAdmin, body: { empresa: `Auto Cliente ${sufijo}`, email, telefono: '+54 11 5555-0303', cuit: '20-12345678-9', localidad: 'Haedo' } });
     assert.equal(p.status, 201, p.texto);
-    const dup = await pedir('/prospectos', { method: 'POST', token: tokenAdmin, body: { empresa: `Auto Cliente dup ${sufijo}`, email } });
-    assert.equal(dup.status, 409, 'el email repetido se rechaza');
+    const dup = await pedir('/prospectos', { method: 'POST', token: tokenAdmin, body: { empresa: `Auto Cliente dup ${sufijo}`, email: `otro.${sufijo}@bertika.com`, cuit: '20123456789' } });
+    assert.equal(dup.status, 409, 'el CUIT/CUIL/DNI repetido se rechaza');
+    const porDoc = await pedir('/prospectos?documento=20123456789', { token: tokenAdmin });
+    assert.equal(porDoc.status, 200);
+    assert.ok(porDoc.json.filas.some((x) => x.empresa === `Auto Cliente ${sufijo}`));
     const opp = await pedir('/oportunidades', { method: 'POST', token: tokenAdmin, body: { titulo: `Venta Auto ${sufijo}`, prospecto_id: p.json.id, serie: `AUTO-${sufijo}` } });
     assert.equal(opp.status, 201, opp.texto);
     const cot = await pedir(`/oportunidades/${opp.json.id}/cotizaciones`, { method: 'POST', token: tokenAdmin, body: { items: [{ descripcion: 'Servicio', cantidad: 1, precio_unitario: 100 }], iva_pct: 0 } });

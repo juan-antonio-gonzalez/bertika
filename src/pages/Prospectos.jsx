@@ -47,7 +47,7 @@ function ProspectoForm({ abierto, inicial, estados, onGuardar, onClose, busy }) 
           <div className="field"><label>Empresa / Prospecto *</label><input className="input" value={form.empresa} onChange={(e) => set('empresa', e.target.value)} required /></div>
           <div className="field"><label>Zona / Localidad</label><input className="input" value={form.localidad} onChange={(e) => set('localidad', e.target.value)} /></div>
           <div className="field"><label>Dirección / Ubicación</label><input className="input" value={form.direccion} onChange={(e) => set('direccion', e.target.value)} /></div>
-          <div className="field"><label>CUIT</label><input className="input" value={form.cuit} onChange={(e) => set('cuit', e.target.value)} /></div>
+          <div className="field"><label>CUIT / CUIL / DNI</label><input className="input" value={form.cuit} onChange={(e) => set('cuit', e.target.value)} placeholder="Documento único" /></div>
           <div className="field"><label>Rubro / Equipamiento principal</label><input className="input" value={form.rubro} onChange={(e) => set('rubro', e.target.value)} /></div>
           <div className="field"><label>Perfil redes sociales</label><input className="input" value={form.perfil_redes} onChange={(e) => set('perfil_redes', e.target.value)} /></div>
           <div className="field"><label>Contacto</label><input className="input" value={form.contacto_nombre} onChange={(e) => set('contacto_nombre', e.target.value)} /></div>
@@ -243,6 +243,7 @@ export default function Prospectos() {
   const [q, setQ] = useState('');
   const [estado, setEstado] = useState('');
   const [localidad, setLocalidad] = useState('');
+  const [documento, setDocumento] = useState('');
   const [responsable, setResponsable] = useState('');
   const [origen, setOrigen] = useState('');
   const [desde, setDesde] = useState('');
@@ -257,13 +258,14 @@ export default function Prospectos() {
     const p = new URLSearchParams();
     if (q.trim()) p.set('q', q.trim());
     if (estado) p.set('estado', estado);
+    if (documento.trim()) p.set('documento', documento.trim());
     if (localidad.trim()) p.set('localidad', localidad.trim());
     if (responsable.trim()) p.set('responsable', responsable.trim());
     if (origen) p.set('origen', origen);
     if (desde) p.set('desde', desde);
     if (hasta) p.set('hasta', hasta);
     return p.toString();
-  }, [q, estado, localidad, responsable, origen, desde, hasta]);
+  }, [q, estado, localidad, documento, responsable, origen, desde, hasta]);
 
   const cargar = async (nuevoOffset = 0) => {
     setCargando(true);
@@ -344,6 +346,7 @@ export default function Prospectos() {
           </div>
           <div className="field"><label>Estado</label><select className="input" value={estado} onChange={(e) => setEstado(e.target.value)}><option value="">Todos los estados</option>{estados.map((e) => <option key={e.clave} value={e.clave}>{e.nombre}</option>)}</select></div>
           <div className="field"><label>Localidad</label><input className="input" placeholder="Ej.: Haedo" value={localidad} onChange={(e) => setLocalidad(e.target.value)} /></div>
+          <div className="field"><label>CUIT / CUIL / DNI</label><input className="input" placeholder="Documento único" value={documento} onChange={(e) => setDocumento(e.target.value)} /></div>
           <div className="field"><label>Responsable</label><input className="input" placeholder="Email o nombre" value={responsable} onChange={(e) => setResponsable(e.target.value)} /></div>
           <div className="field"><label>Origen</label><select className="input" value={origen} onChange={(e) => setOrigen(e.target.value)}><option value="">Todos</option><option value="manual">Manual</option><option value="excel">Excel</option></select></div>
           <div className="field pf-date"><label>Desde</label><input className="input" type="date" value={desde} onChange={(e) => setDesde(e.target.value)} /></div>
@@ -355,12 +358,13 @@ export default function Prospectos() {
         {filas.length === 0 ? <p className="muted">{cargando ? 'Cargando...' : 'No hay prospectos con esos filtros.'}</p> : (
           <div style={{ overflowX: 'auto' }}>
             <table className="tbl">
-              <thead><tr><th>Empresa</th><th>Localidad</th><th>Rubro / equipamiento</th><th>Contacto</th><th>Email / teléfono</th><th>Estado</th><th>Próxima acción</th><th /></tr></thead>
+              <thead><tr><th>Empresa</th><th>Localidad</th><th>CUIT / CUIL / DNI</th><th>Rubro / equipamiento</th><th>Contacto</th><th>Email / teléfono</th><th>Estado</th><th>Próxima acción</th><th /></tr></thead>
               <tbody>
                 {filas.map((p) => (
                   <tr key={p.id}>
                     <td><b>{p.empresa}</b>{p.origen === 'excel' && <div className="muted" style={{ fontSize: 11 }}>Importado #{p.origen_id || ''}</div>}</td>
                     <td>{p.localidad || '—'}</td>
+                    <td>{p.cuit || '—'}</td>
                     <td>{p.rubro || '—'}</td>
                     <td>{p.contacto_nombre || '—'}{p.contacto_cargo ? <div className="muted" style={{ fontSize: 11 }}>{p.contacto_cargo}</div> : null}</td>
                     <td>{p.email || '—'}{p.email_secundario ? <div className="muted" style={{ fontSize: 11 }}>{p.email_secundario}</div> : null}{p.telefono ? <div className="muted" style={{ fontSize: 11 }}>{p.telefono}</div> : null}</td>
