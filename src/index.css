@@ -1,35 +1,35 @@
 :root {
-  --bg: #f4f6fa;
+  /* Paleta de la landing aplicada al panel, manteniendo fondo claro. */
+  --bg: #e9f2ed;
   --bg-2: #ffffff;
-  --bg-3: #f0f3f8;
-  --line: #e2e6ee;
-  --line-soft: #edf0f5;
-  --text: #1f2733;
-  --muted: #5b6472;
-  --amber: #d98e00;
-  --amber-d: #b8790a;
-  --amber-bg: rgba(255, 176, 32, 0.16);
-  --orange: #e06a00;
-  --orange-bg: rgba(255, 122, 26, 0.14);
-  --green: #128a4b;
-  --green-bg: rgba(18, 138, 75, 0.12);
-  --red: #d92c3c;
-  --red-bg: rgba(217, 44, 60, 0.1);
-  --blue: #1d6fd0;
-  --blue-bg: rgba(29, 111, 208, 0.1);
-  --navy: #0a1740;
-  --navy-2: #122a4c;
-  --brand-amber: #ffc02a;
-  --brand-orange: #e06a00;
-  /* Fase 7: acentos y botones con el degradado de la landing (ambar -> naranja). */
-  --grad-brand: linear-gradient(135deg, #ffc02a 0%, #e06a00 100%);
-  --brand-soft: rgba(255, 192, 42, 0.14);
-  --brand-line: rgba(255, 192, 42, 0.38);
+  --bg-3: #f1f6f3;
+  --line: rgba(9, 40, 32, 0.16);
+  --line-soft: rgba(9, 40, 32, 0.09);
+  --text: #10231c;
+  --muted: #5b6f68;
+  --amber: #0b8f3f;
+  --amber-d: #0b7d37;
+  --amber-bg: rgba(15, 155, 69, 0.12);
+  --orange: #0b8f3f;
+  --orange-bg: rgba(15, 155, 69, 0.1);
+  --green: #0b8f3f;
+  --green-bg: rgba(15, 155, 69, 0.12);
+  --red: #d92c1f;
+  --red-bg: rgba(217, 44, 31, 0.1);
+  --blue: #0b1b16;
+  --blue-bg: rgba(15, 155, 69, 0.1);
+  --navy: #0b1b16;
+  --navy-2: #123029;
+  --brand-amber: #0b8f3f;
+  --brand-orange: #0b7d37;
+  --grad-brand: linear-gradient(135deg, #2ee35c 0%, #0b8f3f 100%);
+  --brand-soft: rgba(15, 155, 69, 0.14);
+  --brand-line: rgba(15, 155, 69, 0.4);
   --radius: 14px;
   --radius-s: 8px;
-  --shadow-s: 0 1px 2px rgba(10, 23, 64, 0.04), 0 6px 18px rgba(10, 23, 64, 0.06);
-  --shadow: 0 10px 30px rgba(10, 23, 64, 0.09);
-  --shadow-lg: 0 18px 48px rgba(10, 23, 64, 0.16);
+  --shadow-s: 0 1px 2px rgba(4, 16, 15, 0.04), 0 6px 18px rgba(4, 16, 15, 0.06);
+  --shadow: 0 10px 30px rgba(4, 16, 15, 0.09);
+  --shadow-lg: 0 18px 48px rgba(4, 16, 15, 0.16);
   --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 }
 
@@ -47,7 +47,7 @@ body {
 a { color: inherit; text-decoration: none; }
 button { font-family: inherit; }
 input, select, textarea { font-family: inherit; color: var(--text); }
-::selection { background: var(--amber); color: #0c0e11; }
+::selection { background: var(--green); color: #04220f; }
 
 /* ---------- scrollbar ---------- */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
@@ -104,7 +104,7 @@ input, select, textarea { font-family: inherit; color: var(--text); }
   border-left: 3px solid transparent;
 }
 .shell-item:hover { background: rgba(255, 255, 255, 0.07); color: #fff; }
-.shell-item.on { background: rgba(255, 192, 42, 0.15); color: var(--brand-amber); border-left-color: var(--brand-amber); }
+.shell-item.on { background: rgba(15, 155, 69, 0.18); color: var(--brand-amber); border-left-color: var(--brand-amber); }
 .shell-item-l { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .shell-count {
   min-width: 22px; text-align: center; padding: 1px 6px; border-radius: 999px;
@@ -139,7 +139,7 @@ input, select, textarea { font-family: inherit; color: var(--text); }
   border-radius: 11px; border: 1px solid var(--line); background: #fff; color: var(--muted); cursor: pointer;
 }
 .shell-bell:hover { border-color: var(--brand-amber); color: var(--amber-d); }
-.shell-bell.on { color: var(--amber-d); border-color: rgba(217, 142, 0, 0.35); background: var(--amber-bg); }
+.shell-bell.on { color: var(--amber-d); border-color: rgba(15, 155, 69, 0.35); background: var(--amber-bg); }
 .shell-bell-n {
   position: absolute; top: -5px; right: -5px; min-width: 18px; padding: 0 4px;
   border-radius: 999px; background: var(--red); color: #fff;
@@ -254,8 +254,8 @@ input, select, textarea { font-family: inherit; color: var(--text); }
 }
 .btn:hover { border-color: var(--brand-amber); color: var(--amber-d); background: var(--brand-soft); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.btn.primary { background: var(--grad-brand); border: none; color: #2a1a00; box-shadow: 0 6px 16px rgba(224, 106, 0, 0.22); }
-.btn.primary:hover { filter: brightness(1.06); color: #2a1a00; background: var(--grad-brand); box-shadow: 0 8px 20px rgba(224, 106, 0, 0.3); }
+.btn.primary { background: var(--grad-brand); border: none; color: #04220f; box-shadow: 0 6px 16px rgba(15, 155, 69, 0.22); }
+.btn.primary:hover { filter: brightness(1.06); color: #04220f; background: var(--grad-brand); box-shadow: 0 8px 20px rgba(15, 155, 69, 0.3); }
 .btn.danger { border-color: rgba(255, 77, 94, 0.5); color: var(--red); }
 .btn.danger:hover { background: var(--red-bg); color: var(--red); }
 .btn.ghost { background: transparent; }
