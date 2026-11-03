@@ -1020,8 +1020,8 @@ async function main() {
 
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Prospectos');
-    ws.addRow(['ID', 'Empresa / Prospecto', 'Zona / Localidad', 'Dirección / Ubicación', 'Rubro / Equipamiento Principal', 'Perfil Redes Sociales', 'Contacto LinkedIn (Nombre y Cargo)', 'Email de Contacto', 'Teléfono / WhatsApp Directo', 'Tipo de Contacto Directo', 'Estado de Contacto', 'Observaciones / Foco Comercial']);
-    ws.addRow([String(sufijo), `Importado E2E ${sufijo}`, 'Morón', 'Calle 1', 'Metalúrgica', 'linkedin.com/company/e2e', 'Ana Pérez - Compras', `importado.${sufijo}@bertika.com`, '+54 11 5555-0202', 'Mail', 'Pendiente', 'Foco E2E']);
+    ws.addRow(['ID', 'Empresa / Prospecto', 'Zona / Localidad', 'Dirección / Ubicación', 'Rubro / Equipamiento Principal', 'Perfil Redes Sociales', 'Contacto LinkedIn (Nombre y Cargo)', 'Email de Contacto', 'Teléfono / WhatsApp Directo', 'Tipo de Contacto Directo', 'Estado de Contacto', 'Observaciones / Foco Comercial', 'Columna nueva']);
+    ws.addRow([String(sufijo), `Importado E2E ${sufijo}`, 'Morón', 'Calle 1', 'Metalúrgica', 'linkedin.com/company/e2e', 'Ana Pérez - Compras', `importado.${sufijo}@bertika.com`, '+54 11 5555-0202', 'Mail', 'Pendiente', 'Foco E2E', 'valor nuevo']);
     const buffer = Buffer.from(await wb.xlsx.writeBuffer());
     const form = new FormData();
     form.append('archivo', new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), 'prospectos.xlsx');
@@ -1030,6 +1030,7 @@ async function main() {
     assert.equal(preview.status, 200);
     const vista = await preview.json();
     assert.ok(vista.filas.some((x) => x.clasificacion === 'nuevo'));
+    assert.ok(vista.columnas_nuevas.includes('Columna nueva'), 'el parser detecta columnas nuevas');
     const confirmar = await pedir('/prospectos/importar', { method: 'POST', token: tokenAdmin, body: { importacion_id: vista.importacion_id, decisiones: Object.fromEntries(vista.filas.map((f, i) => [String(i), f.clasificacion === 'error' ? 'omitir' : 'crear'])) } });
     assert.equal(confirmar.status, 200, confirmar.texto);
     assert.ok(confirmar.json.creados >= 1);

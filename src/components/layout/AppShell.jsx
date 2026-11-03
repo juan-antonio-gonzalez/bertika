@@ -173,7 +173,6 @@ export default function AppShell({ children }) {
   const [ordenAbierta, setOrdenAbierta] = useState(null);
   const [gruposCerrados, setGruposCerrados] = useState(() => leerMenuLS('bertika-menu-grupos', {}));
   const [favoritos, setFavoritos] = useState(() => leerMenuLS('bertika-menu-favs', []));
-  const [recientes, setRecientes] = useState(() => leerMenuLS('bertika-menu-recientes', []));
   const [qMenu, setQMenu] = useState('');
 
   const ruta = CANONICO[location.pathname] || location.pathname;
@@ -226,7 +225,6 @@ export default function AppShell({ children }) {
 
   useEffect(() => { localStorage.setItem('bertika-menu-grupos', JSON.stringify(gruposCerrados)); }, [gruposCerrados]);
   useEffect(() => { localStorage.setItem('bertika-menu-favs', JSON.stringify(favoritos)); }, [favoritos]);
-  useEffect(() => { localStorage.setItem('bertika-menu-recientes', JSON.stringify(recientes)); }, [recientes]);
 
   useEffect(() => {
     if (!user) return;
@@ -254,17 +252,6 @@ export default function AppShell({ children }) {
     return salida;
   }, [gruposConAreas]);
 
-  useEffect(() => {
-    if (!user) return;
-    const item = itemsMenu.find((i) => i.to === location.pathname || (i.to !== '/' && location.pathname.startsWith(`${i.to}/`)));
-    if (!item) return;
-    setRecientes((prev) => {
-      const siguiente = [item.to, ...prev.filter((x) => x !== item.to)].slice(0, 5);
-      localStorage.setItem('bertika-menu-recientes', JSON.stringify(siguiente));
-      return siguiente;
-    });
-  }, [location.pathname, user, itemsMenu]);
-
   const toggleGrupo = (nombre) => setGruposCerrados((prev) => ({ ...prev, [nombre]: !prev[nombre] }));
   const toggleFavorito = async (to) => {
     const activo = !favoritos.includes(to);
@@ -277,7 +264,6 @@ export default function AppShell({ children }) {
     }
   };
   const itemsFavoritos = favoritos.map((to) => itemsMenu.find((i) => i.to === to)).filter(Boolean);
-  const itemsRecientes = recientes.map((to) => itemsMenu.find((i) => i.to === to)).filter(Boolean);
   const gruposFiltrados = useMemo(() => {
     const q = qMenu.trim().toLowerCase();
     if (!q) return gruposConAreas;
@@ -391,13 +377,6 @@ export default function AppShell({ children }) {
             <div className="shell-grupo shell-grupo-fav">
               <div className="shell-grupo-t">Favoritos</div>
               {itemsFavoritos.map((it) => renderItemMenu(it, 'fav'))}
-            </div>
-          )}
-
-          {!qMenu && itemsRecientes.length > 0 && (
-            <div className="shell-grupo">
-              <div className="shell-grupo-t">Recientes</div>
-              {itemsRecientes.map((it) => renderItemMenu(it, 'rec'))}
             </div>
           )}
 
