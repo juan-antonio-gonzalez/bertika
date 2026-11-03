@@ -61,7 +61,7 @@ function ProspectoForm({ abierto, inicial, estados, onGuardar, onClose, busy }) 
           </div>
           <div className="field"><label>Responsable</label><input className="input" value={form.responsable} onChange={(e) => set('responsable', e.target.value)} /></div>
           <div className="field"><label>Próxima acción</label><input className="input" value={form.proxima_accion} onChange={(e) => set('proxima_accion', e.target.value)} /></div>
-          <div className="field"><label>Fecha próxima acción</label><input className="input" type="date" value={form.fecha_proxima_accion} onChange={(e) => set('fecha_proxima_accion', e.target.value)} /></div>
+          <div className="field"><label>Fecha próxima acción</label><input className="input" type="date" value={String(form.fecha_proxima_accion || '').slice(0, 10)} onChange={(e) => set('fecha_proxima_accion', e.target.value)} /></div>
         </FormGrid>
         <div className="field"><label>Observaciones / foco comercial</label><textarea className="input" rows={4} value={form.observaciones} onChange={(e) => set('observaciones', e.target.value)} /></div>
         <div className="field"><label>Notas internas</label><textarea className="input" rows={3} value={form.notas} onChange={(e) => set('notas', e.target.value)} /></div>
@@ -235,6 +235,8 @@ export default function Prospectos() {
   const [q, setQ] = useState('');
   const [estado, setEstado] = useState('');
   const [localidad, setLocalidad] = useState('');
+  const [responsable, setResponsable] = useState('');
+  const [origen, setOrigen] = useState('');
   const [cargando, setCargando] = useState(false);
   const [form, setForm] = useState(null);
   const [importar, setImportar] = useState(false);
@@ -246,8 +248,10 @@ export default function Prospectos() {
     if (q.trim()) p.set('q', q.trim());
     if (estado) p.set('estado', estado);
     if (localidad.trim()) p.set('localidad', localidad.trim());
+    if (responsable.trim()) p.set('responsable', responsable.trim());
+    if (origen) p.set('origen', origen);
     return p.toString();
-  }, [q, estado, localidad]);
+  }, [q, estado, localidad, responsable, origen]);
 
   const cargar = async (offset = 0, sumar = false) => {
     setCargando(true);
@@ -311,6 +315,8 @@ export default function Prospectos() {
           <input className="input grow" placeholder="Buscar empresa, localidad, rubro, contacto..." value={q} onChange={(e) => setQ(e.target.value)} />
           <select className="input" value={estado} onChange={(e) => setEstado(e.target.value)}><option value="">Todos los estados</option>{estados.map((e) => <option key={e.clave} value={e.clave}>{e.nombre}</option>)}</select>
           <input className="input" placeholder="Localidad" value={localidad} onChange={(e) => setLocalidad(e.target.value)} />
+          <input className="input" placeholder="Responsable" value={responsable} onChange={(e) => setResponsable(e.target.value)} />
+          <select className="input" value={origen} onChange={(e) => setOrigen(e.target.value)}><option value="">Todo origen</option><option value="manual">Manual</option><option value="excel">Excel</option></select>
           <button className="btn" onClick={() => cargar()} disabled={cargando}><Icon name="refresh" size={14} /> Actualizar</button>
         </div>
         <small className="ayuda">{total} prospecto(s) · los filtros también se aplican al exportar.</small>
