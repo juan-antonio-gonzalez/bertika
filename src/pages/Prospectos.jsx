@@ -312,7 +312,7 @@ export default function Prospectos() {
   return (
     <div className="wrap page">
       <PageHeader
-        group="Comercial"
+        group="Ventas"
         title="Prospectos"
         sub="Cartera comercial previa al cliente: importación, seguimiento y conversión."
         actions={(
