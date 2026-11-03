@@ -204,7 +204,13 @@ export default function AppShell({ children }) {
     const areas = data.areas || [];
     if (!user || user.rol === 'cliente' || !areas.length) return grupos;
     const base = grupos.filter((g) => !['Comercial', 'Taller'].includes(g.grupo));
-    const gruposAreas = areas
+    const ordenAreas = ['ventas', 'taller'];
+    const areasOrdenadas = [...areas].sort((a, b) => {
+      const ia = ordenAreas.indexOf(String(a.slug || '').toLowerCase());
+      const ib = ordenAreas.indexOf(String(b.slug || '').toLowerCase());
+      return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+    });
+    const gruposAreas = areasOrdenadas
       .filter((a) => (a.listas || []).length > 0)
       .map((a) => ({
         grupo: a.nombre,
