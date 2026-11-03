@@ -484,6 +484,7 @@ function ListaDetalle({ listaId, area }) {
   const [soloPendientes, setSoloPendientes] = useState(false);
   const [agrupar, setAgrupar] = useState(null);
   const [pagina, setPagina] = useState(0);
+  const [arrastrandoColumna, setArrastrandoColumna] = useState(null);
   const [formato, setFormato] = useState([]);
   const [mes, setMes] = useState(() => new Date());
   const [modal, setModal] = useState(null);
@@ -546,6 +547,27 @@ function ListaDetalle({ listaId, area }) {
     formato,
     q: busqueda,
   });
+
+  const persistirColumnas = async (nuevas) => {
+    setColumnas(nuevas);
+    if (!vistaId || !puede.administrar_vistas) return;
+    try {
+      await api(`/lista-vistas/${vistaId}`, {
+        method: 'PATCH',
+        body: { config: { ...vistaActiva?.config, columnas: nuevas, filtros, orden, agrupar, formato, q: busqueda } },
+      });
+    } catch (e) { toastShow(e.message, 'error'); }
+  };
+
+  const moverColumna = (origen, destino) => {
+    if (!origen || !destino || origen === destino) return;
+    const ids = (columnas.length ? columnas : campos.map((c) => c.id)).filter((id) => campos.some((c) => c.id === id));
+    const desde = ids.indexOf(origen);
+    const hasta = ids.indexOf(destino);
+    if (desde < 0 || hasta < 0) return;
+    ids.splice(hasta, 0, ids.splice(desde, 1)[0]);
+    persistirColumnas(ids);
+  };
 
   const cargarDetalle = async ({ resetVista = false } = {}) => {
     const data = await api(`/listas/${listaId}`);
@@ -1306,7 +1328,17 @@ function ListaDetalle({ listaId, area }) {
                     <thead>
                       <tr>
                         {visibles.map((campo) => (
-                          <th key={campo.id} onClick={() => cambiarOrden(campo)} title="Ordenar por esta columna">
+                          <th
+                            key={campo.id}
+                            draggable
+                            className={arrastrandoColumna === campo.id ? 'columna-arrastrando' : ''}
+                            onDragStart={(e) => { setArrastrandoColumna(campo.id); e.dataTransfer.effectAllowed = 'move'; }}
+                            onDragEnd={() => setArrastrandoColumna(null)}
+                            onDragOver={(e) => e.preventDefault()}
+                            onDrop={(e) => { e.preventDefault(); moverColumna(arrastrandoColumna, campo.id); setArrastrandoColumna(null); }}
+                            onClick={() => cambiarOrden(campo)}
+                            title="Arrastrá para mover la columna; clic para ordenar"
+                          >
                             <span>{campo.nombre}</span>
                             {orden?.campo === campo.id && <span className="listas-sort">{orden.dir === 'asc' ? '↑' : '↓'}</span>}
                           </th>
@@ -1527,7 +1559,7 @@ function ListaDetalle({ listaId, area }) {
         <ColumnasModal
           campos={campos}
           columnas={columnas}
-          onAplicar={(cols) => { setColumnas(cols); setModal(null); }}
+          onAplicar={(cols) => { persistirColumnas(cols); setModal(null); }}
           onClose={() => setModal(null)}
         />
       )}

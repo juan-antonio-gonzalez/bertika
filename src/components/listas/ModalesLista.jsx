@@ -104,29 +104,67 @@ export function ColumnasModal({ campos, columnas, onAplicar, onClose }) {
   const [sel, setSel] = useState(() => (
     columnas?.length ? columnas : campos.map((c) => c.id)
   ));
+  const [arrastrando, setArrastrando] = useState(null);
   const toggle = (id) => setSel((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  const seleccionadas = sel.map((id) => campos.find((c) => c.id === id)).filter(Boolean);
+  const disponibles = campos.filter((c) => !sel.includes(c.id));
+  const mover = (origen, destino) => {
+    if (!origen || !destino || origen === destino) return;
+    const ids = selectedIds();
+    const desde = ids.indexOf(origen);
+    const hasta = ids.indexOf(destino);
+    if (desde < 0 || hasta < 0) return;
+    ids.splice(hasta, 0, ids.splice(desde, 1)[0]);
+    setSel(ids);
+  };
+  const selectedIds = () => sel.filter((id) => campos.some((c) => c.id === id));
   return (
     <Modal
-      size="sm"
+      size="md"
       title="Columnas visibles"
-      sub="Elegí qué columnas querés ver en la grilla."
+      sub="Elegí qué columnas querés ver y arrastralas para ordenarlas."
       onClose={onClose}
       footer={(
         <>
           <button type="button" className="btn izq" onClick={onClose}>Cancelar</button>
-          <button type="button" className="btn primary" onClick={() => onAplicar(sel)}>
+          <button type="button" className="btn primary" onClick={() => onAplicar(selectedIds())}>
             <Icon name="check" size={14} /> Aplicar
           </button>
         </>
       )}
     >
       <div className="col" style={{ gap: 7 }}>
-        {campos.map((c) => (
-          <label key={c.id} className="check-line" style={{ textTransform: 'none', letterSpacing: 0 }}>
-            <input type="checkbox" checked={sel.includes(c.id)} onChange={() => toggle(c.id)} />
-            <span>{c.nombre} <small className="muted">({etiquetaTipo(c.tipo)})</small></span>
-          </label>
+        {seleccionadas.length > 0 && (
+          <small className="muted" style={{ marginBottom: 2 }}>Arrastrá <b>⋮⋮</b> para cambiar el orden. Se guarda en la vista.</small>
+        )}
+        {seleccionadas.map((c) => (
+          <div
+            key={c.id}
+            className={`columna-sel${arrastrando === c.id ? ' arrastrando' : ''}`}
+            draggable
+            onDragStart={(e) => { setArrastrando(c.id); e.dataTransfer.effectAllowed = 'move'; }}
+            onDragEnd={() => setArrastrando(null)}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => { e.preventDefault(); mover(arrastrando, c.id); setArrastrando(null); }}
+          >
+            <span className="columna-drag" title="Arrastrar para ordenar">⋮⋮</span>
+            <label className="check-line" style={{ textTransform: 'none', letterSpacing: 0, flex: 1 }}>
+              <input type="checkbox" checked onChange={() => toggle(c.id)} />
+              <span>{c.nombre} <small className="muted">({etiquetaTipo(c.tipo)})</small></span>
+            </label>
+          </div>
         ))}
+        {disponibles.length > 0 && (
+          <>
+            <b style={{ marginTop: 8 }}>Agregar columnas</b>
+            {disponibles.map((c) => (
+              <label key={c.id} className="check-line" style={{ textTransform: 'none', letterSpacing: 0 }}>
+                <input type="checkbox" checked={false} onChange={() => toggle(c.id)} />
+                <span>{c.nombre} <small className="muted">({etiquetaTipo(c.tipo)})</small></span>
+              </label>
+            ))}
+          </>
+        )}
       </div>
     </Modal>
   );
