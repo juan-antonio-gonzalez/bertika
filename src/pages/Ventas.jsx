@@ -14,10 +14,11 @@ function Kpi({ label, value, sub, tone }) {
   return <div className="kpi"><div className="kpi-label">{label}</div><div className="kpi-value" style={{ fontSize: 22, color: tone }}>{value}</div><div className="kpi-sub">{sub}</div></div>;
 }
 
-function OportunidadModal({ oportunidad, clientes, busy, onGuardar, onCotizar, onPerder, onOrden, onClose }) {
+function OportunidadModal({ oportunidad, clientes, prospectos, busy, onGuardar, onCotizar, onPerder, onOrden, onClose }) {
   const [f, setF] = useState(() => ({
     titulo: oportunidad?.titulo || '', cliente_id: oportunidad?.cliente_id || '',
-    prospecto_nombre: oportunidad?.prospecto_nombre || '', prospecto_telefono: oportunidad?.prospecto_telefono || '',
+    prospecto_id: oportunidad?.prospecto_id || '',
+    prospecto_nombre: oportunidad?.prospecto_nombre || '', prospecto_email: oportunidad?.prospecto_email || '', prospecto_telefono: oportunidad?.prospecto_telefono || '',
     etapa: oportunidad?.etapa || 'nuevo', monto_estimado: oportunidad?.monto_estimado ?? '',
     probabilidad: oportunidad?.probabilidad ?? 10, cierre_estimado: oportunidad?.cierre_estimado?.slice?.(0, 10) || '',
     responsable: oportunidad?.responsable || '', origen: oportunidad?.origen || '', serie: oportunidad?.serie || '',
@@ -46,9 +47,20 @@ function OportunidadModal({ oportunidad, clientes, busy, onGuardar, onCotizar, o
       <form id="form-oportunidad" onSubmit={enviar}>
         <div className="field"><label>Título *</label><input className="input" value={f.titulo} onChange={(e) => set('titulo', e.target.value)} placeholder="Ej.: Cambio de baterías montacargas" data-autofocus /></div>
         <FormGrid cols={2}>
+          <div className="field"><label>Prospecto vinculado</label>
+            <select className="input" value={f.prospecto_id} onChange={(e) => {
+              const id = e.target.value; const p = prospectos.find((x) => x.id === id);
+              setF((prev) => ({ ...prev, prospecto_id: id, prospecto_nombre: p?.empresa || prev.prospecto_nombre, prospecto_email: p?.email || prev.prospecto_email, prospecto_telefono: p?.telefono || prev.prospecto_telefono }));
+            }}>
+              <option value="">— Sin prospecto —</option>
+              {prospectos.filter((x) => x.estado !== 'convertido').map((x) => <option key={x.id} value={x.id}>{x.empresa} · {x.localidad || 'sin localidad'}</option>)}
+            </select>
+            <small className="ayuda">Si acepta la cotización, se convierte en cliente automáticamente.</small>
+          </div>
           <div className="field"><label>Cliente</label><select className="input" value={f.cliente_id} onChange={(e) => set('cliente_id', e.target.value)}><option value="">— Prospecto —</option>{clientes.map((c) => <option key={c.id} value={c.id}>{c.nombre}{c.empresa ? ` · ${c.empresa}` : ''}</option>)}</select></div>
           <div className="field"><label>Etapa</label><select className="input" value={f.etapa} onChange={(e) => set('etapa', e.target.value)}>{ETAPAS.map((e) => <option key={e.key} value={e.key}>{e.label}</option>)}</select></div>
           {!f.cliente_id && <div className="field"><label>Prospecto</label><input className="input" value={f.prospecto_nombre} onChange={(e) => set('prospecto_nombre', e.target.value)} placeholder="Nombre o empresa" /></div>}
+          {!f.cliente_id && <div className="field"><label>Email del prospecto</label><input className="input" type="email" value={f.prospecto_email} onChange={(e) => set('prospecto_email', e.target.value)} /></div>}
           {!f.cliente_id && <div className="field"><label>Teléfono del prospecto</label><input className="input" value={f.prospecto_telefono} onChange={(e) => set('prospecto_telefono', e.target.value)} /></div>}
           <div className="field"><label>Monto estimado</label><input className="input" value={f.monto_estimado} onChange={(e) => set('monto_estimado', e.target.value)} placeholder="150000" /></div>
           <div className="field"><label>Probabilidad (%)</label><input className="input" type="number" min="0" max="100" value={f.probabilidad} onChange={(e) => set('probabilidad', e.target.value)} /></div>
@@ -171,6 +183,7 @@ export default function Ventas() {
   const [resumen, setResumen] = useState(null);
   const [hoy, setHoy] = useState(null);
   const [clientes, setClientes] = useState([]);
+  const [prospectos, setProspectos] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [modal, setModal] = useState(null);
   const [cotizando, setCotizando] = useState(null);
@@ -187,6 +200,7 @@ export default function Ventas() {
   useEffect(() => { cargar(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     api('/listas/clientes').then((r) => setClientes(Array.isArray(r) ? r : [])).catch(() => setClientes([]));
+    api('/prospectos?limit=500').then((r) => setProspectos(Array.isArray(r.filas) ? r.filas : [])).catch(() => setProspectos([]));
   }, []);
   useEffect(() => { if (tab && tab !== vista) setVista(tab); }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -280,7 +294,7 @@ export default function Ventas() {
         </div>
       )}
 
-      {modal && <OportunidadModal oportunidad={modal.id ? modal : null} clientes={clientes} busy={busy} onGuardar={guardar} onCotizar={() => { setCotizando(modal); setModal(null); }} onPerder={perder} onOrden={crearOrden} onClose={() => setModal(null)} />}
+      {modal && <OportunidadModal oportunidad={modal.id ? modal : null} clientes={clientes} prospectos={prospectos} busy={busy} onGuardar={guardar} onCotizar={() => { setCotizando(modal); setModal(null); }} onPerder={perder} onOrden={crearOrden} onClose={() => setModal(null)} />}
       {cotizando && <CotizacionModal oportunidad={cotizando} onClose={() => setCotizando(null)} onSaved={cargar} />}
     </div>
   );

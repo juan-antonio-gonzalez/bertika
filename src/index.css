@@ -1581,3 +1581,38 @@ details[open] > .cz-summary::after { content: ' –'; }
   .wa-mensajes { padding: 12px; }
   .wa-msg { max-width: 88%; }
 }
+
+
+/* ---------- Prospectos: barra de filtros ---------- */
+.prospectos-filtros-card { padding: 16px 18px 12px; }
+.pf-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; margin-bottom: 14px; }
+.pf-kicker { display: flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
+.pf-count { margin-top: 3px; font-size: 19px; font-weight: 800; color: var(--navy); }
+.pf-head-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.prospectos-filtros { display: grid; grid-template-columns: minmax(260px, 2.4fr) repeat(4, minmax(135px, 1fr)); gap: 10px 12px; align-items: end; }
+.prospectos-filtros .field { min-width: 0; }
+.prospectos-filtros .field label { font-size: 10.5px; }
+.prospectos-filtros .input { background: var(--bg-2); }
+.pf-search { grid-column: span 2; }
+.pf-search-wrap { position: relative; }
+.pf-search-wrap > span { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); display: flex; color: var(--muted); pointer-events: none; }
+.pf-search-wrap .input { padding-left: 34px; }
+.pf-date { min-width: 0; }
+.pf-foot { margin-top: 9px; color: var(--muted); font-size: 11.5px; }
+@media (max-width: 1050px) {
+  .prospectos-filtros { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pf-search { grid-column: span 2; }
+}
+@media (max-width: 560px) {
+  .prospectos-filtros-card { padding: 14px; }
+  .pf-head { flex-direction: column; }
+  .prospectos-filtros { grid-template-columns: 1fr; }
+  .pf-search { grid-column: span 1; }
+  .pf-head-actions { width: 100%; }
+  .pf-head-actions .btn { flex: 1; }
+}
+
+/* Paginación de prospectos */
+.pf-pagination { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); flex-wrap: wrap; }
+.pf-pagination .muted { font-size: 12.5px; }
+@media (max-width: 560px) { .pf-pagination { align-items: flex-start; flex-direction: column; } .pf-pagination .row { width: 100%; justify-content: space-between; } }

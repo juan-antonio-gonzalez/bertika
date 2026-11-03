@@ -523,6 +523,7 @@ CREATE TABLE IF NOT EXISTS oportunidades (
   prospecto_nombre TEXT,
   prospecto_telefono TEXT,
   prospecto_email TEXT,
+  prospecto_id TEXT,
   etapa TEXT DEFAULT 'nuevo',
   monto_estimado NUMERIC,
   probabilidad INTEGER DEFAULT 10,
@@ -549,6 +550,7 @@ CREATE TABLE IF NOT EXISTS oportunidades (
   archivada BOOLEAN DEFAULT FALSE
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_oportunidades_origen ON oportunidades (origen_dato, origen_id) WHERE origen_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_oportunidades_prospecto ON oportunidades (prospecto_id);
 CREATE INDEX IF NOT EXISTS idx_oportunidades_etapa ON oportunidades (etapa, archivada, actualizado_en DESC);
 
 CREATE TABLE IF NOT EXISTS cotizaciones (

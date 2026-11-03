@@ -8,7 +8,7 @@ export async function migrarHardening() {
     id TEXT PRIMARY KEY,
     aplicada_en TIMESTAMPTZ DEFAULT now()
   )`);
-  const hecha = await one("SELECT id FROM schema_migrations WHERE id = '005_prospectos'");
+  const hecha = await one("SELECT id FROM schema_migrations WHERE id = '006_prospecto_oportunidad'");
   if (hecha) return;
   await query('ALTER TABLE lista_adjuntos ADD COLUMN IF NOT EXISTS campo_id TEXT');
   await query('ALTER TABLE lista_adjuntos ADD COLUMN IF NOT EXISTS registro_id TEXT');
@@ -78,6 +78,8 @@ export async function migrarHardening() {
   await query('CREATE INDEX IF NOT EXISTS idx_prospectos_email ON prospectos (email_normalizado)');
   await query('CREATE INDEX IF NOT EXISTS idx_prospectos_telefono ON prospectos (telefono_normalizado)');
   await query('CREATE INDEX IF NOT EXISTS idx_prospectos_cuit ON prospectos (cuit)');
+  await query('ALTER TABLE oportunidades ADD COLUMN IF NOT EXISTS prospecto_id TEXT');
+  await query('CREATE INDEX IF NOT EXISTS idx_oportunidades_prospecto ON oportunidades (prospecto_id)');
   await query(`CREATE TABLE IF NOT EXISTS prospecto_importaciones (
     id TEXT PRIMARY KEY,
     usuario_email TEXT NOT NULL,
@@ -90,5 +92,6 @@ export async function migrarHardening() {
   await query("INSERT INTO schema_migrations (id) VALUES ('003_rate_limit_store') ON CONFLICT DO NOTHING");
   await query("INSERT INTO schema_migrations (id) VALUES ('004_adjuntos_campo') ON CONFLICT DO NOTHING");
   await query("INSERT INTO schema_migrations (id) VALUES ('005_prospectos') ON CONFLICT DO NOTHING");
+  await query("INSERT INTO schema_migrations (id) VALUES ('006_prospecto_oportunidad') ON CONFLICT DO NOTHING");
   console.log('[hardening] fin');
 }

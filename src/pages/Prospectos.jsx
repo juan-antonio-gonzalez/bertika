@@ -11,6 +11,7 @@ const VACIO = {
   fecha_proxima_accion: '',
 };
 
+const LIMITE = 10;
 const COLORES = ['gray', 'blue', 'green', 'amber', 'orange', 'red', 'purple', 'yellow', 'teal'];
 const badge = (estado, estados) => {
   const e = estados.find((x) => x.clave === estado);
@@ -232,6 +233,7 @@ export default function Prospectos() {
   const [filas, setFilas] = useState([]);
   const [estados, setEstados] = useState([]);
   const [total, setTotal] = useState(0);
+  const [offset, setOffset] = useState(0);
   const [q, setQ] = useState('');
   const [estado, setEstado] = useState('');
   const [localidad, setLocalidad] = useState('');
@@ -257,24 +259,25 @@ export default function Prospectos() {
     return p.toString();
   }, [q, estado, localidad, responsable, origen, desde, hasta]);
 
-  const cargar = async (offset = 0, sumar = false) => {
+  const cargar = async (nuevoOffset = 0) => {
     setCargando(true);
     try {
-      const res = await api(`/prospectos?${query}${query ? '&' : ''}limit=100&offset=${offset}`);
-      setFilas((prev) => (sumar ? [...prev, ...res.filas] : res.filas));
+      const res = await api(`/prospectos?${query}${query ? '&' : ''}limit=${LIMITE}&offset=${nuevoOffset}`);
+      setFilas(res.filas);
       setTotal(res.total);
+      setOffset(nuevoOffset);
       setEstados(res.estados || []);
     } catch (e) { toastShow(e.message, 'error'); } finally { setCargando(false); }
   };
 
-  useEffect(() => { cargar(0, false); }, [query]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { cargar(0); }, [query]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const guardar = async (datos) => {
     setBusy(true);
     try {
       if (form?.id) await api(`/prospectos/${form.id}`, { method: 'PATCH', body: datos });
       else await api('/prospectos', { method: 'POST', body: datos });
-      setForm(null); toastShow('Prospecto guardado', 'ok'); cargar();
+      setForm(null); toastShow('Prospecto guardado', 'ok'); cargar(offset);
     } catch (e) { toastShow(e.message, 'error'); } finally { setBusy(false); }
   };
 
@@ -314,18 +317,33 @@ export default function Prospectos() {
           </>
         )}
       />
-      <div className="card mb16">
-        <div className="row wrap" style={{ gap: 8 }}>
-          <input className="input grow" placeholder="Buscar empresa, localidad, rubro, contacto..." value={q} onChange={(e) => setQ(e.target.value)} />
-          <select className="input" value={estado} onChange={(e) => setEstado(e.target.value)}><option value="">Todos los estados</option>{estados.map((e) => <option key={e.clave} value={e.clave}>{e.nombre}</option>)}</select>
-          <input className="input" placeholder="Localidad" value={localidad} onChange={(e) => setLocalidad(e.target.value)} />
-          <input className="input" placeholder="Responsable" value={responsable} onChange={(e) => setResponsable(e.target.value)} />
-          <select className="input" value={origen} onChange={(e) => setOrigen(e.target.value)}><option value="">Todo origen</option><option value="manual">Manual</option><option value="excel">Excel</option></select>
-          <input className="input" type="date" title="Creado desde" value={desde} onChange={(e) => setDesde(e.target.value)} />
-          <input className="input" type="date" title="Creado hasta" value={hasta} onChange={(e) => setHasta(e.target.value)} />
-          <button className="btn" onClick={() => cargar()} disabled={cargando}><Icon name="refresh" size={14} /> Actualizar</button>
+      <div className="card mb16 prospectos-filtros-card">
+        <div className="pf-head">
+          <div>
+            <div className="pf-kicker"><Icon name="filter" size={14} /> Filtros de búsqueda</div>
+            <div className="pf-count">{total} prospecto{total === 1 ? '' : 's'} encontrado{total === 1 ? '' : 's'}</div>
+          </div>
+          <div className="pf-head-actions">
+            <button className="btn sm ghost" onClick={() => { setQ(''); setEstado(''); setLocalidad(''); setResponsable(''); setOrigen(''); setDesde(''); setHasta(''); }}>Limpiar filtros</button>
+            <button className="btn sm" onClick={() => cargar()} disabled={cargando}><Icon name="refresh" size={14} /> Actualizar</button>
+          </div>
         </div>
-        <small className="ayuda">{total} prospecto(s) · los filtros también se aplican al exportar.</small>
+        <div className="prospectos-filtros">
+          <div className="field pf-search">
+            <label>Buscar</label>
+            <div className="pf-search-wrap">
+              <span><Icon name="search" size={15} /></span>
+              <input className="input" placeholder="Empresa, localidad, rubro, contacto, email o teléfono" value={q} onChange={(e) => setQ(e.target.value)} />
+            </div>
+          </div>
+          <div className="field"><label>Estado</label><select className="input" value={estado} onChange={(e) => setEstado(e.target.value)}><option value="">Todos los estados</option>{estados.map((e) => <option key={e.clave} value={e.clave}>{e.nombre}</option>)}</select></div>
+          <div className="field"><label>Localidad</label><input className="input" placeholder="Ej.: Haedo" value={localidad} onChange={(e) => setLocalidad(e.target.value)} /></div>
+          <div className="field"><label>Responsable</label><input className="input" placeholder="Email o nombre" value={responsable} onChange={(e) => setResponsable(e.target.value)} /></div>
+          <div className="field"><label>Origen</label><select className="input" value={origen} onChange={(e) => setOrigen(e.target.value)}><option value="">Todos</option><option value="manual">Manual</option><option value="excel">Excel</option></select></div>
+          <div className="field pf-date"><label>Desde</label><input className="input" type="date" value={desde} onChange={(e) => setDesde(e.target.value)} /></div>
+          <div className="field pf-date"><label>Hasta</label><input className="input" type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} /></div>
+        </div>
+        <div className="pf-foot"><span>Los filtros se aplican a la tabla y a la exportación.</span></div>
       </div>
       <div className="card">
         {filas.length === 0 ? <p className="muted">{cargando ? 'Cargando...' : 'No hay prospectos con esos filtros.'}</p> : (
@@ -344,9 +362,9 @@ export default function Prospectos() {
                     <td>{p.proxima_accion || '—'}{p.fecha_proxima_accion ? <div className="muted" style={{ fontSize: 11 }}>{fmtFecha(p.fecha_proxima_accion)}</div> : null}</td>
                     <td>
                       <div className="row" style={{ gap: 4 }}>
-                        {puedeEditar && <button className="btn sm" onClick={() => setForm(p)}>Editar</button>}
-                        {puedeCerrar && !p.cliente_id && <button className="btn sm" onClick={() => convertir(p)}>Cliente</button>}
-                        {puedeEditar && <button className="btn sm danger" onClick={() => archivar(p)}>Archivar</button>}
+                        {puedeEditar && <button className="btn icon sm" title="Editar prospecto" aria-label={`Editar ${p.empresa}`} onClick={() => setForm(p)}><Icon name="edit" size={14} /></button>}
+                        {puedeCerrar && !p.cliente_id && <button className="btn icon sm" title="Convertir a cliente" aria-label={`Convertir ${p.empresa} a cliente`} onClick={() => convertir(p)}><Icon name="userPlus" size={14} /></button>}
+                        {puedeEditar && <button className="btn icon sm danger" title="Archivar prospecto" aria-label={`Archivar ${p.empresa}`} onClick={() => archivar(p)}><Icon name="trash" size={14} /></button>}
                       </div>
                     </td>
                   </tr>
@@ -355,10 +373,19 @@ export default function Prospectos() {
             </table>
           </div>
         )}
-        {filas.length < total && <button className="btn mt12" onClick={() => cargar(filas.length, true)} disabled={cargando}>Cargar más</button>}
+        {total > 0 && (
+          <div className="pf-pagination">
+            <span className="muted">Mostrando {offset + 1}–{Math.min(offset + LIMITE, total)} de {total}</span>
+            <div className="row" style={{ gap: 6 }}>
+              <button className="btn sm" onClick={() => cargar(Math.max(0, offset - LIMITE))} disabled={cargando || offset === 0}>Anterior</button>
+              <span className="badge gray">Página {Math.floor(offset / LIMITE) + 1} de {Math.max(1, Math.ceil(total / LIMITE))}</span>
+              <button className="btn sm" onClick={() => cargar(offset + LIMITE)} disabled={cargando || offset + LIMITE >= total}>Siguiente</button>
+            </div>
+          </div>
+        )}
       </div>
       <ProspectoForm abierto={Boolean(form)} inicial={form} estados={estados} onGuardar={guardar} onClose={() => setForm(null)} busy={busy} />
-      <ImportarModal abierto={importar} onClose={() => setImportar(false)} onImportado={() => cargar()} />
+      <ImportarModal abierto={importar} onClose={() => setImportar(false)} onImportado={() => cargar(0)} />
       <EstadosModal abierto={estadosAbierto} estados={estados} onClose={() => setEstadosAbierto(false)} onCambio={() => cargar()} />
     </div>
   );
