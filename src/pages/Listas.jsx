@@ -22,6 +22,7 @@ import {
   PapeleraListasModal, PapeleraRegistrosModal,
 } from '../components/listas/ModalesLista';
 
+const POR_PAGINA = 12;
 const texto = (v) => String(v ?? '').toLowerCase();
 const vacio = (v) => v === null || v === undefined || v === '' || (Array.isArray(v) && v.length === 0);
 
@@ -482,6 +483,7 @@ function ListaDetalle({ listaId, area }) {
   const [filtros, setFiltros] = useState([]);
   const [soloPendientes, setSoloPendientes] = useState(false);
   const [agrupar, setAgrupar] = useState(null);
+  const [pagina, setPagina] = useState(0);
   const [formato, setFormato] = useState([]);
   const [mes, setMes] = useState(() => new Date());
   const [modal, setModal] = useState(null);
@@ -906,6 +908,13 @@ function ListaDetalle({ listaId, area }) {
     return ordenarRegistros(out, campos, orden);
   }, [registros, campos, busqueda, filtros, orden, vistaActiva, usuario, soloPendientes]);
 
+  useEffect(() => { setPagina(0); }, [listaId, vistaId, busqueda, filtros, orden, soloPendientes, agrupar]);
+
+  const totalPaginas = Math.max(1, Math.ceil(filtrados.length / POR_PAGINA));
+  const paginaActual = Math.min(pagina, totalPaginas - 1);
+  const inicioPagina = paginaActual * POR_PAGINA;
+  const finPagina = Math.min(inicioPagina + POR_PAGINA, filtrados.length);
+
   const grupos = useMemo(() => {
     if (!agrupar) return [{ key: '__todos', label: null, rows: filtrados }];
     const campo = campos.find((c) => c.id === agrupar);
@@ -923,6 +932,21 @@ function ListaDetalle({ listaId, area }) {
       rows,
     }));
   }, [filtrados, campos, agrupar]);
+
+  const gruposPagina = useMemo(() => {
+    let restante = POR_PAGINA;
+    let saltar = inicioPagina;
+    const salida = [];
+    for (const grupo of grupos) {
+      if (restante <= 0) break;
+      if (saltar >= grupo.rows.length) { saltar -= grupo.rows.length; continue; }
+      const rows = grupo.rows.slice(saltar, saltar + restante);
+      if (rows.length) salida.push({ ...grupo, rows });
+      restante -= rows.length;
+      saltar = 0;
+    }
+    return salida;
+  }, [grupos, inicioPagina]);
 
   const COLORES_FORMATO = {
     red: 'var(--red-bg)', amber: 'var(--amber-bg)', green: 'var(--green-bg)',
@@ -1307,7 +1331,7 @@ function ListaDetalle({ listaId, area }) {
                             </div>
                           </td>
                         </tr>
-                      ) : grupos.map((grupo) => (
+                      ) : gruposPagina.map((grupo) => (
                         <Fragment key={grupo.key}>
                           {agrupar && (
                             <tr className="listas-group-row">
@@ -1370,10 +1394,13 @@ function ListaDetalle({ listaId, area }) {
               )}
               <div className="listas-grid-foot">
                 <span className="muted" style={{ fontSize: 11.5 }}>
-                  {filtrados.length === total
-                    ? `${total} registro(s)`
-                    : `${filtrados.length} de ${total} registro(s)`}
+                  {filtrados.length === 0 ? '0 registro(s)' : `Mostrando ${inicioPagina + 1}–${finPagina} de ${filtrados.length} registro(s)`}
                 </span>
+                <div className="row" style={{ gap: 6, alignItems: 'center' }}>
+                  <button type="button" className="btn sm" onClick={() => setPagina(Math.max(0, paginaActual - 1))} disabled={paginaActual === 0}>Anterior</button>
+                  <span className="badge gray">Página {paginaActual + 1} de {totalPaginas}</span>
+                  <button type="button" className="btn sm" onClick={() => setPagina(Math.min(totalPaginas - 1, paginaActual + 1))} disabled={paginaActual >= totalPaginas - 1}>Siguiente</button>
+                </div>
                 <span className="muted" style={{ fontSize: 11.5 }}>
                   {visibles.length} columna(s) · {filtros.length} filtro(s)
                 </span>
