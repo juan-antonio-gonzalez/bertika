@@ -237,6 +237,8 @@ export default function Prospectos() {
   const [localidad, setLocalidad] = useState('');
   const [responsable, setResponsable] = useState('');
   const [origen, setOrigen] = useState('');
+  const [desde, setDesde] = useState('');
+  const [hasta, setHasta] = useState('');
   const [cargando, setCargando] = useState(false);
   const [form, setForm] = useState(null);
   const [importar, setImportar] = useState(false);
@@ -250,8 +252,10 @@ export default function Prospectos() {
     if (localidad.trim()) p.set('localidad', localidad.trim());
     if (responsable.trim()) p.set('responsable', responsable.trim());
     if (origen) p.set('origen', origen);
+    if (desde) p.set('desde', desde);
+    if (hasta) p.set('hasta', hasta);
     return p.toString();
-  }, [q, estado, localidad, responsable, origen]);
+  }, [q, estado, localidad, responsable, origen, desde, hasta]);
 
   const cargar = async (offset = 0, sumar = false) => {
     setCargando(true);
@@ -317,6 +321,8 @@ export default function Prospectos() {
           <input className="input" placeholder="Localidad" value={localidad} onChange={(e) => setLocalidad(e.target.value)} />
           <input className="input" placeholder="Responsable" value={responsable} onChange={(e) => setResponsable(e.target.value)} />
           <select className="input" value={origen} onChange={(e) => setOrigen(e.target.value)}><option value="">Todo origen</option><option value="manual">Manual</option><option value="excel">Excel</option></select>
+          <input className="input" type="date" title="Creado desde" value={desde} onChange={(e) => setDesde(e.target.value)} />
+          <input className="input" type="date" title="Creado hasta" value={hasta} onChange={(e) => setHasta(e.target.value)} />
           <button className="btn" onClick={() => cargar()} disabled={cargando}><Icon name="refresh" size={14} /> Actualizar</button>
         </div>
         <small className="ayuda">{total} prospecto(s) · los filtros también se aplican al exportar.</small>
