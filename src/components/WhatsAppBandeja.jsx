@@ -38,6 +38,7 @@ export default function WhatsAppBandeja() {
   const [agentes, setAgentes] = useState([]);
   const [errorConvs, setErrorConvs] = useState(null);
   const [filtro, setFiltro] = useState({ q: '', etiqueta: '', asignado: '', sinLeer: false, sinResponder: false });
+  const [filtrosAbiertos, setFiltrosAbiertos] = useState(false);
   const [sel, setSel] = useState(null);
   const [hilo, setHilo] = useState(null);
   const [texto, setTexto] = useState('');
@@ -1051,74 +1052,91 @@ export default function WhatsAppBandeja() {
       ) : (
       <div className="wa-panel">
         <div className="wa-lista">
-          <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--line)', display: 'grid', gap: 7 }}>
-            <input
-              className="input" style={{ fontSize: 12.5 }} placeholder="Buscar por nombre, teléfono o texto"
-              value={filtro.q} onChange={(e) => setFiltro({ ...filtro, q: e.target.value })}
-            />
-            <div className="row wrap" style={{ gap: 6, alignItems: 'center' }}>
-              <button
-                className={`chip${buscarMsg.abierta ? ' on' : ''}`}
-                title="Buscar en el texto de todos los mensajes"
-                onClick={() => setBuscarMsg((b) => ({ ...b, abierta: !b.abierta, resultados: [] }))}
-              >
-                🔍 En mensajes
-              </button>
-              <button className="chip" title="Administrar las etiquetas del taller" onClick={() => setVerEtiquetas(true)}>
-                Etiquetas ({etiquetasCat.length})
+          <div className="wa-side-head">
+            <div className="wa-side-top">
+              <div><b>Chats</b><span className="wa-side-count">{convs.length}</span></div>
+              <button type="button" className="wa-icon-btn" title="Actualizar conversaciones" onClick={() => cargarConvs(filtro)}>
+                <Icon name="refresh" size={14} />
               </button>
             </div>
-            {buscarMsg.abierta && (
-              <div className="col" style={{ gap: 6 }}>
-                <div className="row" style={{ gap: 6 }}>
-                  <input
-                    className="input" style={{ fontSize: 12.5, flex: 1 }} placeholder="Buscar dentro de los mensajes…"
-                    value={buscarMsg.q}
-                    onChange={(e) => setBuscarMsg((b) => ({ ...b, q: e.target.value }))}
-                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); buscarEnMensajes(); } }}
-                  />
-                  <button className="btn sm" disabled={buscarMsg.buscando} onClick={buscarEnMensajes}>
-                    {buscarMsg.buscando ? '...' : 'Buscar'}
+            <div className="wa-side-search">
+              <Icon name="search" size={14} />
+              <input
+                className="input" placeholder="Buscar un chat"
+                value={filtro.q} onChange={(e) => setFiltro({ ...filtro, q: e.target.value })}
+              />
+              {filtro.q && <button type="button" onClick={() => setFiltro({ ...filtro, q: '' })} aria-label="Limpiar búsqueda">✕</button>}
+            </div>
+            <div className="wa-side-filters">
+              <button type="button" className={`wa-filter${!hayFiltro ? ' on' : ''}`} onClick={() => setFiltro({ q: '', etiqueta: '', asignado: '', sinLeer: false, sinResponder: false })}>Todos</button>
+              <button type="button" className={`wa-filter${filtro.sinLeer ? ' on' : ''}`} onClick={() => setFiltro({ ...filtro, sinLeer: !filtro.sinLeer })}>Sin leer</button>
+              <button type="button" className={`wa-filter${filtro.sinResponder ? ' on' : ''}`} onClick={() => setFiltro({ ...filtro, sinResponder: !filtro.sinResponder })}>Sin responder</button>
+              <button type="button" className={`wa-filter${filtro.asignado && filtro.asignado === yo?.email ? ' on' : ''}`} onClick={() => setFiltro({ ...filtro, asignado: filtro.asignado === yo?.email ? '' : (yo?.email || '') })}>Míos</button>
+              <button type="button" className={`wa-filter wa-filter-more${filtrosAbiertos ? ' on' : ''}`} onClick={() => setFiltrosAbiertos((v) => !v)}>
+                <Icon name="filter" size={12} /> Filtros
+              </button>
+            </div>
+            {filtrosAbiertos && (
+              <div className="wa-filter-panel">
+                <div className="row wrap" style={{ gap: 6 }}>
+                  <button
+                    type="button" className={`wa-filter${buscarMsg.abierta ? ' on' : ''}`}
+                    onClick={() => setBuscarMsg((b) => ({ ...b, abierta: !b.abierta, resultados: [] }))}
+                  >
+                    <Icon name="search" size={12} /> En mensajes
                   </button>
+                  <button type="button" className="wa-filter" onClick={() => setVerEtiquetas(true)}>
+                    <Icon name="gear" size={12} /> Etiquetas ({etiquetasCat.length})
+                  </button>
+                  {hayFiltro && (
+                    <button type="button" className="wa-filter" onClick={() => setFiltro({ q: '', etiqueta: '', asignado: '', sinLeer: false, sinResponder: false })}>Limpiar</button>
+                  )}
                 </div>
-                {buscarMsg.resultados.length > 0 && (
-                  <div className="col" style={{ gap: 4, maxHeight: 220, overflowY: 'auto' }}>
-                    {buscarMsg.resultados.map((m) => (
-                      <button
-                        key={m.id} type="button" className="wa-conv" style={{ borderRadius: 8, border: '1px solid var(--line)' }}
-                        onClick={() => { setVista('bandeja'); abrir(m.conversacion_id); }}
-                      >
-                        <div className="row between" style={{ gap: 6 }}>
-                          <b style={{ fontSize: 12 }}>{m.cliente_nombre || m.nombre_perfil || m.telefono}</b>
-                          <span className="muted" style={{ fontSize: 10.5 }}>{fmtFecha(m.fecha)}</span>
-                        </div>
-                        <div className="muted" style={{ fontSize: 11.5 }}>
-                          {m.direccion === 'in' ? '←' : '→'}{' '}
-                          {resaltar(m.texto, buscarMsg.q)}
-                        </div>
-                      </button>
+                {(estado?.etiquetas || []).length > 0 && (
+                  <div className="wa-filter-tags">
+                    {(estado?.etiquetas || []).map((t) => (
+                      <button key={t} type="button" className={`wa-tag${filtro.etiqueta === t ? ' on' : ''}`} onClick={() => setFiltro({ ...filtro, etiqueta: filtro.etiqueta === t ? '' : t })}>{t}</button>
                     ))}
                   </div>
                 )}
-                {!buscarMsg.buscando && buscarMsg.q.trim().length >= 2 && buscarMsg.resultados.length === 0 && (
-                  <span className="muted" style={{ fontSize: 11.5 }}>Sin resultados en los mensajes.</span>
+                {buscarMsg.abierta && (
+                  <div className="col" style={{ gap: 6 }}>
+                    <div className="row" style={{ gap: 6 }}>
+                      <input
+                        className="input" style={{ fontSize: 12.5, flex: 1 }} placeholder="Buscar dentro de los mensajes…"
+                        value={buscarMsg.q}
+                        onChange={(e) => setBuscarMsg((b) => ({ ...b, q: e.target.value }))}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); buscarEnMensajes(); } }}
+                      />
+                      <button className="btn sm" disabled={buscarMsg.buscando} onClick={buscarEnMensajes}>
+                        {buscarMsg.buscando ? '...' : 'Buscar'}
+                      </button>
+                    </div>
+                    {buscarMsg.resultados.length > 0 && (
+                      <div className="col" style={{ gap: 4, maxHeight: 200, overflowY: 'auto' }}>
+                        {buscarMsg.resultados.map((m) => (
+                          <button
+                            key={m.id} type="button" className="wa-conv" style={{ borderRadius: 8 }}
+                            onClick={() => { setVista('bandeja'); abrir(m.conversacion_id); setFiltrosAbiertos(false); }}
+                          >
+                            <div className="row between" style={{ gap: 6 }}>
+                              <b style={{ fontSize: 12 }}>{m.cliente_nombre || m.nombre_perfil || m.telefono}</b>
+                              <span className="muted" style={{ fontSize: 10.5 }}>{fmtFecha(m.fecha)}</span>
+                            </div>
+                            <div className="muted" style={{ fontSize: 11.5 }}>
+                              {m.direccion === 'in' ? '←' : '→'} {resaltar(m.texto, buscarMsg.q)}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {!buscarMsg.buscando && buscarMsg.q.trim().length >= 2 && buscarMsg.resultados.length === 0 && (
+                      <span className="muted" style={{ fontSize: 11.5 }}>Sin resultados en los mensajes.</span>
+                    )}
+                  </div>
                 )}
               </div>
             )}
-            <div className="row wrap" style={{ gap: 6 }}>
-              <button className={`chip${filtro.sinLeer ? ' on' : ''}`} onClick={() => setFiltro({ ...filtro, sinLeer: !filtro.sinLeer })}>Sin leer</button>
-              <button className={`chip${filtro.sinResponder ? ' on' : ''}`} onClick={() => setFiltro({ ...filtro, sinResponder: !filtro.sinResponder })}>Sin responder</button>
-              <button
-                className={`chip${filtro.asignado && filtro.asignado === yo?.email ? ' on' : ''}`}
-                onClick={() => setFiltro({ ...filtro, asignado: filtro.asignado === yo?.email ? '' : (yo?.email || '') })}
-              >Mías</button>
-              {(estado?.etiquetas || []).map((t) => (
-                <button key={t} className={`chip${filtro.etiqueta === t ? ' on' : ''}`} onClick={() => setFiltro({ ...filtro, etiqueta: filtro.etiqueta === t ? '' : t })}>{t}</button>
-              ))}
-              {hayFiltro && (
-                <button className="chip" onClick={() => setFiltro({ q: '', etiqueta: '', asignado: '', sinLeer: false, sinResponder: false })}>Limpiar ✕</button>
-              )}
-            </div>
           </div>
           {errorConvs && (
             <p style={{ padding: 14, fontSize: 12.5, color: 'var(--red)' }}>
@@ -1154,7 +1172,11 @@ export default function WhatsAppBandeja() {
 
         <div className="wa-hilo">
           {!hilo ? (
-            <p className="muted" style={{ padding: 18, fontSize: 13 }}>Elegí una conversación para verla.</p>
+            <div className="wa-empty-chat">
+              <span className="wa-empty-ico"><Icon name="mail" size={30} /></span>
+              <b>WhatsApp Web</b>
+              <p>Elegí una conversación para verla, responder y hacer seguimiento.</p>
+            </div>
           ) : (
             <>
               <div className="wa-hilo-head row between wrap">

@@ -1627,3 +1627,40 @@ details[open] > .cz-summary::after { content: ' –'; }
 .listas-grid th[draggable="true"] { cursor: grab; }
 .listas-grid th[draggable="true"]:active { cursor: grabbing; }
 .listas-grid th.columna-arrastrando { opacity: .45; background: var(--amber-bg); }
+
+
+/* WhatsApp Web: bandeja compacta y a pantalla completa */
+.hub-wa { max-width: 1680px; padding-top: 10px; padding-bottom: 18px; }
+.hub-wa .wa-tabs { margin: 0 0 8px; gap: 6px; }
+.hub-wa .wa-tabs .chip { padding: 6px 11px; font-size: 12px; }
+.hub-wa .wa-panel { height: calc(100dvh - 175px); min-height: 580px; }
+.wa-side-head { padding: 10px 12px 8px; border-bottom: 1px solid var(--line); background: #fff; display: grid; gap: 8px; }
+.wa-side-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.wa-side-top > div { display: flex; align-items: baseline; gap: 7px; }
+.wa-side-top b { font-size: 19px; color: var(--navy); letter-spacing: -.3px; }
+.wa-side-count { font-size: 11px; color: var(--muted); background: var(--bg-3); border-radius: 999px; padding: 2px 7px; }
+.wa-icon-btn { display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--muted); cursor: pointer; }
+.wa-icon-btn:hover { color: var(--green); border-color: var(--brand-line); }
+.wa-side-search { position: relative; display: flex; align-items: center; }
+.wa-side-search > svg { position: absolute; left: 10px; color: var(--muted); pointer-events: none; }
+.wa-side-search .input { padding-left: 30px; padding-right: 28px; height: 32px; font-size: 12.5px; background: var(--bg-3); border-color: transparent; }
+.wa-side-search .input:focus { background: #fff; border-color: var(--brand-line); }
+.wa-side-search > button { position: absolute; right: 7px; border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 11px; }
+.wa-side-filters { display: flex; align-items: center; gap: 4px; overflow-x: auto; scrollbar-width: none; }
+.wa-side-filters::-webkit-scrollbar { display: none; }
+.wa-filter { flex: 0 0 auto; border: 1px solid transparent; background: transparent; color: var(--muted); border-radius: 999px; padding: 4px 8px; font-size: 11px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
+.wa-filter:hover { background: var(--bg-3); color: var(--text); }
+.wa-filter.on { background: var(--green-bg); color: var(--green); border-color: var(--brand-line); }
+.wa-filter-more { margin-left: auto; }
+.wa-filter-panel { display: grid; gap: 8px; padding: 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg-3); }
+.wa-filter-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.wa-tag { border: 1px solid var(--line); background: #fff; color: var(--muted); border-radius: 999px; padding: 3px 8px; font-size: 10.5px; font-weight: 600; cursor: pointer; }
+.wa-tag.on { background: var(--green-bg); color: var(--green); border-color: var(--brand-line); }
+.wa-empty-chat { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 5px; padding: 30px; color: var(--muted); }
+.wa-empty-chat b { color: var(--navy); font-size: 18px; }
+.wa-empty-chat p { margin: 0; font-size: 12.5px; max-width: 280px; }
+.wa-empty-ico { width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center; background: rgba(15,155,69,.12); color: var(--green); margin-bottom: 4px; }
+@media (max-width: 900px) {
+  .hub-wa { padding: 8px 10px 14px; }
+  .hub-wa .wa-panel { height: auto; min-height: 0; }
+}

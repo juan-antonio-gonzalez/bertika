@@ -799,13 +799,15 @@ export default function Hub() {
   if (slug && !HUB_TABS.includes(slug)) return <Navigate to="/hub" replace />;
 
   return (
-    <div className="wrap page">
-      <div className="row between wrap mb24">
-        <div>
-          <h1 className="page-title">Hub administrativo</h1>
-          <p className="page-sub">Operacion del taller · {activas} ordenes activas · {fmtARS(data.ordenes.filter((o) => o.estado === 'delivered').reduce((a, o) => a + num(o.monto_cobrado), 0))} facturados en total</p>
+    <div className={`wrap page${tab === 'whatsapp' ? ' hub-wa' : ''}`}>
+      {tab !== 'whatsapp' && (
+        <div className="row between wrap mb24">
+          <div>
+            <h1 className="page-title">Hub administrativo</h1>
+            <p className="page-sub">Operacion del taller · {activas} ordenes activas · {fmtARS(data.ordenes.filter((o) => o.estado === 'delivered').reduce((a, o) => a + num(o.monto_cobrado), 0))} facturados en total</p>
+          </div>
         </div>
-      </div>
+      )}
 
       {tab === 'kanban' && <Kanban onOpen={setSel} />}
       {tab === 'dashboard' && <Dashboard />}
