@@ -197,29 +197,27 @@ export default function AppShell({ children }) {
       { to: '/auth', label: 'Acceso', icon: 'user' },
     ] },
   ]), [user, c, esFlotilla]);
-  // Áreas y listas visibles: el menú se arma con lo que devuelve /estado
-  // según la categoría. Para el admin vienen todas.
+  // El menú principal son las listas. Comercial y Taller dejan de ser bloques
+  // fijos: cada área (Ventas, Taller, ...) se muestra como grupo y sus listas
+  // como accesos directos. Operación y Sistema se conservan.
   const gruposConAreas = useMemo(() => {
     const areas = data.areas || [];
     if (!user || user.rol === 'cliente' || !areas.length) return grupos;
-    const grupoListas = {
-      grupo: 'Listas',
-      items: areas.map((a) => ({
-        to: `/listas/${a.slug}`,
-        label: a.nombre,
-        icon: a.icono || 'clipboard',
-        subitems: (a.listas || []).map((l) => ({
+    const base = grupos.filter((g) => !['Comercial', 'Taller'].includes(g.grupo));
+    const gruposAreas = areas
+      .filter((a) => (a.listas || []).length > 0)
+      .map((a) => ({
+        grupo: a.nombre,
+        items: (a.listas || []).map((l) => ({
           to: `/listas/${a.slug}/${l.id}`,
           label: l.nombre,
           icon: l.icono || 'clipboard',
         })),
-      })),
-    };
-    // Antes de Sistema: las áreas son trabajo diario; Configuración queda al final.
-    const indiceSistema = grupos.findIndex((g) => g.grupo === 'Sistema');
-    if (indiceSistema < 0) return [...grupos, grupoListas];
-    const salida = [...grupos];
-    salida.splice(indiceSistema, 0, grupoListas);
+      }));
+    const indiceSistema = base.findIndex((g) => g.grupo === 'Sistema');
+    if (indiceSistema < 0) return [...base, ...gruposAreas];
+    const salida = [...base];
+    salida.splice(indiceSistema, 0, ...gruposAreas);
     return salida;
   }, [grupos, data.areas, user]);
 
