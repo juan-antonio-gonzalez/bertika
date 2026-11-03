@@ -372,7 +372,7 @@ function ResumenArea({ area }) {
   );
 }
 
-function AreaDetalle({ area }) {
+function AreaDetalle({ area, areas = [] }) {
   const cargarAreas = useStore((s) => s.cargarAreas);
   const toastShow = useStore((s) => s.toastShow);
   const navigate = useNavigate();
@@ -456,7 +456,7 @@ function AreaDetalle({ area }) {
       )}
 
       {nueva && (
-        <NuevaListaModal area={area} busy={busy} onGuardar={crear} onClose={() => setNueva(false)} />
+        <NuevaListaModal area={area} areas={areas} busy={busy} onGuardar={crear} onClose={() => setNueva(false)} />
       )}
       {aprobaciones && (
         <AprobacionesPendientesModal area={area} onClose={() => { setAprobaciones(false); cargarPendientes(); }} />
@@ -1611,6 +1611,6 @@ export default function Listas() {
       </div>
     );
   }
-  if (!listaId) return <AreaDetalle area={area} />;
+  if (!listaId) return <AreaDetalle area={area} areas={areas} />;
   return <ListaDetalle listaId={listaId} area={area} />;
 }

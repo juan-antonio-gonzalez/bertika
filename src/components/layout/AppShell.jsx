@@ -206,7 +206,7 @@ export default function AppShell({ children }) {
     const modulos = grupos
       .filter((g) => ['Comercial', 'Taller'].includes(g.grupo))
       .flatMap((g) => g.items)
-      .filter((it) => !['/prospectos', '/ventas'].includes(it.to));
+      .filter((it) => !['/prospectos', '/ventas', '/hub/inventario', '/hub/tecnicos'].includes(it.to));
     const base = grupos.filter((g) => !['Comercial', 'Taller'].includes(g.grupo));
     const ordenAreas = ['ventas', 'taller'];
     const areasOrdenadas = [...areas].sort((a, b) => {

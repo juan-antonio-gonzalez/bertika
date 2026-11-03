@@ -276,7 +276,8 @@ export function NuevaVistaModal({ campos, busy, onGuardar, onClose }) {
   );
 }
 
-export function NuevaListaModal({ area, busy, onGuardar, onClose }) {
+export function NuevaListaModal({ area, areas = [], busy, onGuardar, onClose }) {
+  const [areaId, setAreaId] = useState(area?.id || '');
   const [nombre, setNombre] = useState('');
   const [descripcion, setDescripcion] = useState('');
   const [plantillas, setPlantillas] = useState([]);
@@ -286,10 +287,10 @@ export function NuevaListaModal({ area, busy, onGuardar, onClose }) {
   useEffect(() => {
     let vivo = true;
     api('/listas/plantillas')
-      .then((r) => { if (vivo) setPlantillas((Array.isArray(r) ? r : []).filter((p) => p.area_id === area?.id)); })
+      .then((r) => { if (vivo) setPlantillas((Array.isArray(r) ? r : []).filter((p) => p.area_id === areaId)); })
       .catch(() => { if (vivo) setPlantillas([]); });
     return () => { vivo = false; };
-  }, [area?.id]);
+  }, [areaId]);
 
   const elegirPlantilla = (clave) => {
     setPlantilla(clave);
@@ -302,7 +303,7 @@ export function NuevaListaModal({ area, busy, onGuardar, onClose }) {
   return (
     <Modal
       size="sm"
-      title={`Nueva lista en ${area?.nombre || 'el área'}`}
+      title={`Nueva lista en ${areas.find((a) => a.id === areaId)?.nombre || area?.nombre || 'el área'}`}
       sub="Después de crearla vas a poder agregar campos y vistas."
       onClose={onClose}
       closeOnBackdrop={false}
@@ -315,8 +316,15 @@ export function NuevaListaModal({ area, busy, onGuardar, onClose }) {
         </>
       )}
     >
-      <form id="form-nueva-lista" onSubmit={(e) => { e.preventDefault(); if (nombre.trim().length >= 2) onGuardar({ nombre: nombre.trim(), descripcion: descripcion.trim(), plantilla: plantilla || null }); }}>
+      <form id="form-nueva-lista" onSubmit={(e) => { e.preventDefault(); if (nombre.trim().length >= 2) onGuardar({ area_id: areaId, nombre: nombre.trim(), descripcion: descripcion.trim(), plantilla: plantilla || null }); }}>
         <FormGrid cols={1}>
+          <div className="field">
+            <label>Categoría *</label>
+            <select className="input" value={areaId} onChange={(e) => { setAreaId(e.target.value); setPlantilla(''); }}>
+              {(areas.length ? areas : [area]).filter(Boolean).map((a) => <option key={a.id} value={a.id}>{a.nombre}</option>)}
+            </select>
+            <small className="ayuda">La lista va a aparecer en esta categoría del menú.</small>
+          </div>
           <div className="field">
             <label>Empezar desde</label>
             <select className="input" value={plantilla} onChange={(e) => elegirPlantilla(e.target.value)}>
