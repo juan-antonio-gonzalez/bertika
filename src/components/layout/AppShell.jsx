@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useStore } from '../../store/store';
 import { api } from '../../store/api';
@@ -171,7 +171,8 @@ export default function AppShell({ children }) {
   const [altas, setAltas] = useState(false);
   const [buscar, setBuscar] = useState(false);
   const [ordenAbierta, setOrdenAbierta] = useState(null);
-  const [gruposCerrados, setGruposCerrados] = useState(() => leerMenuLS('bertika-menu-grupos', {}));
+  const [grupoAbierto, setGrupoAbierto] = useState(null);
+  const ultimaRutaMenu = useRef(location.pathname);
   const [favoritos, setFavoritos] = useState(() => leerMenuLS('bertika-menu-favs', []));
   const [qMenu, setQMenu] = useState('');
 
@@ -232,7 +233,6 @@ export default function AppShell({ children }) {
     return salida;
   }, [grupos, data.areas, user]);
 
-  useEffect(() => { localStorage.setItem('bertika-menu-grupos', JSON.stringify(gruposCerrados)); }, [gruposCerrados]);
   useEffect(() => { localStorage.setItem('bertika-menu-favs', JSON.stringify(favoritos)); }, [favoritos]);
 
   useEffect(() => {
@@ -261,7 +261,16 @@ export default function AppShell({ children }) {
     return salida;
   }, [gruposConAreas]);
 
-  const toggleGrupo = (nombre) => setGruposCerrados((prev) => ({ ...prev, [nombre]: !prev[nombre] }));
+  // Al entrar, todo cerrado. Al cambiar de pantalla, se abre solo el grupo
+  // que contiene la ruta y se cierra el anterior.
+  useEffect(() => {
+    if (ultimaRutaMenu.current === location.pathname) return;
+    ultimaRutaMenu.current = location.pathname;
+    const item = itemsMenu.find((i) => i.to === location.pathname || (i.to !== '/' && location.pathname.startsWith(`${i.to}/`)));
+    setGrupoAbierto(item?._grupo || null);
+  }, [location.pathname, itemsMenu]);
+
+  const toggleGrupo = (nombre) => setGrupoAbierto((prev) => (prev === nombre ? null : nombre));
   const toggleFavorito = async (to) => {
     const activo = !favoritos.includes(to);
     setFavoritos((prev) => (activo ? [...prev, to] : prev.filter((x) => x !== to)));
@@ -290,7 +299,7 @@ export default function AppShell({ children }) {
   const renderItemMenu = (it, prefijo) => (
     <div key={`${prefijo}-${it.to}`}>
       <div className="shell-item-wrap">
-        <Link to={it.to} className={`shell-item${esActivo(it) ? ' on' : ''}`}>
+        <Link to={it.to} className={`shell-item${esActivo(it) ? ' on' : ''}`} onClick={() => setGrupoAbierto(it._grupo)}>
           <Icon name={it.icon} size={15} />
           <span className="shell-item-l">{it.label}</span>
           {it.contador > 0 && <span className="shell-count">{it.contador}</span>}
@@ -308,7 +317,7 @@ export default function AppShell({ children }) {
       {it.subitems?.length > 0 && (
         <div className="shell-subitems">
           {it.subitems.map((sub) => (
-            <Link key={sub.to} to={sub.to} className={`shell-subitem${ruta === sub.to ? ' on' : ''}`}>
+            <Link key={sub.to} to={sub.to} className={`shell-subitem${ruta === sub.to ? ' on' : ''}`} onClick={() => setGrupoAbierto(sub._grupo || it._grupo)}>
               <Icon name={sub.icon} size={12} />
               <span>{sub.label}</span>
             </Link>
@@ -386,7 +395,7 @@ export default function AppShell({ children }) {
           )}
 
           {gruposFiltrados.map((g) => {
-            const cerrado = !qMenu && Boolean(gruposCerrados[g.grupo]);
+            const cerrado = !qMenu && g.grupo !== grupoAbierto;
             return (
               <div className="shell-grupo" key={g.grupo}>
                 <button
