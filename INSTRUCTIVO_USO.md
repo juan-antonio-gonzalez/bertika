@@ -557,7 +557,7 @@ La venta ahora vive en una **oportunidad**, no en una conversación de WhatsApp.
 
 ### Crear una oportunidad
 
-1. Entrar a **Ventas** en el menú Comercial.
+1. Entrar a la lista **Oportunidades** en **Ventas** (menú lateral).
 2. **Nueva oportunidad**.
 3. Completar:
    - Título.

@@ -2,9 +2,10 @@
 
 Base URL en producción: `https://bertika.com/api` (en dev local: `http://localhost:5173/api`, que proxya a `http://localhost:3001`).
 
-> **Estado:** Fases 1 (robustez), 2 (CRM comercial), privacidad/cookies y el módulo de
-> **Listas dinámicas** implementados y en producción. Los pendientes de producto están en
-> [FUTURO.md](FUTURO.md).
+> **Estado:** Fases 1 (robustez), 2 (CRM comercial), privacidad/cookies, **Listas dinámicas**,
+> **Prospectos** (lista de Ventas) y **Ventas V2** implementados y en producción. El menú
+> lateral es un acordeón y el admin inicia en la lista de Prospectos. Los pendientes de
+> producto están en [FUTURO.md](FUTURO.md).
 
 Formato: JSON. Autenticación con `Authorization: Bearer <token>` (obtenido en `POST /auth/login`). Los errores responden `{ "error": "mensaje" }` con su código HTTP y, desde la fase de robustez, también `reqId` (el mismo que sale en el header `x-request-id` y en el log del servidor).
 
@@ -461,6 +462,10 @@ solo aceptan HTTPS público y se auditan como `webhook_ok` / `webhook_error`.
 Limpia todas las tablas de demo y re-siembra desde `src/data/seed.js` (corre `node api/seed.js` como proceso hijo). → `{ ok: true }`. Cuidado: **destruye los datos actuales**; en producción solo debe usarse en entornos de demostración.
 
 ## WhatsApp (canal oficial de Meta)
+
+La UI de la bandeja se rediseñó con estética **WhatsApp Web**: chats a la izquierda,
+búsqueda y filtros compactos, filtros avanzados dentro de **Filtros**, chat a pantalla
+completa, burbujas y composer. Los endpoints y permisos no cambiaron.
 
 | Método | Ruta | Notas |
 | --- | --- | --- |

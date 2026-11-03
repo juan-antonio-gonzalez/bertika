@@ -118,7 +118,7 @@ todo de nuevo.)
 
 ## Paso 4 — Verlo en el panel
 
-1. Entrá a Bertika → **Hub → pestaña WhatsApp**. Tiene que decir **Conectado**.
+1. Entrá a Bertika → **Módulos → WhatsApp**. Tiene que decir **Conectado**.
 2. En "Enviar prueba" poné tu número y mandá un mensaje.
 3. Escribile al número de prueba de Meta desde tu celular: la conversación
    aparece sola en la bandeja, y desde ahí le podés contestar.
